@@ -166,9 +166,9 @@ button.titlebar-center:hover {
 #editor .ProseMirror h2 { font-size: 22px !important; }
 #editor .ProseMirror h3 { font-size: 18px !important; }
 
+/* blockquote은 아래 별도 룰에서 dim 색으로 다시 정의하므로 여기 grouped에는 안 넣는다. */
 #editor .ProseMirror p,
-#editor .ProseMirror li,
-#editor .ProseMirror blockquote {
+#editor .ProseMirror li {
   font-family: var(--font-sans) !important;
   color: var(--text) !important;
 }
@@ -205,6 +205,7 @@ button.titlebar-center:hover {
   border-left: 3px solid var(--text-faint) !important;
   padding-left: 16px !important;
   color: var(--text-dim) !important;
+  font-family: var(--font-sans) !important;
 }
 
 #editor .ProseMirror hr {
@@ -218,8 +219,9 @@ button.titlebar-center:hover {
   color: var(--text) !important;
 }
 
-/* 블록 옆 + / ⋮⋮ 드래그 핸들 완전히 제거 */
-milkdown-block-handle,
+/* 블록 옆 + / ⋮⋮ 드래그 핸들 완전히 제거.
+ * Crepe는 <div class="milkdown-block-handle">을 만들어 띄우므로 클래스 셀렉터로 잡는다.
+ * (1차 안전장치는 EditorController의 featureConfigs.BlockEdit.blockHandle.shouldShow = false) */
 .milkdown-block-handle {
   display: none !important;
 }
@@ -584,12 +586,9 @@ milkdown-block-handle,
   padding: 0 !important;
   text-align: left !important;
 }
-#editor .ProseMirror .milkdown-list-item-block .children > p {
-  margin: 0 !important;
-}
-#editor .ProseMirror .milkdown-list-item-block .children > p + p {
-  margin-top: 0.3em !important;
-}
+/* paragraph margin 리셋은 위쪽 `.children p` (descendant) 규칙에서 처리한다.
+ * 여기 있던 `.children > p` direct-child 셀렉터는 .children > .content-dom > p
+ * 구조에 매칭되지 않아 dead code였으므로 제거. */
 
 /* ─── Toast 알림 ─────────────────────────────────────────── */
 /* InfoPopover와 같은 다크 글래스 톤. 우측 상단에 순차 표시되어 자동 fade out. */
