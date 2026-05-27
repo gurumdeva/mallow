@@ -25,3 +25,10 @@ tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-fs = "2.5.1"
+
+# WKWebView 배경을 직접 투명화하기 위해 macOS에서만 objc2 사용.
+# (다크 모드 cold-start 시 WKWebView 자체가 흰색으로 1프레임 그려져 발생하는
+#  flash를 막기 위해 drawsBackground=NO via KVC를 호출한다. lib.rs 참고.)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"
+objc2-foundation = { version = "0.2", features = ["NSString", "NSValue"] }

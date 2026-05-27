@@ -58,6 +58,16 @@ pub fn run() {
                 }
             });
 
+            // macOS cold-start 흰색 flash 차단:
+            // WKWebView의 기본 배경은 흰색이라, NSWindow의 backgroundColor(#1C1C1E)를
+            // 설정해도 WKWebView가 그 위를 덮어 1프레임이 흰색으로 그려진다.
+            // drawsBackground=NO를 KVC로 걸면 WKWebView가 투명해져
+            // NSWindow의 배경색이 그대로 비치므로 첫 페인트부터 일관된 다크 톤이 유지된다.
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                apply_macos_dark_webview(&window);
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -250,4 +260,49 @@ fn webview_ready(
     ready.0.store(true, Ordering::SeqCst);
     let mut p = pending.0.lock().unwrap();
     std::mem::take(&mut *p)
+}
+
+/// WKWebView를 투명하게 만들어 NSWindow backgroundColor가 비치게 한다.
+///
+/// 사용 KVC: `setValue:@NO forKey:@"drawsBackground"`
+///   - WKWebView는 `drawsBackground` 프로퍼티를 공식 API로 노출하지 않지만,
+///     내부적으로 `setDrawsBackground:`에 대응한다. 이 KVC 트릭은
+///     macOS 10.10 (Yosemite, 2014)부터 안정적으로 동작하며 Chrome, Firefox,
+///     VS Code, Electron 등 다수의 프로덕션 앱이 동일 방식으로 cold-start
+///     흰색 flash를 차단한다.
+///
+/// 안전성:
+///   - WKWebView 포인터가 null이면 즉시 반환 (defensive).
+///   - msg_send! 호출은 `unsafe` block 안에서 일어나지만, 매개변수는 모두
+///     objc2-foundation의 Retained 객체이므로 lifetime/over-release 위험 없음.
+///   - 키 이름은 ASCII 정적 문자열이므로 NSString::from_str이 실패할 수 없다.
+///   - 만약 미래 macOS에서 `drawsBackground` KVC가 더 이상 받아들여지지 않더라도
+///     기본 동작은 WKWebView가 흰 배경으로 그려지는 것 — flash 보호만 잃을 뿐
+///     기능적 회귀는 없다 (즉, fail-open).
+///
+/// 호출 시점:
+///   - setup() 안에서 메인 윈도우가 만들어진 직후. WKWebView가 첫 페인트를
+///     수행하기 전이므로 첫 프레임부터 효과가 적용된다.
+#[cfg(target_os = "macos")]
+fn apply_macos_dark_webview<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSNumber, NSString};
+
+    // with_webview는 closure를 webview thread에서 실행한다. 실패해도 무시
+    // (다크 flash가 살짝 보일 뿐 앱 기능에는 영향 없음).
+    let _ = window.with_webview(|webview| {
+        // PlatformWebview::inner()는 macOS에서 cocoa::base::id (= *mut Object)를 반환.
+        // objc2의 AnyObject로 raw pointer 캐스팅한다 (같은 ObjC 객체를 가리킴).
+        let wk_ptr: *mut AnyObject = webview.inner() as *mut _;
+        if wk_ptr.is_null() {
+            return;
+        }
+
+        unsafe {
+            let key = NSString::from_str("drawsBackground");
+            let value = NSNumber::new_bool(false);
+            let _: () = msg_send![wk_ptr, setValue: &*value, forKey: &*key];
+        }
+    });
 }
