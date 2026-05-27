@@ -12,20 +12,35 @@ import { Document } from '../domain/Document'
  * Tauri saveDialog로 사용자가 고른 경로에 `writeFile`(binary)로 저장한다.
  */
 export class PdfExporter {
+  /** 진행 중 export 시 중복 호출(빠른 더블클릭, ⌘E + 버튼 클릭 동시) 무시. */
+  private isExporting = false
+
   constructor(private readonly doc: Document) {}
 
   async export(): Promise<void> {
+    if (this.isExporting) return
     const source = document.querySelector('.ProseMirror') as HTMLElement | null
     if (!source) return
 
     const filenameBase = this.doc.filename.replace(/\.md$/, '') || '문서'
 
     // 1) 사용자 path 선택. 취소하면 즉시 종료 (PDF 렌더링 비용 없이).
-    const selected = await saveDialog({
-      defaultPath: `${filenameBase}.pdf`,
-      filters: [{ name: 'PDF', extensions: ['pdf'] }],
-    })
-    if (!selected) return
+    // 가드는 dialog 직전에 켜야 dialog가 열려있는 동안에도 중복 호출이 막힌다.
+    this.isExporting = true
+    try {
+      const selected = await saveDialog({
+        defaultPath: `${filenameBase}.pdf`,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      })
+      if (!selected) return
+      await this.renderAndSave(source, selected)
+    } finally {
+      this.isExporting = false
+    }
+  }
+
+  /** 실제 PDF 렌더링/저장 — export()에서 user path가 확정된 뒤 호출. */
+  private async renderAndSave(source: HTMLElement, selected: string): Promise<void> {
 
     // 2) 라이트 톤으로 강제 변환할 클론을 화면 밖 holder에 부착.
     const clone = source.cloneNode(true) as HTMLElement
