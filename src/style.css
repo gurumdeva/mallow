@@ -177,31 +177,14 @@ button.titlebar-center:hover {
   margin: 0.9em 0 !important;
 }
 
-/* Milkdown list-item-block 구조: .list-item > (.label-wrapper, .children > .content-dom > <p>).
- *
- * 두 가지 문제 보정:
- *  1) .children 안 <p>가 본문 paragraph margin(0.9em 0)을 그대로 받아 텍스트가 아래로 밀린다 → margin: 0
- *  2) Crepe 기본 .label-wrapper는 height:32px, 우리 본문 p는 line-height 28px(font 16 * 1.75)
- *     라 둘이 정렬되지 않는다. .label-wrapper 높이/패딩을 본문 line-height에 맞춰
- *     첫 줄과 baseline이 일치하도록 한다.
- */
-#editor .ProseMirror .milkdown-list-item-block .children p,
-#editor .ProseMirror li.list-item .children p {
+/* Milkdown list-item-block 내부 paragraph margin 제거.
+ * 실제 DOM 구조는 .children > .content-dom > <p>이므로 descendant selector(공백)로
+ * 잡아야 한다. (`.children > p`는 매칭 안 됨 — content-dom이 사이에 있어서)
+ * 이걸 안 잡으면 본문 #editor .ProseMirror p { margin: 0.9em 0 }이 그대로 들어가
+ * 텍스트가 아래로 밀리면서 옆의 불릿과 vertical align이 어긋난다.
+ * 나머지(label-wrapper 크기/정렬)는 파일 하단 "List alignment fix v2" 섹션 담당. */
+#editor .ProseMirror .milkdown-list-item-block .children p {
   margin: 0 !important;
-}
-/* Crepe list-item은 li.list-item > (.label-wrapper, .children > .content-dom > <p>) 구조.
- * .label-wrapper(32px h)에서 24x24 SVG bullet이 중앙(y=16)에 그려져서 본문
- * line-height 28의 텍스트 baseline과 약간 어긋난다. height/padding을 조정해
- * SVG bullet 중심이 텍스트 x-height 부근에 오도록 한다. */
-#editor .ProseMirror .milkdown-list-item-block .list-item > .label-wrapper,
-#editor .ProseMirror li.list-item > .label-wrapper {
-  height: 28px !important;
-  padding: 0 !important;
-}
-#editor .ProseMirror .milkdown-list-item-block .list-item > .label-wrapper > .label,
-#editor .ProseMirror li.list-item > .label-wrapper > .label {
-  height: 24px !important;
-  padding: 0 !important;
 }
 
 #editor .ProseMirror code {
