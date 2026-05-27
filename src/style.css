@@ -181,10 +181,23 @@ button.titlebar-center:hover {
  * 실제 DOM 구조는 .children > .content-dom > <p>이므로 descendant selector(공백)로
  * 잡아야 한다. (`.children > p`는 매칭 안 됨 — content-dom이 사이에 있어서)
  * 이걸 안 잡으면 본문 #editor .ProseMirror p { margin: 0.9em 0 }이 그대로 들어가
- * 텍스트가 아래로 밀리면서 옆의 불릿과 vertical align이 어긋난다.
- * 나머지(label-wrapper 크기/정렬)는 파일 하단 "List alignment fix v2" 섹션 담당. */
+ * 텍스트가 아래로 밀리면서 옆의 불릿과 vertical align이 어긋난다. */
 #editor .ProseMirror .milkdown-list-item-block .children p {
   margin: 0 !important;
+}
+
+/* label-wrapper / label 박스 크기 — 본문 line-height(28px)에 맞춰 28x24로 강제.
+ * v2 fix의 align-items: baseline + 이 박스 크기 조합이 실측상 정렬이 가장 깔끔.
+ * (height: auto만 두면 SVG 24px 박스 + baseline 정렬에서 미세하게 위로 떠 보임) */
+#editor .ProseMirror .milkdown-list-item-block .list-item > .label-wrapper,
+#editor .ProseMirror li.list-item > .label-wrapper {
+  height: 28px !important;
+  padding: 0 !important;
+}
+#editor .ProseMirror .milkdown-list-item-block .list-item > .label-wrapper > .label,
+#editor .ProseMirror li.list-item > .label-wrapper > .label {
+  height: 24px !important;
+  padding: 0 !important;
 }
 
 #editor .ProseMirror code {
