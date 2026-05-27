@@ -1,4 +1,4 @@
-import { listen } from '@tauri-apps/api/event'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { MAX_RECENT } from './RecentFilesStore'
 
 export type MenuActions = {
@@ -15,22 +15,39 @@ export type MenuActions = {
 /**
  * Tauri 메뉴 이벤트와 OS 파일 열기 이벤트를 콜백으로 라우팅.
  * Tauri-specific 통합을 view·service에서 분리한다.
+ *
+ * `listen()`은 cleanup 콜백(UnlistenFn)을 반환하는데, start() 안에서 이를 모아두고
+ * stop()에서 일괄 해제할 수 있게 한다. 현재 앱에서는 singleton이라 실제 호출되진
+ * 않지만, dev HMR이나 향후 재초기화 시 stale listener 누적을 막는다.
  */
 export class MenuBridge {
+  private unlisteners: UnlistenFn[] = []
+
   constructor(private readonly actions: MenuActions) {}
 
   async start(): Promise<void> {
-    await listen('menu:new_file', () => this.actions.onNewFile())
-    await listen('menu:open', () => this.actions.onOpen())
-    await listen('menu:save', () => this.actions.onSave())
-    await listen('menu:save_as', () => this.actions.onSaveAs())
-    await listen('menu:export_pdf', () => this.actions.onExportPdf())
-    await listen('menu:show_stats', () => this.actions.onShowStats())
+    const u = this.unlisteners
+    u.push(await listen('menu:new_file', () => this.actions.onNewFile()))
+    u.push(await listen('menu:open', () => this.actions.onOpen()))
+    u.push(await listen('menu:save', () => this.actions.onSave()))
+    u.push(await listen('menu:save_as', () => this.actions.onSaveAs()))
+    u.push(await listen('menu:export_pdf', () => this.actions.onExportPdf()))
+    u.push(await listen('menu:show_stats', () => this.actions.onShowStats()))
     for (let i = 0; i < MAX_RECENT; i++) {
-      await listen(`menu:recent_${i}`, () => this.actions.onRecentOpen(i))
+      u.push(await listen(`menu:recent_${i}`, () => this.actions.onRecentOpen(i)))
     }
-    await listen<string>('open:file', (event) => {
-      if (event.payload) this.actions.onOpenFromOs(event.payload)
-    })
+    u.push(
+      await listen<string>('open:file', (event) => {
+        if (event.payload) this.actions.onOpenFromOs(event.payload)
+      }),
+    )
+  }
+
+  /** 등록된 모든 Tauri event listener 해제. 재초기화 또는 종료 정리용. */
+  stop(): void {
+    for (const unlisten of this.unlisteners) {
+      try { unlisten() } catch { /* listener가 이미 해제됐을 수 있어 무시 */ }
+    }
+    this.unlisteners = []
   }
 }
