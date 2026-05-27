@@ -1,14 +1,37 @@
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    Emitter,
+    Emitter, Manager,
 };
+
+/// Finder 더블클릭으로 cold-start 됐을 때 RunEvent::Opened가 발생하는 시점은
+/// WebView가 아직 띄워지지도 않은 단계라, 그때 app.emit("open:file", ...)을
+/// 쏘면 listener가 없어 이벤트가 그대로 소실된다. 이 상태에 path를 임시 보관해뒀다가
+/// JS bootstrap 끝에서 `webview_ready` 명령으로 한 번에 가져가도록 한다.
+#[derive(Default)]
+struct PendingOpens(Mutex<Vec<String>>);
+
+/// JS bootstrap이 listener를 다 걸었음을 알리는 플래그.
+/// true가 되면 그 후 들어오는 RunEvent::Opened는 stash 대신 emit으로 바로 보냄
+/// (warm start에서 같은 path가 두 번 처리되는 걸 막기 위함).
+#[derive(Default)]
+struct AppReady(AtomicBool);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![update_recent_files, force_quit])
+        .manage(PendingOpens::default())
+        .manage(AppReady::default())
+        .invoke_handler(tauri::generate_handler![
+            update_recent_files,
+            force_quit,
+            webview_ready,
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -41,12 +64,27 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             // macOS Finder에서 .md 파일을 더블클릭하면 RunEvent::Opened 발생.
-            // URL을 file path로 변환해 webview에 emit하면 JS가 파일 열기 흐름을 처리합니다.
+            // Cold-start(WebView 아직 mount 전)와 warm-start(webview_ready 호출 후) 분기:
+            //  - AppReady=false : path를 PendingOpens에 stash. JS가 webview_ready 호출 시 가져감.
+            //  - AppReady=true  : emit으로 바로 listener에 전달.
             if let tauri::RunEvent::Opened { urls } = event {
+                let ready = app_handle
+                    .state::<AppReady>()
+                    .0
+                    .load(Ordering::SeqCst);
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {
-                        let _ = app_handle
-                            .emit("open:file", path.to_string_lossy().to_string());
+                        let path_str = path.to_string_lossy().to_string();
+                        if ready {
+                            let _ = app_handle.emit("open:file", &path_str);
+                        } else {
+                            app_handle
+                                .state::<PendingOpens>()
+                                .0
+                                .lock()
+                                .unwrap()
+                                .push(path_str);
+                        }
                     }
                 }
             }
@@ -199,4 +237,17 @@ fn update_recent_files(app: tauri::AppHandle, paths: Vec<String>) -> Result<(), 
 #[tauri::command]
 fn force_quit(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+/// JS bootstrap이 끝나 open:file listener가 활성화됐음을 신호하고, 동시에
+/// 그 사이 쌓인 cold-start 파일 경로들을 한 번에 가져간다.
+/// 호출 후부터는 RunEvent::Opened가 더 이상 stash하지 않고 바로 emit한다.
+#[tauri::command]
+fn webview_ready(
+    pending: tauri::State<PendingOpens>,
+    ready: tauri::State<AppReady>,
+) -> Vec<String> {
+    ready.0.store(true, Ordering::SeqCst);
+    let mut p = pending.0.lock().unwrap();
+    std::mem::take(&mut *p)
 }
