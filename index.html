@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mallow</title>
+    <!-- 외부 CSS 로딩 전에 다크 배경을 적용해 초기 흰 flash를 막는다.
+         (Tauri window의 backgroundColor와 함께 1차 페인트부터 일관된 톤 유지) -->
+    <style>
+      html, body { margin: 0; background: #1c1c1e; color: #f2f2f7; }
+    </style>
   </head>
   <body>
     <header id="titlebar">
