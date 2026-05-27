@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mallow</title>
+  </head>
+  <body>
+    <header id="titlebar">
+      <div class="titlebar-left"></div>
+      <button class="titlebar-center" id="file-name" type="button">새 문서.md</button>
+      <div class="titlebar-right">
+        <button class="corner-btn" id="btn-style" title="텍스트 스타일">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 7 4 4 20 4 20 7"/>
+            <line x1="9" y1="20" x2="15" y2="20"/>
+            <line x1="12" y1="4" x2="12" y2="20"/>
+          </svg>
+        </button>
+        <button class="corner-btn" id="btn-pdf" title="PDF로 내보내기 (⌘E)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <path d="M12 18v-6"/>
+            <path d="m15 15-3 3-3-3"/>
+          </svg>
+        </button>
+        <button class="corner-btn" id="btn-info" title="문서 정보 (⌘⇧I)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+    <div id="filename-popover" class="hidden" role="dialog">
+      <input id="filename-input" type="text" autocomplete="off" spellcheck="false" />
+    </div>
+    <main id="editor"></main>
+    <div id="stats-popover" class="hidden"></div>
+    <div id="style-popover" class="hidden"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
