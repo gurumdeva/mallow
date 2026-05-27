@@ -46,8 +46,10 @@ export class FileService {
       this.doc.markSaved()
       this.recent.add(path)
     } catch (e) {
-      console.error('open failed:', e)
+      // 존재하지 않는 파일 등 — recent 목록에서 정리한 뒤 호출자(main.ts)가
+      // toast를 띄울 수 있도록 에러를 다시 throw.
       this.recent.remove(path)
+      throw e
     }
   }
 
