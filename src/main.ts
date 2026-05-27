@@ -71,6 +71,8 @@ async function bootstrap(): Promise<void> {
   await editor.initialize(DEFAULT_MARKDOWN)
 
   // ── Menu / OS file-open 이벤트 라우팅 ───────────────────
+  const openFromOs = (p: string) => fileService.openPath(p).catch(reportError('파일 열기'))
+
   const menu = new MenuBridge({
     onNewFile: () => fileService.newFile().catch(reportError('새 파일')),
     onOpen: () => fileService.open().catch(reportError('파일 열기')),
@@ -79,9 +81,21 @@ async function bootstrap(): Promise<void> {
     onExportPdf: () => pdfExporter.export().catch(reportError('PDF 내보내기')),
     onShowStats: () => ui.toggleInfoPopover(),
     onRecentOpen: (i) => fileService.openRecent(i).catch(reportError('최근 파일 열기')),
-    onOpenFromOs: (p) => fileService.openPath(p).catch(reportError('파일 열기')),
+    onOpenFromOs: openFromOs,
   })
   await menu.start()
+
+  // ── Cold-start 파일 인수 처리 ────────────────────────────
+  // Finder에서 .md 파일을 더블클릭해 앱이 새로 뜨면 Rust의 RunEvent::Opened가
+  // WebView mount 전에 fire 되어 'open:file' emit이 손실된다. Rust 쪽에 pending
+  // 으로 쌓여 있던 경로를 listener 등록 직후에 한 번에 가져와 처리한다.
+  // (이 호출 이후로 RunEvent::Opened는 stash 없이 바로 emit → 위 onOpenFromOs로 전달)
+  try {
+    const pending: string[] = await invoke('webview_ready')
+    for (const p of pending) openFromOs(p)
+  } catch (e) {
+    console.error('webview_ready failed:', e)
+  }
 
   // ── 윈도우 닫기 시 미저장 확인 ───────────────────────────
   // Tauri v2 macOS에서 onCloseRequested 핸들러가 등록되면 native close가
