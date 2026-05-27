@@ -63,6 +63,13 @@ async function bootstrap(): Promise<void> {
   // ── Wiring: editor 변경 → doc 수정 표시 ──────────────────
   editor.on('change', () => doc.markModified())
 
+  // ── 초기 콘텐츠 로드 ────────────────────────────────────
+  // 메뉴 리스너를 활성화하기 전에 editor를 초기화해, 사용자가 init 중에
+  // 메뉴 항목(파일 열기 등)을 눌러도 half-initialized Crepe에 dispatch되는
+  // race를 막는다. menu.start() 이후에 들어오는 이벤트는 항상 Created 상태의
+  // editor를 만나도록 보장.
+  await editor.initialize(DEFAULT_MARKDOWN)
+
   // ── Menu / OS file-open 이벤트 라우팅 ───────────────────
   const menu = new MenuBridge({
     onNewFile: () => fileService.newFile().catch(reportError('새 파일')),
@@ -92,9 +99,6 @@ async function bootstrap(): Promise<void> {
     }
     invoke('force_quit').catch(() => {})
   })
-
-  // ── 초기 콘텐츠 로드 ────────────────────────────────────
-  await editor.initialize(DEFAULT_MARKDOWN)
 }
 
 bootstrap().catch((e) => console.error('bootstrap failed:', e))
