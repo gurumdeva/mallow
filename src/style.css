@@ -607,3 +607,49 @@ milkdown-block-handle,
 #editor .ProseMirror .milkdown-list-item-block .children > p + p {
   margin-top: 0.3em !important;
 }
+
+/* ─── Toast 알림 ─────────────────────────────────────────── */
+/* InfoPopover와 같은 다크 글래스 톤. 우측 상단에 순차 표시되어 자동 fade out. */
+#toast-container {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--bg-popover);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text);
+  max-width: 360px;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+  pointer-events: auto;
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast-error {
+  border-left-color: #ff453a;
+}
+
+.toast-info {
+  border-left-color: #0a84ff;
+}

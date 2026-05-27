@@ -18,6 +18,7 @@ import { TitleBarView } from './ui/TitleBarView'
 import { FilenamePopover } from './ui/FilenamePopover'
 import { InfoPopover } from './ui/InfoPopover'
 import { StylePopover } from './ui/StylePopover'
+import { ToastService, formatError } from './ui/ToastService'
 
 const DEFAULT_MARKDOWN = ''
 
@@ -44,12 +45,19 @@ async function bootstrap(): Promise<void> {
   new InfoPopover(doc, ui, editor, stats, toc)
   new StylePopover(ui, editor)
 
+  // ── Toast 알림 인프라 + 공용 에러 핸들러 ────────────────
+  const toast = new ToastService()
+  const reportError = (label: string) => (e: unknown) => {
+    console.error(label, e)
+    toast.error(`${label}: ${formatError(e)}`)
+  }
+
   // ── Title bar의 PDF 아이콘 클릭 → export ─────────────────
   // 키보드 ⌘E는 MenuBridge가 처리하지만 버튼 클릭은 별도 wiring 필요.
   const btnPdf = document.getElementById('btn-pdf')
   btnPdf?.addEventListener('click', (e) => {
     e.stopPropagation()
-    pdfExporter.export().catch(console.error)
+    pdfExporter.export().catch(reportError('PDF 내보내기'))
   })
 
   // ── Wiring: editor 변경 → doc 수정 표시 ──────────────────
@@ -57,14 +65,14 @@ async function bootstrap(): Promise<void> {
 
   // ── Menu / OS file-open 이벤트 라우팅 ───────────────────
   const menu = new MenuBridge({
-    onNewFile: () => fileService.newFile().catch(console.error),
-    onOpen: () => fileService.open().catch(console.error),
-    onSave: () => fileService.save().catch(console.error),
-    onSaveAs: () => fileService.saveAs().catch(console.error),
-    onExportPdf: () => pdfExporter.export().catch(console.error),
+    onNewFile: () => fileService.newFile().catch(reportError('새 파일')),
+    onOpen: () => fileService.open().catch(reportError('파일 열기')),
+    onSave: () => fileService.save().catch(reportError('저장')),
+    onSaveAs: () => fileService.saveAs().catch(reportError('다른 이름으로 저장')),
+    onExportPdf: () => pdfExporter.export().catch(reportError('PDF 내보내기')),
     onShowStats: () => ui.toggleInfoPopover(),
-    onRecentOpen: (i) => fileService.openRecent(i).catch(console.error),
-    onOpenFromOs: (p) => fileService.openPath(p).catch(console.error),
+    onRecentOpen: (i) => fileService.openRecent(i).catch(reportError('최근 파일 열기')),
+    onOpenFromOs: (p) => fileService.openPath(p).catch(reportError('파일 열기')),
   })
   await menu.start()
 
