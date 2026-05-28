@@ -25,28 +25,17 @@ export class FileService {
     private readonly recent: RecentFilesStore,
   ) {}
 
-  async newFile(): Promise<void> {
-    if (!(await this.confirmDiscard('새 문서를 열까요?'))) return
-    await this.editor.load('')
-    this.doc.resetToNew()
-    this.lastDiskContent = null
-  }
-
-  async open(): Promise<void> {
-    if (!(await this.confirmDiscard('다른 파일을 열까요?'))) return
+  /**
+   * 열기 다이얼로그만 띄워 선택된 경로를 반환한다(로드는 하지 않음).
+   * 멀티 창 모드에서는 "현재 창에 로드할지 / 새 창을 띄울지"를 호출부(main.ts)가
+   * 결정하므로, 파일 선택과 로드를 분리한다. 취소 시 null.
+   */
+  async pickOpenPath(): Promise<string | null> {
     const selected = await openDialog({
       multiple: false,
       filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
     })
-    if (typeof selected !== 'string') return
-    await this.openPath(selected)
-  }
-
-  async openRecent(idx: number): Promise<void> {
-    const path = this.recent.list()[idx]
-    if (!path) return
-    if (!(await this.confirmDiscard('다른 파일을 열까요?'))) return
-    await this.openPath(path)
+    return typeof selected === 'string' ? selected : null
   }
 
   async openPath(path: string): Promise<void> {
@@ -151,13 +140,5 @@ export class FileService {
     } finally {
       this.isSyncing = false
     }
-  }
-
-  private async confirmDiscard(question: string): Promise<boolean> {
-    if (!this.doc.isModified) return true
-    return await ask(`저장하지 않은 변경 사항이 있습니다.\n${question}`, {
-      title: '저장되지 않은 변경 사항',
-      kind: 'warning',
-    })
   }
 }

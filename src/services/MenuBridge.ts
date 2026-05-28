@@ -1,4 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { MAX_RECENT } from './RecentFilesStore'
 
 export type MenuActions = {
@@ -27,19 +28,27 @@ export class MenuBridge {
 
   async start(): Promise<void> {
     const u = this.unlisteners
-    u.push(await listen('menu:new_file', () => this.actions.onNewFile()))
-    u.push(await listen('menu:open', () => this.actions.onOpen()))
-    u.push(await listen('menu:save', () => this.actions.onSave()))
-    u.push(await listen('menu:save_as', () => this.actions.onSaveAs()))
-    u.push(await listen('menu:export_pdf', () => this.actions.onExportPdf()))
-    u.push(await listen('menu:show_stats', () => this.actions.onShowStats()))
+    // 멀티 창: Rust가 menu:* / open:file을 "포커스된 창"에만 emit_to(WebviewWindow{label})
+    // 한다. 전역 listen(target: Any)은 그 targeted emit을 받지 못하므로, 이 창의 label을
+    // target으로 지정해 "내 창으로 향한" 이벤트만 받는다. (전역 broadcast는 여전히 수신)
+    const opts = { target: getCurrentWindow().label }
+    u.push(await listen('menu:new_file', () => this.actions.onNewFile(), opts))
+    u.push(await listen('menu:open', () => this.actions.onOpen(), opts))
+    u.push(await listen('menu:save', () => this.actions.onSave(), opts))
+    u.push(await listen('menu:save_as', () => this.actions.onSaveAs(), opts))
+    u.push(await listen('menu:export_pdf', () => this.actions.onExportPdf(), opts))
+    u.push(await listen('menu:show_stats', () => this.actions.onShowStats(), opts))
     for (let i = 0; i < MAX_RECENT; i++) {
-      u.push(await listen(`menu:recent_${i}`, () => this.actions.onRecentOpen(i)))
+      u.push(await listen(`menu:recent_${i}`, () => this.actions.onRecentOpen(i), opts))
     }
     u.push(
-      await listen<string>('open:file', (event) => {
-        if (event.payload) this.actions.onOpenFromOs(event.payload)
-      }),
+      await listen<string>(
+        'open:file',
+        (event) => {
+          if (event.payload) this.actions.onOpenFromOs(event.payload)
+        },
+        opts,
+      ),
     )
   }
 
