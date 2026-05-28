@@ -21,6 +21,14 @@ export class Document extends EventEmitter {
     return (this._isModified ? '● ' : '') + this._filename
   }
 
+  /**
+   * "깨끗한 새 문서" 여부 — 경로가 없고(저장된 적 없음) 수정도 없는 상태.
+   * 멀티 창에서 파일을 열 때 이 창을 재사용할지(true) 새 창을 띄울지(false) 판단에 쓴다.
+   */
+  get isPristine(): boolean {
+    return this._filePath === null && !this._isModified
+  }
+
   setPath(path: string): void {
     this._filePath = path
     this._filename = path.split('/').pop() ?? this._filename

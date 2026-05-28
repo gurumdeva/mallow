@@ -30,6 +30,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             update_recent_files,
             force_quit,
+            close_document_window,
             webview_ready,
         ])
         .setup(|app| {
@@ -47,12 +48,30 @@ pub fn run() {
 
             app.on_menu_event(move |app, event| {
                 let id = event.id().as_ref().to_string();
+                // 멀티 창: 메뉴 명령은 "현재 포커스된 창"만 처리해야 한다.
+                // app.emit은 모든 창에 broadcast되어 여러 창이 동시에 반응하므로,
+                // 포커스 창(없으면 첫 창)에만 emit_to로 전달한다.
+                let target = focused_or_any_label(app);
+                let send = |ev: String| {
+                    match &target {
+                        Some(label) => {
+                            let _ = app.emit_to(
+                                tauri::EventTarget::webview_window(label.clone()),
+                                &ev,
+                                (),
+                            );
+                        }
+                        None => {
+                            let _ = app.emit(&ev, ());
+                        }
+                    }
+                };
                 match id.as_str() {
                     "new_file" | "open" | "save" | "save_as" | "export_pdf" | "show_stats" => {
-                        let _ = app.emit(&format!("menu:{}", id), ());
+                        send(format!("menu:{}", id));
                     }
                     other if other.starts_with("recent_") => {
-                        let _ = app.emit(&format!("menu:{}", other), ());
+                        send(format!("menu:{}", other));
                     }
                     _ => {}
                 }
@@ -86,7 +105,15 @@ pub fn run() {
                     if let Ok(path) = url.to_file_path() {
                         let path_str = path.to_string_lossy().to_string();
                         if ready {
-                            let _ = app_handle.emit("open:file", &path_str);
+                            // warm start: 포커스된 창 한 곳에만 전달 → 그 창이 새 문서 창을 연다.
+                            // (broadcast하면 모든 창이 같은 파일로 새 창을 만들어 중복된다.)
+                            if let Some(label) = focused_or_any_label(app_handle) {
+                                let _ = app_handle.emit_to(
+                                    tauri::EventTarget::webview_window(label),
+                                    "open:file",
+                                    path_str,
+                                );
+                            }
                         } else {
                             app_handle
                                 .state::<PendingOpens>()
@@ -99,6 +126,19 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// 멀티 창 라우팅용: 현재 포커스된 창의 label, 없으면 아무 창의 label.
+/// 메뉴 명령·OS 파일 열기를 정확히 한 창에만 전달하기 위해 사용한다.
+/// (get_focused_window는 unstable feature라, 안정 API인 webview_windows + is_focused로 구현)
+fn focused_or_any_label<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<String> {
+    let windows = app.webview_windows();
+    for (label, w) in &windows {
+        if w.is_focused().unwrap_or(false) {
+            return Some(label.clone());
+        }
+    }
+    windows.keys().next().cloned()
 }
 
 fn recent_label(recent: &[String], i: usize) -> String {
@@ -247,6 +287,15 @@ fn update_recent_files(app: tauri::AppHandle, paths: Vec<String>) -> Result<(), 
 #[tauri::command]
 fn force_quit(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+/// 멀티 창에서 "현재 창만" 닫는다. (force_quit은 앱 전체를 종료하므로 마지막 창에서만 사용)
+/// Tauri v2 macOS에서 JS window.close()/destroy()가 onCloseRequested 콜백 내부에서
+/// 일관되게 동작하지 않는 이슈가 있어, Rust 측에서 호출 창을 destroy한다.
+/// destroy는 close와 달리 CloseRequested를 다시 발생시키지 않아 재진입이 없다.
+#[tauri::command]
+fn close_document_window(window: tauri::WebviewWindow) {
+    let _ = window.destroy();
 }
 
 /// JS bootstrap이 끝나 open:file listener가 활성화됐음을 신호하고, 동시에
