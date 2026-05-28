@@ -22,6 +22,7 @@ import { FindReplace } from './ui/FindReplace'
 import { StatusBar } from './ui/StatusBar'
 import { ToastService, formatError } from './ui/ToastService'
 import { setLocale, resolveLang, t } from './i18n'
+import { welcomeDoc } from './welcome'
 
 const DEFAULT_MARKDOWN = ''
 
@@ -257,6 +258,11 @@ async function bootstrap(): Promise<void> {
       if (pending.length > 0) {
         await fileService.openPath(pending[0]).catch(reportError(t('error.openFile')))
         for (const p of pending.slice(1)) openDocumentWindow(p).catch(reportError(t('error.openWindow')))
+      } else if (!localStorage.getItem('mallow.welcomed')) {
+        // 첫 실행 + 열 파일 없음 → 환영 문서 1회 표시. load()가 change 이벤트를 억제하므로
+        // 문서는 미수정(pristine) 상태로 남아, 닫을 때 저장 확인이 뜨지 않고 파일 열기 시 재사용된다.
+        localStorage.setItem('mallow.welcomed', '1')
+        await editor.load(welcomeDoc(lang)).catch(() => {})
       }
     } catch (e) {
       console.error('webview_ready failed:', e)
