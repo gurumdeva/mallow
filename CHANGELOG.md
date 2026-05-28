@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.2.0] - 2026-05-29
+
+### Added
+- **Find & Replace (⌘F)**: search the document with live match highlighting and a match counter, jump between matches (Enter / Shift+Enter), replace the current match or all matches, and an optional case-sensitive mode. Available from Edit → Find… and localized (Korean / English / Japanese).
+- **Automated tests + CI**: a Vitest unit-test suite for the core logic modules and a GitHub Actions workflow that type-checks and runs the tests on every push and pull request.
+
+### Changed
+- The interface language is pinned once at startup, so the native menu and the in-app UI always stay in the same language for the whole session.
+
+### Fixed
+- Prevented a possible one-frame white flash when opening a new window.
+- A rapid double-press of ⌘Q no longer stacks multiple quit-confirmation dialogs.
+
 ## [0.1.3] - 2026-05-29
 
 ### Added
@@ -46,6 +59,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.2.0]: https://github.com/gurumdeva/mallow/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/gurumdeva/mallow/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/gurumdeva/mallow/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/gurumdeva/mallow/compare/v0.1.0...v0.1.1
