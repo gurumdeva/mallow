@@ -26,7 +26,8 @@
     "minimize": "Minimize",
     "zoom": "Zoom",
     "fullscreen": "Toggle Full Screen",
-    "closeWindow": "Close Window"
+    "closeWindow": "Close Window",
+    "find": "Find…"
   },
   "titlebar": {
     "styleTip": "Text Style",
@@ -103,5 +104,15 @@
   },
   "toast": {
     "unknownError": "Unknown error"
+  },
+  "find": {
+    "findPlaceholder": "Find",
+    "replacePlaceholder": "Replace",
+    "replace": "Replace",
+    "replaceAll": "All",
+    "matchCase": "Match Case",
+    "previous": "Previous (⇧⏎)",
+    "next": "Next (⏎)",
+    "close": "Close (Esc)"
   }
 }

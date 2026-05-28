@@ -9,6 +9,7 @@ export type MenuActions = {
   onSaveAs: () => void
   onExportPdf: () => void
   onShowStats: () => void
+  onFind: () => void
   onRecentOpen: (idx: number) => void
   onOpenFromOs: (path: string) => void
   onQuit: () => void
@@ -39,6 +40,7 @@ export class MenuBridge {
     u.push(await listen('menu:save_as', () => this.actions.onSaveAs(), opts))
     u.push(await listen('menu:export_pdf', () => this.actions.onExportPdf(), opts))
     u.push(await listen('menu:show_stats', () => this.actions.onShowStats(), opts))
+    u.push(await listen('menu:find', () => this.actions.onFind(), opts))
     for (let i = 0; i < MAX_RECENT; i++) {
       u.push(await listen(`menu:recent_${i}`, () => this.actions.onRecentOpen(i), opts))
     }
