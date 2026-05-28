@@ -16,10 +16,15 @@
     </style>
   </head>
   <body>
-    <header id="titlebar">
-      <div class="titlebar-left"></div>
+    <!-- data-tauri-drag-region: Tauri(WKWebView)에서 창을 드래그로 이동시키는 표준 방식.
+         (-webkit-app-region은 Chromium 전용이라 macOS WKWebView에서는 무시된다.)
+         Wry는 mousedown된 "정확한 요소"가 이 속성을 가졌는지만 검사하므로,
+         헤더/좌우 빈 영역에만 붙이고 파일명·코너 버튼에는 붙이지 않으면
+         빈 영역은 드래그, 버튼은 클릭(편집·동작)이 그대로 유지된다. -->
+    <header id="titlebar" data-tauri-drag-region>
+      <div class="titlebar-left" data-tauri-drag-region></div>
       <button class="titlebar-center" id="file-name" type="button">새 문서.md</button>
-      <div class="titlebar-right">
+      <div class="titlebar-right" data-tauri-drag-region>
         <button class="corner-btn" id="btn-style" title="텍스트 스타일">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="4 7 4 4 20 4 20 7"/>
