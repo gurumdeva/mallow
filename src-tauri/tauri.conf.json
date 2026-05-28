@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "새 문서.md",
+        "title": "Mallow",
         "width": 980,
         "height": 760,
         "resizable": true,

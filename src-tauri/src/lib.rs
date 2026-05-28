@@ -55,6 +55,7 @@ pub fn run() {
             close_document_window,
             apply_dark_webview,
             webview_ready,
+            app_locale,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -191,7 +192,91 @@ fn focused_or_any_label<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<
     windows.keys().next().cloned()
 }
 
-fn recent_label(recent: &[String], i: usize) -> String {
+// ── i18n: 네이티브 메뉴 현지화 ────────────────────────────────
+// 언어 파일은 프런트엔드(src/i18n/locales)와 "동일한 JSON"을 단일 소스로 쓴다.
+// Rust는 빌드시 그 파일을 include_str!로 임베드하고 menu 섹션만 파싱해 메뉴를 만든다.
+const EN_JSON: &str = include_str!("../../src/i18n/locales/en.json");
+const KO_JSON: &str = include_str!("../../src/i18n/locales/ko.json");
+const JA_JSON: &str = include_str!("../../src/i18n/locales/ja.json");
+
+/// 언어 파일의 menu 섹션. 프런트엔드 JSON의 camelCase 키를 serde rename으로 매핑한다.
+#[derive(serde::Deserialize)]
+struct MenuStrings {
+    file: String,
+    edit: String,
+    view: String,
+    window: String,
+    new: String,
+    open: String,
+    #[serde(rename = "openRecent")]
+    open_recent: String,
+    #[serde(rename = "recentEmpty")]
+    recent_empty: String,
+    save: String,
+    #[serde(rename = "saveAs")]
+    save_as: String,
+    #[serde(rename = "exportPdf")]
+    export_pdf: String,
+    #[serde(rename = "showStats")]
+    show_stats: String,
+    quit: String,
+    // predefined 항목 — muda가 영문 하드코딩한 제목을 명시 텍스트로 덮어쓴다.
+    about: String,
+    hide: String,
+    #[serde(rename = "hideOthers")]
+    hide_others: String,
+    #[serde(rename = "showAll")]
+    show_all: String,
+    undo: String,
+    redo: String,
+    cut: String,
+    copy: String,
+    paste: String,
+    #[serde(rename = "selectAll")]
+    select_all: String,
+    minimize: String,
+    zoom: String,
+    fullscreen: String,
+    #[serde(rename = "closeWindow")]
+    close_window: String,
+}
+
+#[derive(serde::Deserialize)]
+struct LocaleStrings {
+    menu: MenuStrings,
+}
+
+/// 기기 OS 언어를 'ko' | 'en'으로 판정한다. 한국어로 시작하면 ko, 그 외에는 모두 en.
+/// sys-locale은 CoreFoundation에서 직접 읽으므로 비현지화 앱의 navigator.language
+/// 함정을 피한다. 프런트엔드도 app_locale 명령으로 같은 판정을 공유한다.
+fn detect_lang() -> &'static str {
+    match sys_locale::get_locale() {
+        Some(l) if l.to_lowercase().starts_with("ko") => "ko",
+        Some(l) if l.to_lowercase().starts_with("ja") => "ja",
+        _ => "en",
+    }
+}
+
+/// 감지된 언어의 메뉴 문자열을 돌려준다. 파싱 실패 시 en으로 폴백한다.
+fn menu_strings(lang: &str) -> MenuStrings {
+    let raw = match lang {
+        "ko" => KO_JSON,
+        "ja" => JA_JSON,
+        _ => EN_JSON,
+    };
+    serde_json::from_str::<LocaleStrings>(raw)
+        .or_else(|_| serde_json::from_str::<LocaleStrings>(EN_JSON))
+        .expect("en.json must contain a valid menu section")
+        .menu
+}
+
+/// 프런트엔드가 기기 언어를 알아내 i18n을 동기화하기 위한 명령(메뉴와 동일 판정).
+#[tauri::command]
+fn app_locale() -> &'static str {
+    detect_lang()
+}
+
+fn recent_label(recent: &[String], i: usize, empty: &str) -> String {
     recent
         .get(i)
         .map(|p| {
@@ -201,38 +286,42 @@ fn recent_label(recent: &[String], i: usize) -> String {
                 .unwrap_or(p.as_str())
                 .to_string()
         })
-        .unwrap_or_else(|| "(없음)".to_string())
+        .unwrap_or_else(|| empty.to_string())
 }
 
 fn build_app_menu<R: tauri::Runtime>(
     handle: &tauri::AppHandle<R>,
     recent_files: &[String],
 ) -> tauri::Result<Menu<R>> {
+    // 기기 언어의 메뉴 문자열. (predefined 항목은 macOS가 시스템 언어로 자동 현지화하므로
+    //  여기서 다루는 건 커스텀 항목/서브메뉴 제목뿐이다. "Mallow"는 브랜드명이라 그대로 둔다.)
+    let m = menu_strings(detect_lang());
+
     // ── App 메뉴 ─────────────────────────────────────────
     let app_menu = Submenu::with_items(
         handle,
         "Mallow",
         true,
         &[
-            &PredefinedMenuItem::about(handle, None, None)?,
+            &PredefinedMenuItem::about(handle, Some(m.about.as_str()), None)?,
             &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::hide(handle, None)?,
-            &PredefinedMenuItem::hide_others(handle, None)?,
-            &PredefinedMenuItem::show_all(handle, None)?,
+            &PredefinedMenuItem::hide(handle, Some(m.hide.as_str()))?,
+            &PredefinedMenuItem::hide_others(handle, Some(m.hide_others.as_str()))?,
+            &PredefinedMenuItem::show_all(handle, Some(m.show_all.as_str()))?,
             &PredefinedMenuItem::separator(handle)?,
             // 종료 전 각 창의 미저장 변경을 확인하기 위해 predefined quit 대신
             // 커스텀 항목을 쓴다. "menu:quit"를 전 창에 broadcast → 각 창이 스스로
             // 확인 후 닫히고, 마지막 창이 닫히면 RunEvent에서 exit한다.
-            &MenuItem::with_id(handle, "quit", "Quit Mallow", true, Some("CmdOrCtrl+Q"))?,
+            &MenuItem::with_id(handle, "quit", m.quit.as_str(), true, Some("CmdOrCtrl+Q"))?,
         ],
     )?;
 
     // ── Open Recent 서브메뉴 (5 슬롯) ───────────────────
-    let l0 = recent_label(recent_files, 0);
-    let l1 = recent_label(recent_files, 1);
-    let l2 = recent_label(recent_files, 2);
-    let l3 = recent_label(recent_files, 3);
-    let l4 = recent_label(recent_files, 4);
+    let l0 = recent_label(recent_files, 0, m.recent_empty.as_str());
+    let l1 = recent_label(recent_files, 1, m.recent_empty.as_str());
+    let l2 = recent_label(recent_files, 2, m.recent_empty.as_str());
+    let l3 = recent_label(recent_files, 3, m.recent_empty.as_str());
+    let l4 = recent_label(recent_files, 4, m.recent_empty.as_str());
     let r0 = MenuItem::with_id(handle, "recent_0", l0.as_str(), recent_files.len() > 0, None::<&str>)?;
     let r1 = MenuItem::with_id(handle, "recent_1", l1.as_str(), recent_files.len() > 1, None::<&str>)?;
     let r2 = MenuItem::with_id(handle, "recent_2", l2.as_str(), recent_files.len() > 2, None::<&str>)?;
@@ -240,7 +329,7 @@ fn build_app_menu<R: tauri::Runtime>(
     let r4 = MenuItem::with_id(handle, "recent_4", l4.as_str(), recent_files.len() > 4, None::<&str>)?;
     let recent_menu = Submenu::with_items(
         handle,
-        "Open Recent",
+        m.open_recent.as_str(),
         true,
         &[&r0, &r1, &r2, &r3, &r4],
     )?;
@@ -248,18 +337,18 @@ fn build_app_menu<R: tauri::Runtime>(
     // ── File 메뉴 ────────────────────────────────────────
     let file_menu = Submenu::with_items(
         handle,
-        "File",
+        m.file.as_str(),
         true,
         &[
-            &MenuItem::with_id(handle, "new_file", "New", true, Some("CmdOrCtrl+N"))?,
+            &MenuItem::with_id(handle, "new_file", m.new.as_str(), true, Some("CmdOrCtrl+N"))?,
             &PredefinedMenuItem::separator(handle)?,
-            &MenuItem::with_id(handle, "open", "Open…", true, Some("CmdOrCtrl+O"))?,
+            &MenuItem::with_id(handle, "open", m.open.as_str(), true, Some("CmdOrCtrl+O"))?,
             &recent_menu,
-            &MenuItem::with_id(handle, "save", "Save", true, Some("CmdOrCtrl+S"))?,
+            &MenuItem::with_id(handle, "save", m.save.as_str(), true, Some("CmdOrCtrl+S"))?,
             &MenuItem::with_id(
                 handle,
                 "save_as",
-                "Save As…",
+                m.save_as.as_str(),
                 true,
                 Some("Shift+CmdOrCtrl+S"),
             )?,
@@ -267,57 +356,57 @@ fn build_app_menu<R: tauri::Runtime>(
             &MenuItem::with_id(
                 handle,
                 "export_pdf",
-                "Export as PDF…",
+                m.export_pdf.as_str(),
                 true,
                 Some("CmdOrCtrl+E"),
             )?,
             &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::close_window(handle, None)?,
+            &PredefinedMenuItem::close_window(handle, Some(m.close_window.as_str()))?,
         ],
     )?;
 
     // ── Edit 메뉴 ────────────────────────────────────────
     let edit_menu = Submenu::with_items(
         handle,
-        "Edit",
+        m.edit.as_str(),
         true,
         &[
-            &PredefinedMenuItem::undo(handle, None)?,
-            &PredefinedMenuItem::redo(handle, None)?,
+            &PredefinedMenuItem::undo(handle, Some(m.undo.as_str()))?,
+            &PredefinedMenuItem::redo(handle, Some(m.redo.as_str()))?,
             &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::cut(handle, None)?,
-            &PredefinedMenuItem::copy(handle, None)?,
-            &PredefinedMenuItem::paste(handle, None)?,
-            &PredefinedMenuItem::select_all(handle, None)?,
+            &PredefinedMenuItem::cut(handle, Some(m.cut.as_str()))?,
+            &PredefinedMenuItem::copy(handle, Some(m.copy.as_str()))?,
+            &PredefinedMenuItem::paste(handle, Some(m.paste.as_str()))?,
+            &PredefinedMenuItem::select_all(handle, Some(m.select_all.as_str()))?,
         ],
     )?;
 
     // ── View 메뉴 ────────────────────────────────────────
     let view_menu = Submenu::with_items(
         handle,
-        "View",
+        m.view.as_str(),
         true,
         &[
             &MenuItem::with_id(
                 handle,
                 "show_stats",
-                "Show Statistics",
+                m.show_stats.as_str(),
                 true,
                 Some("CmdOrCtrl+Shift+I"),
             )?,
             &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::fullscreen(handle, None)?,
+            &PredefinedMenuItem::fullscreen(handle, Some(m.fullscreen.as_str()))?,
         ],
     )?;
 
     // ── Window 메뉴 ──────────────────────────────────────
     let window_menu = Submenu::with_items(
         handle,
-        "Window",
+        m.window.as_str(),
         true,
         &[
-            &PredefinedMenuItem::minimize(handle, None)?,
-            &PredefinedMenuItem::maximize(handle, None)?,
+            &PredefinedMenuItem::minimize(handle, Some(m.minimize.as_str()))?,
+            &PredefinedMenuItem::maximize(handle, Some(m.zoom.as_str()))?,
         ],
     )?;
 

@@ -1,3 +1,5 @@
+import { t } from '../i18n'
+
 type ToastKind = 'error' | 'info'
 
 /**
@@ -52,7 +54,7 @@ export class ToastService {
  * unknown 에러 객체를 사용자에게 보여줄 짧은 문자열로 변환.
  * 너무 길거나 stack trace를 그대로 보여주면 곤란하므로 message만 추출, 최대 200자.
  */
-export function formatError(e: unknown, fallback = '알 수 없는 오류'): string {
+export function formatError(e: unknown, fallback = t('toast.unknownError')): string {
   if (e == null) return fallback
   let msg = ''
   if (e instanceof Error) msg = e.message

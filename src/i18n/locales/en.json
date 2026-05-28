@@ -1,0 +1,107 @@
+{
+  "menu": {
+    "file": "File",
+    "edit": "Edit",
+    "view": "View",
+    "window": "Window",
+    "new": "New",
+    "open": "Open…",
+    "openRecent": "Open Recent",
+    "recentEmpty": "(None)",
+    "save": "Save",
+    "saveAs": "Save As…",
+    "exportPdf": "Export as PDF…",
+    "showStats": "Show Statistics",
+    "quit": "Quit Mallow",
+    "about": "About Mallow",
+    "hide": "Hide Mallow",
+    "hideOthers": "Hide Others",
+    "showAll": "Show All",
+    "undo": "Undo",
+    "redo": "Redo",
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select All",
+    "minimize": "Minimize",
+    "zoom": "Zoom",
+    "fullscreen": "Toggle Full Screen",
+    "closeWindow": "Close Window"
+  },
+  "titlebar": {
+    "styleTip": "Text Style",
+    "exportPdfTip": "Export as PDF (⌘E)",
+    "infoTip": "Document Info (⌘⇧I)"
+  },
+  "doc": {
+    "untitled": "Untitled.md",
+    "fallbackName": "Document"
+  },
+  "editor": {
+    "placeholder": "Write something…"
+  },
+  "stats": {
+    "title": "Statistics",
+    "tabTip": "Statistics",
+    "words": "Words",
+    "characters": "Characters",
+    "paragraphs": "Paragraphs",
+    "readTime": "Read Time",
+    "minuteUnit": "m",
+    "modDate": "Modification Date"
+  },
+  "toc": {
+    "title": "Table of Contents",
+    "tabTip": "Table of Contents",
+    "empty": "No headings to display."
+  },
+  "style": {
+    "title": "Style",
+    "headingSection": "Heading",
+    "blockSection": "Block",
+    "inlineSection": "Inline",
+    "body": "Body",
+    "tip": {
+      "h1": "Heading 1",
+      "h2": "Heading 2",
+      "h3": "Heading 3",
+      "body": "Body",
+      "quote": "Quote",
+      "bullet": "Bullet List",
+      "numbered": "Numbered List",
+      "code": "Code Block",
+      "hr": "Divider",
+      "bold": "Bold (⌘B)",
+      "italic": "Italic (⌘I)",
+      "strike": "Strikethrough",
+      "inlineCode": "Inline Code"
+    }
+  },
+  "dialog": {
+    "unsavedClose": {
+      "title": "Unsaved Changes",
+      "body": "'{name}' has unsaved changes.\nAre you sure you want to close it?"
+    },
+    "unsavedQuit": {
+      "title": "Quit",
+      "body": "You have {count} document(s) with unsaved changes.\nQuit and discard the changes?"
+    },
+    "externalChange": {
+      "title": "External Change Detected",
+      "body": "'{name}' was changed elsewhere.\nReload from disk?\nYour unsaved edits will be lost."
+    }
+  },
+  "error": {
+    "rename": "Rename",
+    "exportPdf": "PDF Export",
+    "openFile": "Open File",
+    "openWindow": "Open Window",
+    "save": "Save",
+    "saveAs": "Save As",
+    "openRecent": "Open Recent",
+    "syncFile": "File Sync"
+  },
+  "toast": {
+    "unknownError": "Unknown error"
+  }
+}

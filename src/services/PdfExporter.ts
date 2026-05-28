@@ -3,6 +3,7 @@ import html2pdf from 'html2pdf.js'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { Document } from '../domain/Document'
+import { t } from '../i18n'
 
 /**
  * 본문(.ProseMirror)을 클론해 라이트 톤으로 강제한 후 A4 PDF로 내보낸다.
@@ -22,7 +23,7 @@ export class PdfExporter {
     const source = document.querySelector('.ProseMirror') as HTMLElement | null
     if (!source) return
 
-    const filenameBase = this.doc.filename.replace(/\.md$/, '') || '문서'
+    const filenameBase = this.doc.filename.replace(/\.md$/, '') || t('doc.fallbackName')
 
     // 1) 사용자 path 선택. 취소하면 즉시 종료 (PDF 렌더링 비용 없이).
     // 가드는 dialog 직전에 켜야 dialog가 열려있는 동안에도 중복 호출이 막힌다.

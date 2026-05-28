@@ -1,0 +1,107 @@
+{
+  "menu": {
+    "file": "ファイル",
+    "edit": "編集",
+    "view": "表示",
+    "window": "ウインドウ",
+    "new": "新規",
+    "open": "開く…",
+    "openRecent": "最近使った項目を開く",
+    "recentEmpty": "（なし）",
+    "save": "保存",
+    "saveAs": "別名で保存…",
+    "exportPdf": "PDFで書き出す…",
+    "showStats": "統計を表示",
+    "quit": "Mallowを終了",
+    "about": "Mallowについて",
+    "hide": "Mallowを隠す",
+    "hideOthers": "ほかを隠す",
+    "showAll": "すべてを表示",
+    "undo": "取り消す",
+    "redo": "やり直す",
+    "cut": "カット",
+    "copy": "コピー",
+    "paste": "ペースト",
+    "selectAll": "すべてを選択",
+    "minimize": "しまう",
+    "zoom": "拡大/縮小",
+    "fullscreen": "フルスクリーンの切り替え",
+    "closeWindow": "ウインドウを閉じる"
+  },
+  "titlebar": {
+    "styleTip": "テキストスタイル",
+    "exportPdfTip": "PDFで書き出す (⌘E)",
+    "infoTip": "ドキュメント情報 (⌘⇧I)"
+  },
+  "doc": {
+    "untitled": "無題.md",
+    "fallbackName": "ドキュメント"
+  },
+  "editor": {
+    "placeholder": "入力してください…"
+  },
+  "stats": {
+    "title": "統計",
+    "tabTip": "統計",
+    "words": "単語",
+    "characters": "文字",
+    "paragraphs": "段落",
+    "readTime": "読了時間",
+    "minuteUnit": "分",
+    "modDate": "変更日"
+  },
+  "toc": {
+    "title": "目次",
+    "tabTip": "目次",
+    "empty": "表示する見出しがありません。"
+  },
+  "style": {
+    "title": "スタイル",
+    "headingSection": "見出し",
+    "blockSection": "ブロック",
+    "inlineSection": "インライン",
+    "body": "本文",
+    "tip": {
+      "h1": "見出し1",
+      "h2": "見出し2",
+      "h3": "見出し3",
+      "body": "本文",
+      "quote": "引用",
+      "bullet": "箇条書き",
+      "numbered": "番号付きリスト",
+      "code": "コードブロック",
+      "hr": "区切り線",
+      "bold": "太字 (⌘B)",
+      "italic": "斜体 (⌘I)",
+      "strike": "取り消し線",
+      "inlineCode": "インラインコード"
+    }
+  },
+  "dialog": {
+    "unsavedClose": {
+      "title": "保存されていない変更",
+      "body": "「{name}」に保存されていない変更があります。\n閉じてもよろしいですか？"
+    },
+    "unsavedQuit": {
+      "title": "終了",
+      "body": "保存されていないドキュメントが{count}個あります。\n変更を破棄して終了しますか？"
+    },
+    "externalChange": {
+      "title": "外部での変更を検出",
+      "body": "「{name}」が別の場所で変更されました。\nディスクの内容で再読み込みしますか？\n編集中の内容は失われます。"
+    }
+  },
+  "error": {
+    "rename": "名前の変更",
+    "exportPdf": "PDF書き出し",
+    "openFile": "ファイルを開く",
+    "openWindow": "新規ウインドウ",
+    "save": "保存",
+    "saveAs": "別名で保存",
+    "openRecent": "最近使った項目を開く",
+    "syncFile": "ファイル同期"
+  },
+  "toast": {
+    "unknownError": "不明なエラー"
+  }
+}
