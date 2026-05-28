@@ -12,6 +12,7 @@ import { TocExtractor } from './analysis/TocExtractor'
 import { RecentFilesStore } from './services/RecentFilesStore'
 import { WindowTitleSync } from './services/WindowTitleSync'
 import { PdfExporter } from './services/PdfExporter'
+import { HtmlExporter } from './services/HtmlExporter'
 import { FileService } from './services/FileService'
 import { MenuBridge } from './services/MenuBridge'
 import { TitleBarView } from './ui/TitleBarView'
@@ -62,6 +63,7 @@ async function bootstrap(): Promise<void> {
   const recent = new RecentFilesStore()
   new WindowTitleSync(doc)   // doc 구독해서 윈도우 타이틀 동기화
   const pdfExporter = new PdfExporter(doc)
+  const htmlExporter = new HtmlExporter(doc)
   const fileService = new FileService(doc, editor, recent)
 
   // ── Toast 알림 인프라 + 공용 에러 핸들러 ────────────────
@@ -206,6 +208,7 @@ async function bootstrap(): Promise<void> {
     onSave: () => fileService.save().catch(reportError(t('error.save'))),
     onSaveAs: () => fileService.saveAs().catch(reportError(t('error.saveAs'))),
     onExportPdf: () => pdfExporter.export().catch(reportError(t('error.exportPdf'))),
+    onExportHtml: () => htmlExporter.export().catch(reportError(t('error.exportHtml'))),
     onShowStats: () => ui.toggleInfoPopover(),
     onFind: () => findReplace.toggle(),
     onRecentOpen: (i) => {

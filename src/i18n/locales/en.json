@@ -11,6 +11,7 @@
     "save": "Save",
     "saveAs": "Save As…",
     "exportPdf": "Export as PDF…",
+    "exportHtml": "Export as HTML…",
     "showStats": "Show Statistics",
     "quit": "Quit Mallow",
     "about": "About Mallow",
@@ -95,6 +96,7 @@
   "error": {
     "rename": "Rename",
     "exportPdf": "PDF Export",
+    "exportHtml": "HTML Export",
     "openFile": "Open File",
     "openWindow": "Open Window",
     "save": "Save",

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.6.0] - 2026-05-29
+
+### Added
+- **Export as HTML** (File → Export as HTML…, ⇧⌘E): save the current document as a self-contained, styled HTML file you can open in any browser or paste elsewhere. Localized (Korean / English / Japanese).
+
 ## [0.5.0] - 2026-05-29
 
 ### Added
@@ -74,6 +79,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.6.0]: https://github.com/gurumdeva/mallow/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/gurumdeva/mallow/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/gurumdeva/mallow/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/gurumdeva/mallow/compare/v0.2.0...v0.3.0
