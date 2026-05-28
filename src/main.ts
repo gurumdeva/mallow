@@ -1,7 +1,7 @@
 import './style.css'
 import { ask } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { WebviewWindow, getAllWebviewWindows } from '@tauri-apps/api/webviewWindow'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { invoke } from '@tauri-apps/api/core'
 
 import { Document } from './domain/Document'
@@ -10,7 +10,6 @@ import { EditorController } from './editor/EditorController'
 import { StatsCalculator } from './analysis/StatsCalculator'
 import { TocExtractor } from './analysis/TocExtractor'
 import { RecentFilesStore } from './services/RecentFilesStore'
-import { RecentMenuSync } from './services/RecentMenuSync'
 import { WindowTitleSync } from './services/WindowTitleSync'
 import { PdfExporter } from './services/PdfExporter'
 import { FileService } from './services/FileService'
@@ -34,24 +33,28 @@ async function bootstrap(): Promise<void> {
   const toc = new TocExtractor()
 
   // ── Services ────────────────────────────────────────────
+  // recent: 단일 소스는 Rust(RecentFiles, Mutex+영속); 여기선 async 래퍼. 메뉴 동기화도 Rust가 담당.
   const recent = new RecentFilesStore()
-  new RecentMenuSync(recent) // store 구독해서 메뉴 동기화
   new WindowTitleSync(doc)   // doc 구독해서 윈도우 타이틀 동기화
   const pdfExporter = new PdfExporter(doc)
   const fileService = new FileService(doc, editor, recent)
 
-  // ── Views (stateless, 상태는 doc/ui에서만 read) ──────────
-  new TitleBarView(doc, ui)
-  new FilenamePopover(doc, ui)
-  new InfoPopover(doc, ui, editor, stats, toc)
-  new StylePopover(ui, editor)
-
   // ── Toast 알림 인프라 + 공용 에러 핸들러 ────────────────
+  // (View보다 먼저 정의: FilenamePopover의 rename 콜백에서 참조하기 때문)
   const toast = new ToastService()
   const reportError = (label: string) => (e: unknown) => {
     console.error(label, e)
     toast.error(`${label}: ${formatError(e)}`)
   }
+
+  // ── Views (stateless, 상태는 doc/ui에서만 read) ──────────
+  new TitleBarView(doc, ui)
+  // 파일명 확정: 저장된 문서면 디스크 파일까지 rename, 새 문서면 표시명만 (FileService.applyRename).
+  new FilenamePopover(doc, ui, (name) =>
+    fileService.applyRename(name).catch(reportError('이름 변경')),
+  )
+  new InfoPopover(doc, ui, editor, stats, toc)
+  new StylePopover(ui, editor)
 
   // ── Title bar의 PDF 아이콘 클릭 → export ─────────────────
   // 키보드 ⌘E는 MenuBridge가 처리하지만 버튼 클릭은 별도 wiring 필요.
@@ -64,7 +67,21 @@ async function bootstrap(): Promise<void> {
   // ── Wiring: editor 변경 → doc 수정 표시 ──────────────────
   editor.on('change', () => doc.markModified())
 
+  // 이 창의 미저장 여부를 Rust에 보고한다(⌘Q 원자적 종료 판단용).
+  // doc 'changed'는 자주 불리므로 isModified가 "실제로 바뀔 때"만 IPC를 보낸다.
+  let reportedDirty = false
+  doc.on('changed', () => {
+    if (doc.isModified !== reportedDirty) {
+      reportedDirty = doc.isModified
+      invoke('set_window_dirty', { dirty: reportedDirty }).catch(() => {})
+    }
+  })
+
   const win = getCurrentWindow()
+
+  // 새 창(doc-*)은 setup()의 다크 webview 처리를 받지 못하므로 여기서 적용한다.
+  // (main 창은 setup에서 이미 처리됨 → 중복 방지로 제외)
+  if (win.label !== 'main') invoke('apply_dark_webview').catch(() => {})
 
   // ── 멀티 창 헬퍼 ─────────────────────────────────────────
   // 단일 프로세스 + 여러 창. New/Open은 현재 문서를 덮지 않고 새 창을 띄운다.
@@ -107,6 +124,21 @@ async function bootstrap(): Promise<void> {
     }
   }
 
+  // 현재 창 닫기: 미저장이면 확인 후 close_document_window로 이 창만 destroy한다.
+  // 마지막 창이면 Rust RunEvent가 webview_windows 빈 것을 보고 앱을 종료한다.
+  // 창 닫기 버튼/⌘W(onCloseRequested)와 ⌘Q(menu:quit) 양쪽에서 공용으로 쓴다.
+  const closeThisWindow = async (): Promise<void> => {
+    if (doc.isModified) {
+      // 멀티 창에서 여러 확인창이 떠도 구분되도록 파일명을 함께 표시.
+      const ok = await ask(
+        `'${doc.filename}'에 저장하지 않은 변경 사항이 있습니다.\n정말 닫으시겠습니까?`,
+        { title: '저장되지 않은 변경 사항', kind: 'warning' },
+      )
+      if (!ok) return // 취소 → 창 유지
+    }
+    invoke('close_document_window').catch(() => {})
+  }
+
   // ── 초기 콘텐츠 로드 ────────────────────────────────────
   // 메뉴 리스너 활성화 전에 editor를 초기화해, init 중 메뉴 입력이
   // half-initialized Crepe에 dispatch되는 race를 막는다.
@@ -129,10 +161,30 @@ async function bootstrap(): Promise<void> {
     onExportPdf: () => pdfExporter.export().catch(reportError('PDF 내보내기')),
     onShowStats: () => ui.toggleInfoPopover(),
     onRecentOpen: (i) => {
-      const p = recent.list()[i]
-      if (p) handleOpenPath(p)
+      recent
+        .list()
+        .then((list) => {
+          const p = list[i]
+          if (p) handleOpenPath(p)
+        })
+        .catch(reportError('최근 파일 열기'))
     },
     onOpenFromOs: (p) => handleOpenPath(p),
+    // ⌘Q: 포커스 창이 코디네이터. 전체 미저장 문서 수를 Rust에서 조회해 통합 확인 1회 →
+    // 종료(quit_app=app.exit) 또는 취소. 부분 종료(일부 창만 닫힘)가 발생하지 않는다.
+    onQuit: () => {
+      void (async () => {
+        const n = await invoke<number>('dirty_window_count').catch(() => 0)
+        if (n > 0) {
+          const ok = await ask(
+            `저장하지 않은 문서가 ${n}개 있습니다.\n변경 사항을 잃고 종료하시겠습니까?`,
+            { title: '종료', kind: 'warning' },
+          )
+          if (!ok) return
+        }
+        invoke('quit_app').catch(() => {})
+      })()
+    },
   })
   await menu.start()
 
@@ -168,25 +220,12 @@ async function bootstrap(): Promise<void> {
   })
 
   // ── 윈도우 닫기 (멀티 창) ────────────────────────────────
-  // 미저장이면 확인 후, 마지막 창이면 앱 종료(force_quit), 아니면 이 창만 닫는다.
-  // Tauri v2 macOS에서 콜백 내부의 native close가 일관되지 않아, 항상 preventDefault
-  // 한 뒤 Rust 커맨드(force_quit / close_document_window=window.destroy)로 명시 종료한다.
-  win.onCloseRequested(async (event) => {
+  // 항상 preventDefault한 뒤 closeThisWindow로 확인→destroy를 직접 처리한다.
+  // (Tauri v2 macOS에서 콜백 내부 native close가 일관되지 않는 이슈 우회.)
+  // 마지막 창이면 Rust RunEvent::WindowEvent::Destroyed에서 앱을 종료한다.
+  win.onCloseRequested((event) => {
     event.preventDefault()
-    if (doc.isModified) {
-      const ok = await ask(
-        '저장하지 않은 변경 사항이 있습니다.\n정말 닫으시겠습니까?',
-        { title: '저장되지 않은 변경 사항', kind: 'warning' },
-      )
-      if (!ok) return // 사용자가 취소 → 창 유지
-    }
-    // 남은 창 수로 마지막 창 여부 판단 (현재 창 포함).
-    const remaining = await getAllWebviewWindows().catch(() => [])
-    if (remaining.length <= 1) {
-      invoke('force_quit').catch(() => {})
-    } else {
-      invoke('close_document_window').catch(() => {})
-    }
+    void closeThisWindow()
   })
 }
 

@@ -1,12 +1,14 @@
 import { ask, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 import { Document } from '../domain/Document'
 import { EditorController } from '../editor/EditorController'
 import { RecentFilesStore } from './RecentFilesStore'
 
 /**
- * 파일 IO 흐름(open/save/new)을 조립하는 application service.
+ * 파일 IO(열기 다이얼로그·경로 열기·저장·외부 변경 동기화)를 조립하는 application service.
  * Document·Editor·RecentFilesStore를 함께 mutate한다.
+ * (New/Open의 "현재 창 재사용 vs 새 창" 결정은 호출부 main.ts가 담당한다.)
  */
 export class FileService {
   /**
@@ -18,6 +20,8 @@ export class FileService {
   private lastDiskContent: string | null = null
   /** syncFromDiskIfChanged 재진입 방지 (ask 다이얼로그가 열린 동안 focus 재발화 등). */
   private isSyncing = false
+  /** save/saveAs 재진입 방지 (빠른 ⌘S 연타·⌘S+버튼 동시 → 더블 다이얼로그/쓰기 차단). */
+  private isSaving = false
 
   constructor(
     private readonly doc: Document,
@@ -38,52 +42,92 @@ export class FileService {
     return typeof selected === 'string' ? selected : null
   }
 
+  /**
+   * popover에서 입력한 새 파일명을 적용한다.
+   *  - 저장 전(새 문서, filePath 없음): 표시명만 변경 → 다음 저장 다이얼로그 기본값.
+   *  - 저장됨: 같은 디렉터리에서 디스크 파일을 실제로 rename하고 경로·recent를 갱신.
+   * 이름이 무효(base 비음)이거나 기존과 같으면 무시. rename 실패는 호출자가 toast.
+   */
+  async applyRename(name: string): Promise<void> {
+    const newName = Document.normalizeFilename(name)
+    if (!newName) return
+
+    const oldPath = this.doc.filePath
+    if (!oldPath) {
+      this.doc.rename(name) // 아직 저장 안 된 새 문서 → 표시명만
+      return
+    }
+    if (newName === this.doc.filename) return // 변경 없음
+
+    const slash = oldPath.lastIndexOf('/')
+    const newPath = oldPath.slice(0, slash + 1) + newName
+    await invoke('rename_file', { oldPath, newPath })
+    await this.recent.remove(oldPath)
+    this.doc.setPath(newPath) // filename + path 갱신
+    await this.recent.add(newPath)
+    // 내용은 그대로이므로 lastDiskContent는 유지.
+  }
+
   async openPath(path: string): Promise<void> {
+    // 읽기(=파일 존재 확인)만 분리해 catch. 읽기 실패일 때만 recent에서 정리하고
+    // 호출자(main.ts)가 toast를 띄우도록 rethrow한다. editor.load 등 읽기 이후
+    // 단계가 실패해도 파일 자체는 유효하므로 recent에서 지우지 않는다.
+    let content: string
     try {
-      const content = await readTextFile(path)
-      await this.editor.load(content)
-      this.doc.setPath(path)
-      this.doc.markSaved()
-      this.recent.add(path)
-      this.lastDiskContent = content
+      content = await readTextFile(path)
     } catch (e) {
-      // 존재하지 않는 파일 등 — recent 목록에서 정리한 뒤 호출자(main.ts)가
-      // toast를 띄울 수 있도록 에러를 다시 throw.
-      this.recent.remove(path)
+      await this.recent.remove(path)
       throw e
     }
+    await this.editor.load(content)
+    this.doc.setPath(path)
+    this.doc.markSaved()
+    await this.recent.add(path)
+    this.lastDiskContent = content
   }
 
   async save(): Promise<void> {
-    let path = this.doc.filePath
-    if (!path) {
+    if (this.isSaving) return
+    this.isSaving = true
+    try {
+      let path = this.doc.filePath
+      if (!path) {
+        const selected = await saveDialog({
+          defaultPath: this.doc.filename,
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        })
+        if (!selected) return
+        path = selected
+      }
+      const md = this.editor.getMarkdown()
+      await writeTextFile(path, md)
+      this.doc.setPath(path)
+      this.doc.markSaved()
+      await this.recent.add(path)
+      this.lastDiskContent = md
+    } finally {
+      this.isSaving = false
+    }
+  }
+
+  async saveAs(): Promise<void> {
+    if (this.isSaving) return
+    this.isSaving = true
+    try {
       const selected = await saveDialog({
         defaultPath: this.doc.filename,
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       })
       if (!selected) return
-      path = selected
+      const md = this.editor.getMarkdown()
+      await writeTextFile(selected, md)
+      this.doc.setPath(selected)
+      this.doc.markSaved()
+      await this.recent.add(selected)
+      this.lastDiskContent = md
+    } finally {
+      this.isSaving = false
     }
-    const md = this.editor.getMarkdown()
-    await writeTextFile(path, md)
-    this.doc.setPath(path)
-    this.doc.markSaved()
-    this.recent.add(path)
-    this.lastDiskContent = md
-  }
-
-  async saveAs(): Promise<void> {
-    const selected = await saveDialog({
-      defaultPath: this.doc.filename,
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    })
-    if (!selected) return
-    const md = this.editor.getMarkdown()
-    await writeTextFile(selected, md)
-    this.doc.setPath(selected)
-    this.doc.markSaved()
-    this.recent.add(selected)
-    this.lastDiskContent = md
   }
 
   /**
@@ -108,6 +152,7 @@ export class FileService {
 
     this.isSyncing = true
     try {
+      const baseline = this.lastDiskContent
       let disk: string
       try {
         disk = await readTextFile(path)
@@ -116,6 +161,11 @@ export class FileService {
         // 조용히 넘어간다(다음 focus에서 재시도). 저장 시 파일이 다시 생성됨.
         return
       }
+
+      // readTextFile await 동안 save가 끼어들어 기준선/디스크를 갱신했을 수 있다.
+      // 그 경우 위에서 읽은 disk는 stale → 이 sync를 폐기해야, 방금 저장한 내용을
+      // 옛 디스크 내용으로 되돌리는 race(데이터 손실)를 막는다.
+      if (this.lastDiskContent !== baseline) return
 
       if (disk === this.lastDiskContent) return // 외부 변경 없음
 
@@ -127,7 +177,7 @@ export class FileService {
       } else {
         // 로컬 편집 + 외부 변경이 동시에 존재 → 한쪽을 버려야 하므로 사용자 확인.
         const reload = await ask(
-          '이 파일이 다른 곳에서 변경되었습니다.\n디스크의 내용으로 다시 불러올까요?\n편집 중인 내용은 사라집니다.',
+          `'${this.doc.filename}'이(가) 다른 곳에서 변경되었습니다.\n디스크의 내용으로 다시 불러올까요?\n편집 중인 내용은 사라집니다.`,
           { title: '외부 변경 감지', kind: 'warning' },
         )
         if (reload) {

@@ -11,6 +11,7 @@ export type MenuActions = {
   onShowStats: () => void
   onRecentOpen: (idx: number) => void
   onOpenFromOs: (path: string) => void
+  onQuit: () => void
 }
 
 /**
@@ -50,6 +51,9 @@ export class MenuBridge {
         opts,
       ),
     )
+    // menu:quit은 Rust가 app.emit으로 "전 창"에 broadcast한다(EventTarget::Any →
+    // target 지정 리스너에도 전달됨). 각 창이 받아 스스로 닫기(확인 포함)를 수행.
+    u.push(await listen('menu:quit', () => this.actions.onQuit(), opts))
   }
 
   /** 등록된 모든 Tauri event listener 해제. 재초기화 또는 종료 정리용. */

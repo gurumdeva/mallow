@@ -35,18 +35,21 @@ export class Document extends EventEmitter {
     this.emit('changed')
   }
 
-  rename(name: string): void {
-    const trimmed = name.trim()
-    if (!trimmed) return
-    this._filename = trimmed.endsWith('.md') ? trimmed : `${trimmed}.md`
-    this.emit('changed')
+  /**
+   * 파일명 정규화: 앞뒤 공백 제거 + base 이름이 있으면 '.md' 보장. base가 비면 null.
+   * (".md"·공백만 입력 → null. rename과 디스크 rename 경로 계산에서 공용으로 쓴다.)
+   */
+  static normalizeFilename(name: string): string | null {
+    let base = name.trim()
+    if (base.toLowerCase().endsWith('.md')) base = base.slice(0, -3).trim()
+    if (!base) return null
+    return `${base}.md`
   }
 
-  resetToNew(): void {
-    this._filePath = null
-    this._filename = '새 문서.md'
-    this._isModified = false
-    this._lastModified = new Date()
+  rename(name: string): void {
+    const fn = Document.normalizeFilename(name)
+    if (!fn) return
+    this._filename = fn
     this.emit('changed')
   }
 
