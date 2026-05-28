@@ -1,4 +1,5 @@
 import { EventEmitter } from './EventEmitter'
+import { t } from '../i18n'
 
 /**
  * 현재 열려 있는 문서의 도메인 상태.
@@ -7,7 +8,8 @@ import { EventEmitter } from './EventEmitter'
  */
 export class Document extends EventEmitter {
   private _filePath: string | null = null
-  private _filename = '새 문서.md'
+  // setLocale()가 bootstrap 맨 앞에서 먼저 실행되므로 생성 시점에 기기 언어로 결정된다.
+  private _filename = t('doc.untitled')
   private _isModified = false
   private _lastModified = new Date()
 

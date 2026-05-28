@@ -21,6 +21,9 @@ tauri-build = { version = "2.6.2", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
+# 기기 OS 언어 판정용. CoreFoundation에서 직접 읽어 macOS 비현지화 앱의
+# navigator.language 함정을 피한다(메뉴 + 프런트엔드가 동일 판정을 공유).
+sys-locale = "0.3"
 tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2.7.1"

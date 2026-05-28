@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { Document } from '../domain/Document'
 import { EditorController } from '../editor/EditorController'
 import { RecentFilesStore } from './RecentFilesStore'
+import { t } from '../i18n'
 
 /**
  * 파일 IO(열기 다이얼로그·경로 열기·저장·외부 변경 동기화)를 조립하는 application service.
@@ -177,8 +178,8 @@ export class FileService {
       } else {
         // 로컬 편집 + 외부 변경이 동시에 존재 → 한쪽을 버려야 하므로 사용자 확인.
         const reload = await ask(
-          `'${this.doc.filename}'이(가) 다른 곳에서 변경되었습니다.\n디스크의 내용으로 다시 불러올까요?\n편집 중인 내용은 사라집니다.`,
-          { title: '외부 변경 감지', kind: 'warning' },
+          t('dialog.externalChange.body', { name: this.doc.filename }),
+          { title: t('dialog.externalChange.title'), kind: 'warning' },
         )
         if (reload) {
           await this.editor.load(disk)

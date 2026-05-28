@@ -3,6 +3,7 @@ import { UIState } from '../domain/UIState'
 import { EditorController } from '../editor/EditorController'
 import { StatsCalculator, type Stats } from '../analysis/StatsCalculator'
 import { TocExtractor } from '../analysis/TocExtractor'
+import { t, getLocale } from '../i18n'
 
 /**
  * 통계 / 목차 두 탭을 가진 popover.
@@ -87,15 +88,15 @@ export class InfoPopover {
 
   // ─── Rendering helpers (순수 문자열 생성) ─────────────────
   private renderHeader(): string {
-    const title = this.uiState.activeTab === 'stats' ? 'Statistics' : 'Table of Contents'
     const isStats = this.uiState.activeTab === 'stats'
+    const title = isStats ? t('stats.title') : t('toc.title')
     return `
       <div class="stats-title">${title}</div>
       <div class="stats-tabs">
-        <button class="stats-tab ${isStats ? 'active' : ''}" data-tab="stats" title="통계">
+        <button class="stats-tab ${isStats ? 'active' : ''}" data-tab="stats" title="${t('stats.tabTip')}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16V8M12 16v-5M17 16v-9"/></svg>
         </button>
-        <button class="stats-tab ${!isStats ? 'active' : ''}" data-tab="toc" title="목차">
+        <button class="stats-tab ${!isStats ? 'active' : ''}" data-tab="toc" title="${t('toc.tabTip')}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg>
         </button>
       </div>
@@ -104,33 +105,34 @@ export class InfoPopover {
 
   private renderStatsBody(): string {
     const s: Stats = this.stats.calculate(this.editor.getMarkdown())
+    const loc = getLocale()
     return `
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-main">
-            <div class="stat-value">${s.words.toLocaleString()}</div>
-            <div class="stat-label">Words</div>
+            <div class="stat-value">${s.words.toLocaleString(loc)}</div>
+            <div class="stat-label">${t('stats.words')}</div>
           </div>
           <svg class="stat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
         <div class="stat-card">
           <div class="stat-main">
-            <div class="stat-value">${s.characters.toLocaleString()}</div>
-            <div class="stat-label">Characters</div>
+            <div class="stat-value">${s.characters.toLocaleString(loc)}</div>
+            <div class="stat-label">${t('stats.characters')}</div>
           </div>
           <span class="stat-icon" style="font-size:14px;font-weight:600;">Aa</span>
         </div>
         <div class="stat-card">
           <div class="stat-main">
-            <div class="stat-value">${s.paragraphs}</div>
-            <div class="stat-label">Paragraphs</div>
+            <div class="stat-value">${s.paragraphs.toLocaleString(loc)}</div>
+            <div class="stat-label">${t('stats.paragraphs')}</div>
           </div>
           <span class="stat-icon" style="font-size:14px;">¶</span>
         </div>
         <div class="stat-card">
           <div class="stat-main">
-            <div class="stat-value">${s.readMinutes}m</div>
-            <div class="stat-label">Read Time</div>
+            <div class="stat-value">${s.readMinutes}${t('stats.minuteUnit')}</div>
+            <div class="stat-label">${t('stats.readTime')}</div>
           </div>
           <svg class="stat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </div>
@@ -138,7 +140,7 @@ export class InfoPopover {
       <div class="stats-meta">
         <div class="stats-meta-main">
           <div class="stats-meta-value">${this.formatDate(this.doc.lastModified)}</div>
-          <div class="stats-meta-label">Modification Date</div>
+          <div class="stats-meta-label">${t('stats.modDate')}</div>
         </div>
         <svg class="stat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       </div>
@@ -148,7 +150,7 @@ export class InfoPopover {
   private renderTocBody(): string {
     const items = this.toc.extract()
     if (items.length === 0) {
-      return '<div class="toc-empty">표시할 헤딩이 없습니다.</div>'
+      return `<div class="toc-empty">${t('toc.empty')}</div>`
     }
     const { groups, minLevel } = this.toc.group(items)
     return `
@@ -187,14 +189,15 @@ export class InfoPopover {
   }
 
   private formatDate(d: Date): string {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ]
-    const hour12 = d.getHours() % 12 || 12
-    const ampm = d.getHours() >= 12 ? 'PM' : 'AM'
-    const minute = String(d.getMinutes()).padStart(2, '0')
-    return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${hour12}:${minute}${ampm}`
+    // Intl이 기기 언어에 맞는 날짜 표기를 자동 생성한다(영문 "May 29, 2026, 3:04 PM",
+    // 한국어 "2026년 5월 29일 오후 3:04"). 직접 월 이름을 박지 않아 언어 혼용이 없다.
+    return new Intl.DateTimeFormat(getLocale(), {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(d)
   }
 }
 

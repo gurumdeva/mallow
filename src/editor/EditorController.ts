@@ -13,6 +13,7 @@ import {
 } from '@milkdown/preset-commonmark'
 import { toggleStrikethroughCommand } from '@milkdown/preset-gfm'
 import { EventEmitter } from '../domain/EventEmitter'
+import { t } from '../i18n'
 
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame-dark.css'
@@ -186,6 +187,10 @@ export class EditorController extends EventEmitter {
       featureConfigs: {
         [CrepeFeature.BlockEdit]: {
           blockHandle: { shouldShow: () => false },
+        },
+        // 빈 문서 placeholder를 기기 언어로. (Crepe 기본값은 "Please enter..." 영문)
+        [CrepeFeature.Placeholder]: {
+          text: t('editor.placeholder'),
         },
       },
     })

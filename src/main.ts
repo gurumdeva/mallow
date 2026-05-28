@@ -19,10 +19,25 @@ import { FilenamePopover } from './ui/FilenamePopover'
 import { InfoPopover } from './ui/InfoPopover'
 import { StylePopover } from './ui/StylePopover'
 import { ToastService, formatError } from './ui/ToastService'
+import { setLocale, resolveLang, t } from './i18n'
 
 const DEFAULT_MARKDOWN = ''
 
 async function bootstrap(): Promise<void> {
+  // ── i18n: 기기 언어 결정 (반드시 가장 먼저) ───────────────
+  // Rust(sys-locale)가 OS 언어를 권위 있게 판정해 'ko'|'en'을 돌려준다.
+  // (macOS 비현지화 앱에서 navigator.language가 dev 지역으로 고정되는 함정을 피한다.)
+  // 실패 시 navigator.language로 폴백. Document·뷰 생성 전에 적용해야 모든 문자열이
+  // 한 언어로 일관되게 만들어진다(생성자 안에서 t()를 읽는 곳이 있으므로).
+  const rawLocale = await invoke<string>('app_locale').catch(() => navigator.language)
+  const lang = resolveLang(rawLocale)
+  setLocale(lang)
+  document.documentElement.lang = lang
+  // index.html의 정적 버튼 tooltip을 기기 언어로 채운다(HTML엔 텍스트를 두지 않음).
+  document.getElementById('btn-style')?.setAttribute('title', t('titlebar.styleTip'))
+  document.getElementById('btn-pdf')?.setAttribute('title', t('titlebar.exportPdfTip'))
+  document.getElementById('btn-info')?.setAttribute('title', t('titlebar.infoTip'))
+
   // ── State (single sources of truth) ─────────────────────
   const doc = new Document()
   const ui = new UIState()
@@ -51,7 +66,7 @@ async function bootstrap(): Promise<void> {
   new TitleBarView(doc, ui)
   // 파일명 확정: 저장된 문서면 디스크 파일까지 rename, 새 문서면 표시명만 (FileService.applyRename).
   new FilenamePopover(doc, ui, (name) =>
-    fileService.applyRename(name).catch(reportError('이름 변경')),
+    fileService.applyRename(name).catch(reportError(t('error.rename'))),
   )
   new InfoPopover(doc, ui, editor, stats, toc)
   new StylePopover(ui, editor)
@@ -61,7 +76,7 @@ async function bootstrap(): Promise<void> {
   const btnPdf = document.getElementById('btn-pdf')
   btnPdf?.addEventListener('click', (e) => {
     e.stopPropagation()
-    pdfExporter.export().catch(reportError('PDF 내보내기'))
+    pdfExporter.export().catch(reportError(t('error.exportPdf')))
   })
 
   // ── Wiring: editor 변경 → doc 수정 표시 ──────────────────
@@ -103,7 +118,7 @@ async function bootstrap(): Promise<void> {
     }
     const w = new WebviewWindow(label, {
       url,
-      title: '새 문서.md',
+      title: t('doc.untitled'),
       width: 980,
       height: 760,
       titleBarStyle: 'overlay',
@@ -111,16 +126,16 @@ async function bootstrap(): Promise<void> {
       backgroundColor: [28, 28, 30],
       ...(position ?? {}),
     })
-    void w.once('tauri://error', (e) => reportError('새 창 열기')(e.payload))
+    void w.once('tauri://error', (e) => reportError(t('error.openWindow'))(e.payload))
   }
 
   // 파일 열기: 현재 창이 "깨끗한 새 문서"면 그 창을 재사용(in-place), 아니면 새 창.
   // 덕분에 앱을 갓 켠 빈 창에서 열면 빈 창이 남지 않고, 작업 중인 창은 보존된다.
   const handleOpenPath = (filePath: string): void => {
     if (doc.isPristine) {
-      fileService.openPath(filePath).catch(reportError('파일 열기'))
+      fileService.openPath(filePath).catch(reportError(t('error.openFile')))
     } else {
-      openDocumentWindow(filePath).catch(reportError('새 창 열기'))
+      openDocumentWindow(filePath).catch(reportError(t('error.openWindow')))
     }
   }
 
@@ -131,8 +146,8 @@ async function bootstrap(): Promise<void> {
     if (doc.isModified) {
       // 멀티 창에서 여러 확인창이 떠도 구분되도록 파일명을 함께 표시.
       const ok = await ask(
-        `'${doc.filename}'에 저장하지 않은 변경 사항이 있습니다.\n정말 닫으시겠습니까?`,
-        { title: '저장되지 않은 변경 사항', kind: 'warning' },
+        t('dialog.unsavedClose.body', { name: doc.filename }),
+        { title: t('dialog.unsavedClose.title'), kind: 'warning' },
       )
       if (!ok) return // 취소 → 창 유지
     }
@@ -148,17 +163,17 @@ async function bootstrap(): Promise<void> {
   // (Rust가 menu:* / open:file을 "포커스된 창"에만 emit하므로 여기 핸들러는
   //  현재 창에 대해서만 동작한다.)
   const menu = new MenuBridge({
-    onNewFile: () => openDocumentWindow(null).catch(reportError('새 창 열기')),
+    onNewFile: () => openDocumentWindow(null).catch(reportError(t('error.openWindow'))),
     onOpen: () =>
       fileService
         .pickOpenPath()
         .then((p) => {
           if (p) handleOpenPath(p)
         })
-        .catch(reportError('파일 열기')),
-    onSave: () => fileService.save().catch(reportError('저장')),
-    onSaveAs: () => fileService.saveAs().catch(reportError('다른 이름으로 저장')),
-    onExportPdf: () => pdfExporter.export().catch(reportError('PDF 내보내기')),
+        .catch(reportError(t('error.openFile'))),
+    onSave: () => fileService.save().catch(reportError(t('error.save'))),
+    onSaveAs: () => fileService.saveAs().catch(reportError(t('error.saveAs'))),
+    onExportPdf: () => pdfExporter.export().catch(reportError(t('error.exportPdf'))),
     onShowStats: () => ui.toggleInfoPopover(),
     onRecentOpen: (i) => {
       recent
@@ -167,7 +182,7 @@ async function bootstrap(): Promise<void> {
           const p = list[i]
           if (p) handleOpenPath(p)
         })
-        .catch(reportError('최근 파일 열기'))
+        .catch(reportError(t('error.openRecent')))
     },
     onOpenFromOs: (p) => handleOpenPath(p),
     // ⌘Q: 포커스 창이 코디네이터. 전체 미저장 문서 수를 Rust에서 조회해 통합 확인 1회 →
@@ -177,8 +192,8 @@ async function bootstrap(): Promise<void> {
         const n = await invoke<number>('dirty_window_count').catch(() => 0)
         if (n > 0) {
           const ok = await ask(
-            `저장하지 않은 문서가 ${n}개 있습니다.\n변경 사항을 잃고 종료하시겠습니까?`,
-            { title: '종료', kind: 'warning' },
+            t('dialog.unsavedQuit.body', { count: n }),
+            { title: t('dialog.unsavedQuit.title'), kind: 'warning' },
           )
           if (!ok) return
         }
@@ -198,13 +213,13 @@ async function bootstrap(): Promise<void> {
   const hashRaw = location.hash.slice(1)
   const hashFile = hashRaw ? decodeURIComponent(hashRaw) : null
   if (hashFile) {
-    await fileService.openPath(hashFile).catch(reportError('파일 열기'))
+    await fileService.openPath(hashFile).catch(reportError(t('error.openFile')))
   } else if (win.label === 'main') {
     try {
       const pending: string[] = await invoke('webview_ready')
       if (pending.length > 0) {
-        await fileService.openPath(pending[0]).catch(reportError('파일 열기'))
-        for (const p of pending.slice(1)) openDocumentWindow(p).catch(reportError('새 창 열기'))
+        await fileService.openPath(pending[0]).catch(reportError(t('error.openFile')))
+        for (const p of pending.slice(1)) openDocumentWindow(p).catch(reportError(t('error.openWindow')))
       }
     } catch (e) {
       console.error('webview_ready failed:', e)
@@ -216,7 +231,7 @@ async function bootstrap(): Promise<void> {
   //  (1) 사용자가 "돌아왔을 때" 갱신되길 기대하는 시나리오에 정확히 부합
   //  (2) 외부 앱이 저장 중인 partial write 상태를 잡을 위험이 없음
   win.onFocusChanged(({ payload: focused }) => {
-    if (focused) fileService.syncFromDiskIfChanged().catch(reportError('파일 동기화'))
+    if (focused) fileService.syncFromDiskIfChanged().catch(reportError(t('error.syncFile')))
   })
 
   // ── 윈도우 닫기 (멀티 창) ────────────────────────────────

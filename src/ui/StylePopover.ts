@@ -1,5 +1,6 @@
 import { UIState } from '../domain/UIState'
 import { EditorController } from '../editor/EditorController'
+import { t } from '../i18n'
 
 type StyleAction =
   | 'h1' | 'h2' | 'h3' | 'p'
@@ -115,28 +116,28 @@ export class StylePopover {
 
   private html(): string {
     return `
-      <div class="stats-title">Style</div>
-      <div class="style-section-label">Heading</div>
+      <div class="stats-title">${t('style.title')}</div>
+      <div class="style-section-label">${t('style.headingSection')}</div>
       <div class="style-grid style-grid-4">
-        <button class="style-btn" data-action="h1" title="제목 1"><span class="style-btn-h1">H1</span></button>
-        <button class="style-btn" data-action="h2" title="제목 2"><span class="style-btn-h2">H2</span></button>
-        <button class="style-btn" data-action="h3" title="제목 3"><span class="style-btn-h3">H3</span></button>
-        <button class="style-btn" data-action="p" title="본문"><span class="style-btn-body">Body</span></button>
+        <button class="style-btn" data-action="h1" title="${t('style.tip.h1')}"><span class="style-btn-h1">H1</span></button>
+        <button class="style-btn" data-action="h2" title="${t('style.tip.h2')}"><span class="style-btn-h2">H2</span></button>
+        <button class="style-btn" data-action="h3" title="${t('style.tip.h3')}"><span class="style-btn-h3">H3</span></button>
+        <button class="style-btn" data-action="p" title="${t('style.tip.body')}"><span class="style-btn-body">${t('style.body')}</span></button>
       </div>
-      <div class="style-section-label">Block</div>
+      <div class="style-section-label">${t('style.blockSection')}</div>
       <div class="style-grid style-grid-5">
-        <button class="style-btn" data-action="quote" title="인용">${this.icon('quote')}</button>
-        <button class="style-btn" data-action="bullet" title="목록">${this.icon('bullet')}</button>
-        <button class="style-btn" data-action="numbered" title="번호 목록">${this.icon('numbered')}</button>
-        <button class="style-btn" data-action="code" title="코드 블록">${this.icon('code')}</button>
-        <button class="style-btn" data-action="hr" title="구분선">${this.icon('hr')}</button>
+        <button class="style-btn" data-action="quote" title="${t('style.tip.quote')}">${this.icon('quote')}</button>
+        <button class="style-btn" data-action="bullet" title="${t('style.tip.bullet')}">${this.icon('bullet')}</button>
+        <button class="style-btn" data-action="numbered" title="${t('style.tip.numbered')}">${this.icon('numbered')}</button>
+        <button class="style-btn" data-action="code" title="${t('style.tip.code')}">${this.icon('code')}</button>
+        <button class="style-btn" data-action="hr" title="${t('style.tip.hr')}">${this.icon('hr')}</button>
       </div>
-      <div class="style-section-label">Inline</div>
+      <div class="style-section-label">${t('style.inlineSection')}</div>
       <div class="style-grid style-grid-4">
-        <button class="style-btn" data-action="bold" title="굵게 (⌘B)"><b>B</b></button>
-        <button class="style-btn" data-action="italic" title="기울임 (⌘I)"><i>I</i></button>
-        <button class="style-btn" data-action="strike" title="취소선"><span class="style-btn-strike">S</span></button>
-        <button class="style-btn" data-action="inlinecode" title="인라인 코드">${this.icon('inlinecode')}</button>
+        <button class="style-btn" data-action="bold" title="${t('style.tip.bold')}"><b>B</b></button>
+        <button class="style-btn" data-action="italic" title="${t('style.tip.italic')}"><i>I</i></button>
+        <button class="style-btn" data-action="strike" title="${t('style.tip.strike')}"><span class="style-btn-strike">S</span></button>
+        <button class="style-btn" data-action="inlinecode" title="${t('style.tip.inlineCode')}">${this.icon('inlinecode')}</button>
       </div>
     `
   }

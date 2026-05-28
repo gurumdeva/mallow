@@ -1,0 +1,107 @@
+{
+  "menu": {
+    "file": "파일",
+    "edit": "편집",
+    "view": "보기",
+    "window": "윈도우",
+    "new": "새로 만들기",
+    "open": "열기…",
+    "openRecent": "최근 파일 열기",
+    "recentEmpty": "(없음)",
+    "save": "저장",
+    "saveAs": "다른 이름으로 저장…",
+    "exportPdf": "PDF로 내보내기…",
+    "showStats": "통계 보기",
+    "quit": "Mallow 종료",
+    "about": "Mallow에 관하여",
+    "hide": "Mallow 가리기",
+    "hideOthers": "기타 가리기",
+    "showAll": "모두 보기",
+    "undo": "실행 취소",
+    "redo": "실행 복귀",
+    "cut": "오려두기",
+    "copy": "복사하기",
+    "paste": "붙여넣기",
+    "selectAll": "전체 선택",
+    "minimize": "최소화",
+    "zoom": "확대/축소",
+    "fullscreen": "전체 화면 전환",
+    "closeWindow": "윈도우 닫기"
+  },
+  "titlebar": {
+    "styleTip": "텍스트 스타일",
+    "exportPdfTip": "PDF로 내보내기 (⌘E)",
+    "infoTip": "문서 정보 (⌘⇧I)"
+  },
+  "doc": {
+    "untitled": "새 문서.md",
+    "fallbackName": "문서"
+  },
+  "editor": {
+    "placeholder": "내용을 입력하세요…"
+  },
+  "stats": {
+    "title": "통계",
+    "tabTip": "통계",
+    "words": "단어",
+    "characters": "글자",
+    "paragraphs": "단락",
+    "readTime": "읽기 시간",
+    "minuteUnit": "분",
+    "modDate": "수정한 날짜"
+  },
+  "toc": {
+    "title": "목차",
+    "tabTip": "목차",
+    "empty": "표시할 헤딩이 없습니다."
+  },
+  "style": {
+    "title": "스타일",
+    "headingSection": "제목",
+    "blockSection": "블록",
+    "inlineSection": "인라인",
+    "body": "본문",
+    "tip": {
+      "h1": "제목 1",
+      "h2": "제목 2",
+      "h3": "제목 3",
+      "body": "본문",
+      "quote": "인용",
+      "bullet": "목록",
+      "numbered": "번호 목록",
+      "code": "코드 블록",
+      "hr": "구분선",
+      "bold": "굵게 (⌘B)",
+      "italic": "기울임 (⌘I)",
+      "strike": "취소선",
+      "inlineCode": "인라인 코드"
+    }
+  },
+  "dialog": {
+    "unsavedClose": {
+      "title": "저장되지 않은 변경 사항",
+      "body": "'{name}'에 저장하지 않은 변경 사항이 있습니다.\n정말 닫으시겠습니까?"
+    },
+    "unsavedQuit": {
+      "title": "종료",
+      "body": "저장하지 않은 문서가 {count}개 있습니다.\n변경 사항을 잃고 종료하시겠습니까?"
+    },
+    "externalChange": {
+      "title": "외부 변경 감지",
+      "body": "'{name}'이(가) 다른 곳에서 변경되었습니다.\n디스크의 내용으로 다시 불러올까요?\n편집 중인 내용은 사라집니다."
+    }
+  },
+  "error": {
+    "rename": "이름 변경",
+    "exportPdf": "PDF 내보내기",
+    "openFile": "파일 열기",
+    "openWindow": "새 창 열기",
+    "save": "저장",
+    "saveAs": "다른 이름으로 저장",
+    "openRecent": "최근 파일 열기",
+    "syncFile": "파일 동기화"
+  },
+  "toast": {
+    "unknownError": "알 수 없는 오류"
+  }
+}
