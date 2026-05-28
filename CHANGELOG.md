@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.3.0] - 2026-05-29
+
+### Added
+- **Live word count**: a subtle word-count and reading-time indicator appears in the bottom-right corner while you write (hidden on an empty document). Localized (Korean / English / Japanese).
+
 ## [0.2.0] - 2026-05-29
 
 ### Added
@@ -59,6 +64,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.3.0]: https://github.com/gurumdeva/mallow/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/gurumdeva/mallow/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/gurumdeva/mallow/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/gurumdeva/mallow/compare/v0.1.1...v0.1.2

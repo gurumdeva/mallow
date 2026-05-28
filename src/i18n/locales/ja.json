@@ -114,5 +114,8 @@
     "previous": "前へ (⇧⏎)",
     "next": "次へ (⏎)",
     "close": "閉じる (Esc)"
+  },
+  "status": {
+    "summary": "{words}語 · {min}分"
   }
 }
