@@ -300,7 +300,11 @@ export class EditorController extends EventEmitter {
     })
   }
 
-  /** 현재 매치를 replacement로 치환. 치환 후 doc 변경 → 매치 자동 재계산. */
+  /**
+   * 현재 매치를 치환하고 "다음 매치"로 이동한다. 치환으로 삽입된 텍스트가 검색어를
+   * 포함하더라도(find "foo" → replace "foobar") 방금 넣은 구간은 건너뛰어,
+   * 같은 자리를 무한히 다시 치환하는 일을 막는다.
+   */
   searchReplace(replacement: string): void {
     if (!this.crepe) return
     this.crepe.editor.action((ctx) => {
@@ -311,9 +315,22 @@ export class EditorController extends EventEmitter {
       const tr = view.state.tr
       if (replacement) tr.replaceWith(m.from, m.to, view.state.schema.text(replacement))
       else tr.delete(m.from, m.to)
-      view.dispatch(tr)
+      view.dispatch(tr) // docChanged → 매치 자동 재계산 (view.state 갱신됨)
+
+      // 삽입한 텍스트 끝(after) 이후의 첫 매치로 이동(없으면 처음으로 wrap).
+      const after = m.from + replacement.length
+      const s2 = searchKey.getState(view.state)
+      if (!s2 || s2.matches.length === 0) return
+      let next = s2.matches.findIndex((mm) => mm.from >= after)
+      if (next === -1) next = 0
+      const nm = s2.matches[next]
+      view.dispatch(
+        view.state.tr
+          .setMeta(searchKey, { current: next })
+          .setSelection(TextSelection.create(view.state.doc, nm.from, nm.to))
+          .scrollIntoView(),
+      )
     })
-    this.scrollToCurrentMatch()
   }
 
   /** 모든 매치를 한 번에 치환(끝→앞 순서로 앞쪽 위치 보존). */
