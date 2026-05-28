@@ -12,9 +12,14 @@ export class FilenamePopover {
   /** 직전 render 시점에 팝업이 열려있었는지. closed→open transition에만 input.value를 채워 사용자 타이핑 보호. */
   private wasOpen = false
 
+  /**
+   * @param onCommit 사용자가 입력한 새 이름을 확정할 때 호출. 표시명만 바꿀지(새 문서)
+   *   디스크 파일까지 rename할지(저장된 문서)는 호출부(FileService.applyRename)가 결정한다.
+   */
   constructor(
     private readonly doc: Document,
     private readonly uiState: UIState,
+    private readonly onCommit: (name: string) => void,
   ) {
     this.popover = document.getElementById('filename-popover') as HTMLDivElement
     this.input = document.getElementById('filename-input') as HTMLInputElement
@@ -47,7 +52,7 @@ export class FilenamePopover {
   }
 
   private commit(): void {
-    this.doc.rename(this.input.value)
+    this.onCommit(this.input.value)
     this.uiState.closeFilenamePopover()
   }
 

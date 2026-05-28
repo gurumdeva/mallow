@@ -1,6 +1,6 @@
 [package]
 name = "mallow"
-version = "0.1.1"
+version = "0.1.2"
 description = "Mallow markdown editor"
 authors = ["gurumdeva"]
 license = ""

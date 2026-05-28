@@ -1,40 +1,37 @@
-import { EventEmitter } from '../domain/EventEmitter'
+import { invoke } from '@tauri-apps/api/core'
 
-const STORAGE_KEY = 'recent-files'
 export const MAX_RECENT = 5
 
 /**
- * 최근 파일 목록의 영구 저장 (localStorage).
- * 메뉴 동기화는 RecentMenuSync에서 별도로 담당한다.
+ * 최근 파일 목록 접근자.
+ *
+ * 단일 소스(authoritative)는 Rust(`RecentFiles`, Mutex + recent.json 영속)이고
+ * 이 클래스는 얇은 async 래퍼다. 창마다 localStorage로 들고 있으면 공유 저장소의
+ * read-modify-write가 창 사이에서 경쟁해 항목이 유실될 수 있으므로(lost update),
+ * 모든 추가/제거/조회를 Rust 커맨드로 직렬화한다. 메뉴 동기화도 Rust가 직접 한다.
  */
-export class RecentFilesStore extends EventEmitter {
-  list(): string[] {
+export class RecentFilesStore {
+  async list(): Promise<string[]> {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (!raw) return []
-      const arr = JSON.parse(raw)
-      if (!Array.isArray(arr)) return []
-      // localStorage가 외부 도구/사용자에 의해 변조되었을 가능성을 고려해 각 요소가
-      // string인지 한 번 더 확인. 그렇지 않으면 TS는 통과해도 런타임에서 invoke 실패.
-      return arr.filter((p): p is string => typeof p === 'string').slice(0, MAX_RECENT)
+      return await invoke<string[]>('recent_get')
     } catch {
       return []
     }
   }
 
-  add(path: string): void {
-    const existing = this.list()
-    const next = [path, ...existing.filter((p) => p !== path)].slice(0, MAX_RECENT)
-    this.save(next)
+  async add(path: string): Promise<void> {
+    try {
+      await invoke('recent_add', { path })
+    } catch {
+      /* 영속/메뉴 갱신 실패는 치명적이지 않으므로 무시 */
+    }
   }
 
-  remove(path: string): void {
-    const next = this.list().filter((p) => p !== path)
-    this.save(next)
-  }
-
-  private save(paths: string[]): void {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(paths))
-    this.emit('changed')
+  async remove(path: string): Promise<void> {
+    try {
+      await invoke('recent_remove', { path })
+    } catch {
+      /* 무시 */
+    }
   }
 }

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,
@@ -6,6 +7,9 @@ use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager,
 };
+
+/// 최근 파일 최대 개수 (Open Recent 메뉴 슬롯 수와 일치).
+const MAX_RECENT: usize = 5;
 
 /// Finder 더블클릭으로 cold-start 됐을 때 RunEvent::Opened가 발생하는 시점은
 /// WebView가 아직 띄워지지도 않은 단계라, 그때 app.emit("open:file", ...)을
@@ -20,6 +24,17 @@ struct PendingOpens(Mutex<Vec<String>>);
 #[derive(Default)]
 struct AppReady(AtomicBool);
 
+/// 최근 파일 목록의 단일 소유자(authoritative). 창마다 localStorage로 두면 공유 저장소의
+/// read-modify-write가 창 간에 경쟁해 항목이 유실될 수 있어, Rust가 Mutex로 직렬화하고
+/// 디스크(JSON)에 영속한다. 메뉴도 이 상태로부터 직접 만든다.
+#[derive(Default)]
+struct RecentFiles(Mutex<Vec<String>>);
+
+/// 창별 "미저장 변경" 여부 집합. ⌘Q 종료를 원자적으로(부분 종료 없이) 처리하기 위해
+/// JS가 doc.isModified 변화를 보고하고, ⌘Q는 이 집합 크기로 통합 확인 여부를 정한다.
+#[derive(Default)]
+struct DirtyWindows(Mutex<HashSet<String>>);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -27,10 +42,18 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(PendingOpens::default())
         .manage(AppReady::default())
+        .manage(RecentFiles::default())
+        .manage(DirtyWindows::default())
         .invoke_handler(tauri::generate_handler![
-            update_recent_files,
-            force_quit,
+            recent_get,
+            recent_add,
+            recent_remove,
+            set_window_dirty,
+            dirty_window_count,
+            quit_app,
+            rename_file,
             close_document_window,
+            apply_dark_webview,
             webview_ready,
         ])
         .setup(|app| {
@@ -43,7 +66,10 @@ pub fn run() {
             }
 
             let handle = app.handle();
-            let menu = build_app_menu(handle, &[])?;
+            // 영속된 최근 파일을 읽어 상태와 메뉴에 반영한다.
+            let recents = load_recents(handle);
+            *app.state::<RecentFiles>().0.lock().unwrap() = recents.clone();
+            let menu = build_app_menu(handle, &recents)?;
             app.set_menu(menu)?;
 
             app.on_menu_event(move |app, event| {
@@ -67,7 +93,12 @@ pub fn run() {
                     }
                 };
                 match id.as_str() {
-                    "new_file" | "open" | "save" | "save_as" | "export_pdf" | "show_stats" => {
+                    // quit 포함 모든 명령을 "포커스된 창"에만 전달한다.
+                    // ⌘Q는 포커스 창이 코디네이터가 되어 dirty_window_count로 전체 미저장
+                    // 개수를 조회 → 통합 확인 1회 → quit_app(전체 종료) 또는 취소(아무것도 안 함).
+                    // 이로써 "일부 창만 닫히는" 부분 종료가 발생하지 않는다(원자적 종료).
+                    "new_file" | "open" | "save" | "save_as" | "export_pdf" | "show_stats"
+                    | "quit" => {
                         send(format!("menu:{}", id));
                     }
                     other if other.starts_with("recent_") => {
@@ -92,38 +123,57 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // macOS Finder에서 .md 파일을 더블클릭하면 RunEvent::Opened 발생.
-            // Cold-start(WebView 아직 mount 전)와 warm-start(webview_ready 호출 후) 분기:
-            //  - AppReady=false : path를 PendingOpens에 stash. JS가 webview_ready 호출 시 가져감.
-            //  - AppReady=true  : emit으로 바로 listener에 전달.
-            if let tauri::RunEvent::Opened { urls } = event {
-                let ready = app_handle
-                    .state::<AppReady>()
-                    .0
-                    .load(Ordering::SeqCst);
-                for url in urls {
-                    if let Ok(path) = url.to_file_path() {
-                        let path_str = path.to_string_lossy().to_string();
-                        if ready {
-                            // warm start: 포커스된 창 한 곳에만 전달 → 그 창이 새 문서 창을 연다.
-                            // (broadcast하면 모든 창이 같은 파일로 새 창을 만들어 중복된다.)
-                            if let Some(label) = focused_or_any_label(app_handle) {
-                                let _ = app_handle.emit_to(
-                                    tauri::EventTarget::webview_window(label),
-                                    "open:file",
-                                    path_str,
-                                );
+            match event {
+                // macOS Finder에서 .md 파일을 더블클릭하면 RunEvent::Opened 발생.
+                // Cold-start(WebView 아직 mount 전)와 warm-start(webview_ready 호출 후) 분기:
+                //  - AppReady=false : path를 PendingOpens에 stash. JS가 webview_ready 호출 시 가져감.
+                //  - AppReady=true  : emit으로 바로 listener에 전달.
+                tauri::RunEvent::Opened { urls } => {
+                    let ready = app_handle.state::<AppReady>().0.load(Ordering::SeqCst);
+                    for url in urls {
+                        if let Ok(path) = url.to_file_path() {
+                            let path_str = path.to_string_lossy().to_string();
+                            if ready {
+                                // warm start: 포커스된 창 한 곳에만 전달 → 그 창이 새 문서 창을 연다.
+                                // (broadcast하면 모든 창이 같은 파일로 새 창을 만들어 중복된다.)
+                                if let Some(label) = focused_or_any_label(app_handle) {
+                                    let _ = app_handle.emit_to(
+                                        tauri::EventTarget::webview_window(label),
+                                        "open:file",
+                                        path_str,
+                                    );
+                                }
+                            } else {
+                                app_handle
+                                    .state::<PendingOpens>()
+                                    .0
+                                    .lock()
+                                    .unwrap()
+                                    .push(path_str);
                             }
-                        } else {
-                            app_handle
-                                .state::<PendingOpens>()
-                                .0
-                                .lock()
-                                .unwrap()
-                                .push(path_str);
                         }
                     }
                 }
+                // 마지막 창이 닫히면 앱 종료. "모든 창 닫힘 = 종료" 판단을 Rust에서
+                // 단일하게 처리해, JS가 창 수를 세다 생기는 동시-닫기 race를 제거한다.
+                // (창 닫기 자체는 각 창이 close_document_window로 destroy → 여기서 빈지 확인)
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } => {
+                    // 닫힌 창의 dirty 표시를 정리(누수 방지).
+                    app_handle
+                        .state::<DirtyWindows>()
+                        .0
+                        .lock()
+                        .unwrap()
+                        .remove(&label);
+                    if app_handle.webview_windows().is_empty() {
+                        app_handle.exit(0);
+                    }
+                }
+                _ => {}
             }
         });
 }
@@ -170,7 +220,10 @@ fn build_app_menu<R: tauri::Runtime>(
             &PredefinedMenuItem::hide_others(handle, None)?,
             &PredefinedMenuItem::show_all(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::quit(handle, None)?,
+            // 종료 전 각 창의 미저장 변경을 확인하기 위해 predefined quit 대신
+            // 커스텀 항목을 쓴다. "menu:quit"를 전 창에 broadcast → 각 창이 스스로
+            // 확인 후 닫히고, 마지막 창이 닫히면 RunEvent에서 exit한다.
+            &MenuItem::with_id(handle, "quit", "Quit Mallow", true, Some("CmdOrCtrl+Q"))?,
         ],
     )?;
 
@@ -274,28 +327,132 @@ fn build_app_menu<R: tauri::Runtime>(
     )
 }
 
-#[tauri::command]
-fn update_recent_files(app: tauri::AppHandle, paths: Vec<String>) -> Result<(), String> {
-    let menu = build_app_menu(&app, &paths).map_err(|e| e.to_string())?;
-    app.set_menu(menu).map_err(|e| e.to_string())?;
-    Ok(())
+// ── 최근 파일: Rust 단일 소유 + 디스크 영속 ──────────────────
+fn recents_file(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("recent.json"))
 }
 
-/// 윈도우 close-request 핸들러가 미저장 confirm을 마친 뒤 호출하는 강제 종료.
-/// Tauri v2의 webview window.close()/destroy()가 onCloseRequested 콜백 내부에서
-/// 일관되게 동작하지 않아 Rust 측 AppHandle::exit으로 우회한다.
+fn load_recents(app: &tauri::AppHandle) -> Vec<String> {
+    let Some(p) = recents_file(app) else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read_to_string(&p) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<String>>(&text)
+        .unwrap_or_default()
+        .into_iter()
+        .take(MAX_RECENT)
+        .collect()
+}
+
+fn save_recents(app: &tauri::AppHandle, list: &[String]) {
+    let Some(p) = recents_file(app) else {
+        return;
+    };
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(text) = serde_json::to_string(list) {
+        let _ = std::fs::write(&p, text);
+    }
+}
+
+/// 최근 파일 변경을 디스크에 저장하고 앱 메뉴를 다시 만든다(단일 소스).
+fn persist_and_sync_recents(app: &tauri::AppHandle, list: &[String]) {
+    save_recents(app, list);
+    if let Ok(menu) = build_app_menu(app, list) {
+        let _ = app.set_menu(menu);
+    }
+}
+
 #[tauri::command]
-fn force_quit(app: tauri::AppHandle) {
+fn recent_get(recent: tauri::State<RecentFiles>) -> Vec<String> {
+    recent.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn recent_add(
+    app: tauri::AppHandle,
+    recent: tauri::State<RecentFiles>,
+    path: String,
+) -> Vec<String> {
+    let out = {
+        let mut v = recent.0.lock().unwrap();
+        v.retain(|p| p != &path);
+        v.insert(0, path);
+        v.truncate(MAX_RECENT);
+        v.clone()
+    };
+    persist_and_sync_recents(&app, &out);
+    out
+}
+
+#[tauri::command]
+fn recent_remove(
+    app: tauri::AppHandle,
+    recent: tauri::State<RecentFiles>,
+    path: String,
+) -> Vec<String> {
+    let out = {
+        let mut v = recent.0.lock().unwrap();
+        v.retain(|p| p != &path);
+        v.clone()
+    };
+    persist_and_sync_recents(&app, &out);
+    out
+}
+
+// ── 창별 dirty 추적 + 원자적 종료 ─────────────────────────────
+#[tauri::command]
+fn set_window_dirty(
+    dirty_windows: tauri::State<DirtyWindows>,
+    window: tauri::WebviewWindow,
+    dirty: bool,
+) {
+    let mut s = dirty_windows.0.lock().unwrap();
+    if dirty {
+        s.insert(window.label().to_string());
+    } else {
+        s.remove(window.label());
+    }
+}
+
+#[tauri::command]
+fn dirty_window_count(dirty_windows: tauri::State<DirtyWindows>) -> usize {
+    dirty_windows.0.lock().unwrap().len()
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
-/// 멀티 창에서 "현재 창만" 닫는다. (force_quit은 앱 전체를 종료하므로 마지막 창에서만 사용)
+/// 같은 디렉터리에서 파일을 새 이름으로 이동(rename). 저장된 문서의 파일명을 popover에서
+/// 바꿀 때 디스크 파일도 실제로 옮긴다. (Rust std::fs라 fs 스코프 영향 없음)
+#[tauri::command]
+fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string())
+}
+
+/// 현재 창만 닫는다(destroy). 마지막 창이면 RunEvent::WindowEvent::Destroyed에서
+/// webview_windows가 빈 것을 확인하고 app.exit(0)으로 앱을 종료한다.
 /// Tauri v2 macOS에서 JS window.close()/destroy()가 onCloseRequested 콜백 내부에서
 /// 일관되게 동작하지 않는 이슈가 있어, Rust 측에서 호출 창을 destroy한다.
 /// destroy는 close와 달리 CloseRequested를 다시 발생시키지 않아 재진입이 없다.
 #[tauri::command]
 fn close_document_window(window: tauri::WebviewWindow) {
     let _ = window.destroy();
+}
+
+/// JS에서 생성된 문서 창에도 main 창과 동일한 다크 webview 처리를 적용한다.
+/// (setup()은 main 창에만 적용하므로, 새 창은 bootstrap에서 이 커맨드를 호출한다.)
+#[tauri::command]
+fn apply_dark_webview(window: tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    apply_macos_dark_webview(&window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
 }
 
 /// JS bootstrap이 끝나 open:file listener가 활성화됐음을 신호하고, 동시에
