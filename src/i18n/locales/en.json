@@ -114,5 +114,8 @@
     "previous": "Previous (⇧⏎)",
     "next": "Next (⏎)",
     "close": "Close (Esc)"
+  },
+  "status": {
+    "summary": "{words} words · {min} min"
   }
 }
