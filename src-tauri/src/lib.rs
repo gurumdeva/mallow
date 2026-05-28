@@ -246,7 +246,7 @@ struct LocaleStrings {
     menu: MenuStrings,
 }
 
-/// 기기 OS 언어를 'ko' | 'en'으로 판정한다. 한국어로 시작하면 ko, 그 외에는 모두 en.
+/// 기기 OS 언어를 'ko' | 'ja' | 'en'으로 판정한다. 한국어→ko, 일본어→ja, 그 외 en.
 /// sys-locale은 CoreFoundation에서 직접 읽으므로 비현지화 앱의 navigator.language
 /// 함정을 피한다. 프런트엔드도 app_locale 명령으로 같은 판정을 공유한다.
 fn detect_lang() -> &'static str {
@@ -293,8 +293,11 @@ fn build_app_menu<R: tauri::Runtime>(
     handle: &tauri::AppHandle<R>,
     recent_files: &[String],
 ) -> tauri::Result<Menu<R>> {
-    // 기기 언어의 메뉴 문자열. (predefined 항목은 macOS가 시스템 언어로 자동 현지화하므로
-    //  여기서 다루는 건 커스텀 항목/서브메뉴 제목뿐이다. "Mallow"는 브랜드명이라 그대로 둔다.)
+    // 기기 언어의 메뉴 문자열. muda는 predefined 항목 제목을 영문으로 하드코딩하므로
+    // (macOS가 자동 현지화해 주지 않는다) About/Hide/Cut/Copy/Close Window 등에도
+    // 명시 텍스트를 넘겨 현지화한다. macOS가 Edit 메뉴에 주입하는 시스템 항목
+    // (받아쓰기·이모지·쓰기 도구 등)은 Info.plist의 CFBundleLocalizations로 현지화된다.
+    // "Mallow"는 브랜드명이라 그대로 둔다.
     let m = menu_strings(detect_lang());
 
     // ── App 메뉴 ─────────────────────────────────────────
