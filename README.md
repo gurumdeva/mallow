@@ -9,8 +9,11 @@ Mallow loads as a native macOS app, edits markdown directly in preview mode (no 
 ## Features
 
 - **Live preview editing** — type and edit markdown right inside the rendered view
-- **Native macOS chrome** — standard menu bar (File / Edit / View / Window), ⌘O / ⌘S / ⇧⌘S / ⌘N / ⌘E shortcuts, file associations for `.md`
+- **Localized UI (Korean / English / Japanese)** — the whole interface (menu, dialogs, tooltips, panels, dates) follows the device language and shows a single consistent language; any other language falls back to English
+- **Multiple windows** — New (⌘N) and Open (⌘O / Recent / Finder double-click) open in a separate window instead of replacing the current document
+- **Native macOS chrome** — standard menu bar (File / Edit / View / Window), ⌘N / ⌘O / ⌘S / ⇧⌘S / ⌘E / ⌘W shortcuts, file associations for `.md`
 - **Modified indicator** — unsaved changes show as ● in the window title (macOS standard)
+- **External-change reload** — edit a file in another app and Mallow refreshes from disk when you return (it asks first if you have unsaved edits)
 - **Recent files** — File → Open Recent (persisted across sessions)
 - **Statistics & Table of Contents** — word/character/paragraph count, read time, and a collapsible TOC (⌘⇧I)
 - **PDF export** — quick export to a clean light-theme PDF
@@ -41,7 +44,7 @@ npm run tauri build
 Artifacts:
 
 - `src-tauri/target/release/bundle/macos/Mallow.app`
-- `src-tauri/target/release/bundle/dmg/Mallow_0.1.0_aarch64.dmg`
+- `src-tauri/target/release/bundle/dmg/Mallow_0.1.3_aarch64.dmg`
 
 ## Tech stack
 
@@ -57,12 +60,22 @@ The frontend is split by responsibility (Document + UIState as the only state ho
 ```
 src/
 ├── main.ts            # composition root
+├── i18n/              # typed t() helper + locales/{en,ko,ja}.json (shared with the Rust menu)
 ├── domain/            # EventEmitter, Document, UIState
 ├── editor/            # EditorController (Milkdown wrapping)
 ├── services/          # FileService, PdfExporter, RecentFilesStore, MenuBridge, …
-├── ui/                # TitleBarView, FilenamePopover, InfoPopover (stateless)
+├── ui/                # TitleBarView, FilenamePopover, InfoPopover, StylePopover (stateless)
 └── analysis/          # StatsCalculator, TocExtractor
 ```
+
+## Localization
+
+UI strings live in `src/i18n/locales/{en,ko,ja}.json` as the single source of truth.
+The TypeScript frontend reads them through a typed `t()` helper, and the Rust native
+menu embeds the same files at build time (`include_str!`), so there is one place to edit.
+The device language is detected once in Rust (`sys-locale`) and shared with the frontend,
+so the entire app — including macOS-injected menu items (via `CFBundleLocalizations`) —
+renders in one consistent language: Korean, Japanese, or English (others fall back to English).
 
 ## License
 
