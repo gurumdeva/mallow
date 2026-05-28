@@ -11,6 +11,7 @@
     "save": "저장",
     "saveAs": "다른 이름으로 저장…",
     "exportPdf": "PDF로 내보내기…",
+    "exportHtml": "HTML로 내보내기…",
     "showStats": "통계 보기",
     "quit": "Mallow 종료",
     "about": "Mallow에 관하여",
@@ -95,6 +96,7 @@
   "error": {
     "rename": "이름 변경",
     "exportPdf": "PDF 내보내기",
+    "exportHtml": "HTML 내보내기",
     "openFile": "파일 열기",
     "openWindow": "새 창 열기",
     "save": "저장",

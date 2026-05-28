@@ -11,6 +11,7 @@
     "save": "保存",
     "saveAs": "別名で保存…",
     "exportPdf": "PDFで書き出す…",
+    "exportHtml": "HTMLで書き出す…",
     "showStats": "統計を表示",
     "quit": "Mallowを終了",
     "about": "Mallowについて",
@@ -95,6 +96,7 @@
   "error": {
     "rename": "名前の変更",
     "exportPdf": "PDF書き出し",
+    "exportHtml": "HTML書き出し",
     "openFile": "ファイルを開く",
     "openWindow": "新規ウインドウ",
     "save": "保存",

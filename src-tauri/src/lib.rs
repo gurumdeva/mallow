@@ -98,8 +98,8 @@ pub fn run() {
                     // ⌘Q는 포커스 창이 코디네이터가 되어 dirty_window_count로 전체 미저장
                     // 개수를 조회 → 통합 확인 1회 → quit_app(전체 종료) 또는 취소(아무것도 안 함).
                     // 이로써 "일부 창만 닫히는" 부분 종료가 발생하지 않는다(원자적 종료).
-                    "new_file" | "open" | "save" | "save_as" | "export_pdf" | "show_stats"
-                    | "find" | "quit" => {
+                    "new_file" | "open" | "save" | "save_as" | "export_pdf" | "export_html"
+                    | "show_stats" | "find" | "quit" => {
                         send(format!("menu:{}", id));
                     }
                     other if other.starts_with("recent_") => {
@@ -217,6 +217,8 @@ struct MenuStrings {
     save_as: String,
     #[serde(rename = "exportPdf")]
     export_pdf: String,
+    #[serde(rename = "exportHtml")]
+    export_html: String,
     #[serde(rename = "showStats")]
     show_stats: String,
     quit: String,
@@ -367,6 +369,13 @@ fn build_app_menu<R: tauri::Runtime>(
                 m.export_pdf.as_str(),
                 true,
                 Some("CmdOrCtrl+E"),
+            )?,
+            &MenuItem::with_id(
+                handle,
+                "export_html",
+                m.export_html.as_str(),
+                true,
+                Some("Shift+CmdOrCtrl+E"),
             )?,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::close_window(handle, Some(m.close_window.as_str()))?,
