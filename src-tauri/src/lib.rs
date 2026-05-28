@@ -476,14 +476,18 @@ fn recent_add(
     recent: tauri::State<RecentFiles>,
     path: String,
 ) -> Vec<String> {
-    let out = {
+    let (out, changed) = {
         let mut v = recent.0.lock().unwrap();
+        let before = v.clone();
         v.retain(|p| p != &path);
         v.insert(0, path);
         v.truncate(MAX_RECENT);
-        v.clone()
+        (v.clone(), *v != before)
     };
-    persist_and_sync_recents(&app, &out);
+    // 목록이 그대로면(예: 자동 저장이 이미 맨 앞 파일을 다시 추가) 영속·메뉴 재생성을 생략한다.
+    if changed {
+        persist_and_sync_recents(&app, &out);
+    }
     out
 }
 
