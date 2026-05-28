@@ -45,7 +45,6 @@ body {
   align-items: center;
   padding: 0 16px 0 88px;
   background: var(--bg);
-  -webkit-app-region: drag;
   z-index: 100;
 }
 
@@ -54,7 +53,6 @@ body {
   justify-content: flex-end;
   align-items: center;
   gap: 6px;
-  -webkit-app-region: no-drag;
 }
 
 button.titlebar-center {
@@ -65,12 +63,19 @@ button.titlebar-center {
   font-weight: 500;
   color: var(--text-dim);
   text-align: center;
+  /* 제목이 길어도 타이틀바를 넘지 않도록 한 줄 + 말줄임(…) 처리.
+     가로폭(max-width)을 한계로 두고 넘치면 자르며, 글자 폭이 일정치 않은
+     한글/영문 혼용에서도 픽셀 기준이라 일관되게 동작한다. (Flutter의
+     TextOverflow.ellipsis + maxWidth에 대응) 실제 파일명(doc.filename)은
+     그대로 유지되고, 보이는 표시만 잘린다. */
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60vw;
   cursor: pointer;
   padding: 5px 12px;
   border-radius: 7px;
   transition: background 0.12s, color 0.12s;
-  -webkit-app-region: no-drag;
 }
 
 button.titlebar-center:hover {
@@ -94,7 +99,6 @@ button.titlebar-center:hover {
   box-shadow:
     0 16px 32px rgba(0, 0, 0, 0.45),
     0 2px 8px rgba(0, 0, 0, 0.25);
-  -webkit-app-region: no-drag;
 }
 
 #filename-popover.hidden {
