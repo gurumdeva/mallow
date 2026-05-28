@@ -25,7 +25,7 @@ const DEFAULT_MARKDOWN = ''
 
 async function bootstrap(): Promise<void> {
   // ── i18n: 기기 언어 결정 (반드시 가장 먼저) ───────────────
-  // Rust(sys-locale)가 OS 언어를 권위 있게 판정해 'ko'|'en'을 돌려준다.
+  // Rust(sys-locale)가 OS 언어를 권위 있게 판정해 'ko'|'ja'|'en'을 돌려준다.
   // (macOS 비현지화 앱에서 navigator.language가 dev 지역으로 고정되는 함정을 피한다.)
   // 실패 시 navigator.language로 폴백. Document·뷰 생성 전에 적용해야 모든 문자열이
   // 한 언어로 일관되게 만들어진다(생성자 안에서 t()를 읽는 곳이 있으므로).

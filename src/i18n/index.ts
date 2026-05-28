@@ -5,7 +5,7 @@ import ja from './locales/ja.json'
 export type Lang = 'en' | 'ko' | 'ja'
 
 /**
- * en.json의 모든 leaf 값을 string으로 넓힌 타입. ko 리소스가 en과 "같은 키 집합"을
+ * en.json의 모든 leaf 값을 string으로 넓힌 타입. ko·ja 리소스가 en과 "같은 키 집합"을
  * 갖도록 컴파일 타임에 강제하되, 값(번역문)은 자유롭게 다를 수 있게 한다.
  * (리터럴 타입 "File" vs "파일" 불일치로 인한 오탐을 막는다.)
  */
