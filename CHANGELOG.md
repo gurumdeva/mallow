@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
-## [Unreleased]
+## [0.1.3] - 2026-05-29
 
 ### Added
 - **Localization (Korean / English / Japanese)**: the entire interface — native menu, dialogs, tooltips, the statistics and style panels, the editor placeholder, and dates — now follows the device language and shows a single consistent language. Korean, Japanese, and English are supported; any other language falls back to English.
@@ -46,7 +46,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
-[Unreleased]: https://github.com/gurumdeva/mallow/compare/v0.1.2...HEAD
+[0.1.3]: https://github.com/gurumdeva/mallow/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/gurumdeva/mallow/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/gurumdeva/mallow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/gurumdeva/mallow/releases/tag/v0.1.0
