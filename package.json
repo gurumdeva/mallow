@@ -7,14 +7,18 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/cli": "^2.11.2",
+    "jsdom": "^29.1.1",
     "sharp": "^0.34.5",
     "typescript": "~6.0.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.1.7"
   },
   "dependencies": {
     "@milkdown/core": "^7.21.1",
