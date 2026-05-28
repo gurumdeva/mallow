@@ -102,6 +102,15 @@ async function bootstrap(): Promise<void> {
   // 자동으로 진행되지 않는 현상이 있어, 모든 경로에서 명시적으로 app.exit(0)을
   // 호출하는 Rust 커맨드(force_quit)를 invoke한다.
   const win = getCurrentWindow()
+
+  // ── 외부 변경 감지: 다른 앱에서 파일을 수정하고 Mallow로 돌아오면 동기화 ──
+  // focus를 트리거로 디스크를 다시 읽어 비교한다. fs watcher 대신 focus를 쓰는 이유:
+  //  (1) 사용자가 "돌아왔을 때" 갱신되길 기대하는 시나리오에 정확히 부합
+  //  (2) 외부 앱이 저장 중인 partial write 상태를 잡을 위험이 없음
+  win.onFocusChanged(({ payload: focused }) => {
+    if (focused) fileService.syncFromDiskIfChanged().catch(reportError('파일 동기화'))
+  })
+
   win.onCloseRequested(async (event) => {
     if (doc.isModified) {
       event.preventDefault()

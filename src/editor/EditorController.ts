@@ -31,6 +31,14 @@ import '@milkdown/crepe/theme/frame-dark.css'
 export class EditorController extends EventEmitter {
   private crepe: Crepe | null = null
 
+  // load()에 의한 "프로그램적 콘텐츠 교체"가 사용자 편집('change')으로 잘못
+  // 보고되지 않도록 다음 markdownUpdated 1회를 억제하는 플래그.
+  // Milkdown listener는 markdownUpdated를 200ms debounce로 "비동기" 발화하므로,
+  // load 직후 호출자가 동기로 markSaved()를 해도 나중에 도착한 이벤트가 doc을
+  // 다시 dirty로 만든다. 그래서 markSaved 타이밍에 의존하지 않고 이벤트 자체를 억제한다.
+  private suppressChange = false
+  private suppressTimer: ReturnType<typeof setTimeout> | null = null
+
   constructor(private readonly rootSelector: string) {
     super()
   }
@@ -39,7 +47,14 @@ export class EditorController extends EventEmitter {
     this.crepe = this.createCrepe(markdown)
     // create() 전에 listener를 등록해야 초기 mount 후 변경부터 정확히 잡힌다.
     this.crepe.on((listener) => {
-      listener.markdownUpdated(() => this.emit('change'))
+      listener.markdownUpdated(() => {
+        if (this.suppressChange) {
+          // 프로그램적 load가 유발한 이벤트 — 1회만 흡수하고 즉시 해제한다.
+          this.clearSuppress()
+          return
+        }
+        this.emit('change')
+      })
     })
     await this.crepe.create()
   }
@@ -47,13 +62,38 @@ export class EditorController extends EventEmitter {
   /**
    * 컨텐츠 교체. Crepe 인스턴스는 유지하고 본문만 갈아끼운다.
    * flush=true: plugin/history state 초기화 (이전 문서의 undo 스택 등 제거).
+   *
+   * replaceAll은 debounce된 markdownUpdated를 한 번 유발하는데, 이는 사용자가
+   * 친 게 아니라 프로그램이 갈아끼운 것이므로 'change' 발행을 억제한다.
    */
   async load(markdown: string): Promise<void> {
     if (!this.crepe) {
       await this.initialize(markdown)
       return
     }
+    this.armSuppress()
     this.crepe.editor.action(replaceAll(markdown, true))
+  }
+
+  /** load 직후 도착할 markdownUpdated 1회를 억제 예약. */
+  private armSuppress(): void {
+    this.suppressChange = true
+    if (this.suppressTimer) clearTimeout(this.suppressTimer)
+    // 안전망: 새 내용이 기존과 동일하면(prevDoc.eq) markdownUpdated가 끝내
+    // 발화하지 않아 플래그가 남는다. 그러면 다음 "진짜" 편집이 잘못 무시되므로
+    // debounce(200ms)보다 충분히 긴 시간 뒤 강제 해제한다.
+    this.suppressTimer = setTimeout(() => {
+      this.suppressChange = false
+      this.suppressTimer = null
+    }, 500)
+  }
+
+  private clearSuppress(): void {
+    this.suppressChange = false
+    if (this.suppressTimer) {
+      clearTimeout(this.suppressTimer)
+      this.suppressTimer = null
+    }
   }
 
   getMarkdown(): string {
