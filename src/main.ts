@@ -24,7 +24,14 @@ import { setLocale, resolveLang, t } from './i18n'
 const DEFAULT_MARKDOWN = ''
 
 async function bootstrap(): Promise<void> {
-  // ── i18n: 기기 언어 결정 (반드시 가장 먼저) ───────────────
+  const win = getCurrentWindow()
+
+  // 새 창(doc-*)의 다크 webview 처리를 "가장 먼저" 호출한다. main 창은 Rust setup()이
+  // 처리하지만 doc 창은 이 invoke로만 처리된다. locale IPC 등 다른 await 뒤로 밀리면
+  // 첫 페인트에서 흰 flash가 1프레임 보일 수 있어, locale 판정보다 앞에 둔다(fire-and-forget).
+  if (win.label !== 'main') invoke('apply_dark_webview').catch(() => {})
+
+  // ── i18n: 기기 언어 결정 (Document·뷰 생성 전에) ──────────
   // Rust(sys-locale)가 OS 언어를 권위 있게 판정해 'ko'|'ja'|'en'을 돌려준다.
   // (macOS 비현지화 앱에서 navigator.language가 dev 지역으로 고정되는 함정을 피한다.)
   // 실패 시 navigator.language로 폴백. Document·뷰 생성 전에 적용해야 모든 문자열이
@@ -92,12 +99,6 @@ async function bootstrap(): Promise<void> {
     }
   })
 
-  const win = getCurrentWindow()
-
-  // 새 창(doc-*)은 setup()의 다크 webview 처리를 받지 못하므로 여기서 적용한다.
-  // (main 창은 setup에서 이미 처리됨 → 중복 방지로 제외)
-  if (win.label !== 'main') invoke('apply_dark_webview').catch(() => {})
-
   // ── 멀티 창 헬퍼 ─────────────────────────────────────────
   // 단일 프로세스 + 여러 창. New/Open은 현재 문서를 덮지 않고 새 창을 띄운다.
   // 파일 경로는 URL 해시로 전달한다 — 해시는 asset 요청 경로에 포함되지 않아
@@ -162,6 +163,8 @@ async function bootstrap(): Promise<void> {
   // ── Menu / OS file-open 이벤트 라우팅 ───────────────────
   // (Rust가 menu:* / open:file을 "포커스된 창"에만 emit하므로 여기 핸들러는
   //  현재 창에 대해서만 동작한다.)
+  // ⌘Q 재진입 가드: 종료 확인창이 떠 있는 동안 ⌘Q가 다시 들어와 다이얼로그가 겹치는 것을 막는다.
+  let quitting = false
   const menu = new MenuBridge({
     onNewFile: () => openDocumentWindow(null).catch(reportError(t('error.openWindow'))),
     onOpen: () =>
@@ -188,6 +191,8 @@ async function bootstrap(): Promise<void> {
     // ⌘Q: 포커스 창이 코디네이터. 전체 미저장 문서 수를 Rust에서 조회해 통합 확인 1회 →
     // 종료(quit_app=app.exit) 또는 취소. 부분 종료(일부 창만 닫힘)가 발생하지 않는다.
     onQuit: () => {
+      if (quitting) return
+      quitting = true
       void (async () => {
         const n = await invoke<number>('dirty_window_count').catch(() => 0)
         if (n > 0) {
@@ -195,7 +200,10 @@ async function bootstrap(): Promise<void> {
             t('dialog.unsavedQuit.body', { count: n }),
             { title: t('dialog.unsavedQuit.title'), kind: 'warning' },
           )
-          if (!ok) return
+          if (!ok) {
+            quitting = false // 취소 → 다시 ⌘Q 할 수 있도록 해제
+            return
+          }
         }
         invoke('quit_app').catch(() => {})
       })()

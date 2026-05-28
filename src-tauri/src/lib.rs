@@ -250,11 +250,15 @@ struct LocaleStrings {
 /// sys-locale은 CoreFoundation에서 직접 읽으므로 비현지화 앱의 navigator.language
 /// 함정을 피한다. 프런트엔드도 app_locale 명령으로 같은 판정을 공유한다.
 fn detect_lang() -> &'static str {
-    match sys_locale::get_locale() {
+    // 세션 동안 한 번만 판정해 캐시한다. 메뉴는 최근 파일이 바뀔 때마다 재빌드되는데,
+    // 매번 다시 감지하면 실행 중 OS 언어가 바뀐 경우 메뉴와 프런트엔드(app_locale, 부트스트랩
+    // 시점에 고정)가 어긋날 수 있다. OnceLock으로 고정해 세션 내내 한 언어로 일관되게 한다.
+    static DETECTED: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    *DETECTED.get_or_init(|| match sys_locale::get_locale() {
         Some(l) if l.to_lowercase().starts_with("ko") => "ko",
         Some(l) if l.to_lowercase().starts_with("ja") => "ja",
         _ => "en",
-    }
+    })
 }
 
 /// 감지된 언어의 메뉴 문자열을 돌려준다. 파싱 실패 시 en으로 폴백한다.
