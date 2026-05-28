@@ -18,6 +18,7 @@ import { TitleBarView } from './ui/TitleBarView'
 import { FilenamePopover } from './ui/FilenamePopover'
 import { InfoPopover } from './ui/InfoPopover'
 import { StylePopover } from './ui/StylePopover'
+import { FindReplace } from './ui/FindReplace'
 import { ToastService, formatError } from './ui/ToastService'
 import { setLocale, resolveLang, t } from './i18n'
 
@@ -77,6 +78,11 @@ async function bootstrap(): Promise<void> {
   )
   new InfoPopover(doc, ui, editor, stats, toc)
   new StylePopover(ui, editor)
+
+  // ── 찾기/바꾸기 ──────────────────────────────────────────
+  // ⌘F는 네이티브 Edit 메뉴의 "찾기" 항목(accelerator)으로 들어온다(menu:find → onFind).
+  // webview keydown으로 ⌘F를 잡으면 macOS responder chain이 먼저 소비해 도달하지 않는다.
+  const findReplace = new FindReplace(editor)
 
   // ── Title bar의 PDF 아이콘 클릭 → export ─────────────────
   // 키보드 ⌘E는 MenuBridge가 처리하지만 버튼 클릭은 별도 wiring 필요.
@@ -178,6 +184,7 @@ async function bootstrap(): Promise<void> {
     onSaveAs: () => fileService.saveAs().catch(reportError(t('error.saveAs'))),
     onExportPdf: () => pdfExporter.export().catch(reportError(t('error.exportPdf'))),
     onShowStats: () => ui.toggleInfoPopover(),
+    onFind: () => findReplace.toggle(),
     onRecentOpen: (i) => {
       recent
         .list()

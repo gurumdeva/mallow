@@ -1,7 +1,10 @@
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/core'
 import { toggleMark } from '@milkdown/prose/commands'
-import { replaceAll } from '@milkdown/utils'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state'
+import { Decoration, DecorationSet } from '@milkdown/prose/view'
+import type { Node as ProseNode } from '@milkdown/prose/model'
+import { replaceAll, $prose } from '@milkdown/utils'
 import {
   setBlockTypeCommand,
   wrapInBlockquoteCommand,
@@ -17,6 +20,88 @@ import { t } from '../i18n'
 
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame-dark.css'
+
+// ─── Find & Replace: ProseMirror 검색 플러그인 ──────────────────────
+// prosemirror-search가 미설치라 커스텀 $prose 플러그인으로 구현한다(신규 의존성 0).
+// 매치는 "텍스트 노드 단위"로 찾는다 → doc 위치가 항상 정확해 replace 시 텍스트가
+// 어긋날 위험이 없다(마크 경계를 넘는 매치는 놓칠 수 있으나, 잘못된 치환보다 안전).
+type SearchMatch = { from: number; to: number }
+type SearchState = {
+  query: string
+  caseSensitive: boolean
+  matches: SearchMatch[]
+  current: number // matches 인덱스, 매치 없으면 -1
+}
+
+const searchKey = new PluginKey<SearchState>('mallow-search')
+
+function computeSearchMatches(doc: ProseNode, query: string, caseSensitive: boolean): SearchMatch[] {
+  if (!query) return []
+  const out: SearchMatch[] = []
+  const needle = caseSensitive ? query : query.toLowerCase()
+  doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) return
+    const hay = caseSensitive ? node.text : node.text.toLowerCase()
+    let i = 0
+    while ((i = hay.indexOf(needle, i)) !== -1) {
+      out.push({ from: pos + i, to: pos + i + query.length })
+      i += query.length
+    }
+  })
+  return out
+}
+
+/** 검색 상태 + 하이라이트 decoration을 관리하는 ProseMirror 플러그인. */
+const searchPlugin = $prose(
+  () =>
+    new Plugin<SearchState>({
+      key: searchKey,
+      state: {
+        init: () => ({ query: '', caseSensitive: false, matches: [], current: -1 }),
+        apply(tr, prev, _oldState, newState) {
+          const meta = tr.getMeta(searchKey) as Partial<SearchState> | undefined
+          if (meta) {
+            const query = meta.query ?? prev.query
+            const caseSensitive = meta.caseSensitive ?? prev.caseSensitive
+            // query/대소문자가 바뀔 때만 재탐색(현재 인덱스만 바뀌면 재탐색 불필요).
+            const rescan =
+              (meta.query !== undefined && meta.query !== prev.query) ||
+              (meta.caseSensitive !== undefined && meta.caseSensitive !== prev.caseSensitive)
+            const matches = rescan
+              ? computeSearchMatches(newState.doc, query, caseSensitive)
+              : prev.matches
+            let current = meta.current !== undefined ? meta.current : prev.current
+            if (matches.length === 0) current = -1
+            else if (current < 0 || current >= matches.length) current = 0
+            return { query, caseSensitive, matches, current }
+          }
+          // 편집으로 doc이 바뀌면 매치를 다시 계산(위치 드리프트 방지).
+          if (tr.docChanged && prev.query) {
+            const matches = computeSearchMatches(newState.doc, prev.query, prev.caseSensitive)
+            let current = prev.current
+            if (matches.length === 0) current = -1
+            else if (current >= matches.length) current = 0
+            return { ...prev, matches, current }
+          }
+          return prev
+        },
+      },
+      props: {
+        decorations(state) {
+          const s = searchKey.getState(state)
+          if (!s || s.matches.length === 0) return DecorationSet.empty
+          return DecorationSet.create(
+            state.doc,
+            s.matches.map((m, i) =>
+              Decoration.inline(m.from, m.to, {
+                class: i === s.current ? 'search-match search-match-current' : 'search-match',
+              }),
+            ),
+          )
+        },
+      },
+    }),
+)
 
 /**
  * Milkdown crepe 인스턴스 라이프사이클을 감싼다.
@@ -155,6 +240,106 @@ export class EditorController extends EventEmitter {
   createCodeBlock(): void { this.callMilkdown(createCodeBlockCommand.key, '') }
   insertDivider(): void { this.callMilkdown(insertHrCommand.key) }
 
+  // ─── Find & Replace ──────────────────────────────────────────────
+  // 모든 검색 동작은 searchKey 플러그인 상태를 meta로 갱신하거나, 매치 위치로
+  // selection을 옮겨 scrollIntoView한다. 입력창 포커스를 뺏지 않도록 view.focus()는
+  // 호출하지 않는다(치환도 트랜잭션이라 포커스 없이 적용된다).
+
+  /** 검색어/대소문자 설정. query가 비면 하이라이트가 사라진다. */
+  setSearchQuery(query: string, caseSensitive: boolean): void {
+    if (!this.crepe) return
+    this.crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(
+        view.state.tr.setMeta(searchKey, { query, caseSensitive, current: query ? 0 : -1 }),
+      )
+    })
+    this.scrollToCurrentMatch()
+  }
+
+  /** 현재 매치 수/위치(1-based). UI의 "3 / 12" 라벨용. */
+  searchInfo(): { current: number; total: number } {
+    let info = { current: 0, total: 0 }
+    this.crepe?.editor.action((ctx) => {
+      const s = searchKey.getState(ctx.get(editorViewCtx).state)
+      if (s) info = { current: s.matches.length ? s.current + 1 : 0, total: s.matches.length }
+    })
+    return info
+  }
+
+  searchNext(): void { this.stepSearch(1) }
+  searchPrev(): void { this.stepSearch(-1) }
+
+  private stepSearch(dir: 1 | -1): void {
+    this.crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const s = searchKey.getState(view.state)
+      if (!s || s.matches.length === 0) return
+      const next = (s.current + dir + s.matches.length) % s.matches.length
+      const m = s.matches[next]
+      view.dispatch(
+        view.state.tr
+          .setMeta(searchKey, { current: next })
+          .setSelection(TextSelection.create(view.state.doc, m.from, m.to))
+          .scrollIntoView(),
+      )
+    })
+  }
+
+  private scrollToCurrentMatch(): void {
+    this.crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const s = searchKey.getState(view.state)
+      if (!s || s.current < 0 || !s.matches[s.current]) return
+      const m = s.matches[s.current]
+      view.dispatch(
+        view.state.tr
+          .setSelection(TextSelection.create(view.state.doc, m.from, m.to))
+          .scrollIntoView(),
+      )
+    })
+  }
+
+  /** 현재 매치를 replacement로 치환. 치환 후 doc 변경 → 매치 자동 재계산. */
+  searchReplace(replacement: string): void {
+    if (!this.crepe) return
+    this.crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const s = searchKey.getState(view.state)
+      if (!s || s.current < 0 || !s.matches[s.current]) return
+      const m = s.matches[s.current]
+      const tr = view.state.tr
+      if (replacement) tr.replaceWith(m.from, m.to, view.state.schema.text(replacement))
+      else tr.delete(m.from, m.to)
+      view.dispatch(tr)
+    })
+    this.scrollToCurrentMatch()
+  }
+
+  /** 모든 매치를 한 번에 치환(끝→앞 순서로 앞쪽 위치 보존). */
+  searchReplaceAll(replacement: string): void {
+    this.crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const s = searchKey.getState(view.state)
+      if (!s || s.matches.length === 0) return
+      const tr = view.state.tr
+      for (let i = s.matches.length - 1; i >= 0; i--) {
+        const m = s.matches[i]
+        if (replacement) tr.replaceWith(m.from, m.to, view.state.schema.text(replacement))
+        else tr.delete(m.from, m.to)
+      }
+      view.dispatch(tr)
+    })
+  }
+
+  /** 검색 종료 — 하이라이트 제거. */
+  clearSearch(): void {
+    this.crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setMeta(searchKey, { query: '', current: -1 }))
+    })
+  }
+
   // ─── Internal helpers ────────────────────────────────────────────
 
   /** ProseMirror view를 잡아 raw command를 dispatch. view.focus()로 selection 보호. */
@@ -178,7 +363,7 @@ export class EditorController extends EventEmitter {
   }
 
   private createCrepe(markdown: string): Crepe {
-    return new Crepe({
+    const crepe = new Crepe({
       root: this.rootSelector,
       defaultValue: markdown,
       features: {
@@ -194,5 +379,8 @@ export class EditorController extends EventEmitter {
         },
       },
     })
+    // 찾기/바꾸기 검색 하이라이트 플러그인 등록(create() 전 — 기능 로드와 동일 경로).
+    crepe.editor.use(searchPlugin)
+    return crepe
   }
 }

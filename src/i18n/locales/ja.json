@@ -26,7 +26,8 @@
     "minimize": "しまう",
     "zoom": "拡大/縮小",
     "fullscreen": "フルスクリーンの切り替え",
-    "closeWindow": "ウインドウを閉じる"
+    "closeWindow": "ウインドウを閉じる",
+    "find": "検索…"
   },
   "titlebar": {
     "styleTip": "テキストスタイル",
@@ -103,5 +104,15 @@
   },
   "toast": {
     "unknownError": "不明なエラー"
+  },
+  "find": {
+    "findPlaceholder": "検索",
+    "replacePlaceholder": "置換",
+    "replace": "置換",
+    "replaceAll": "すべて",
+    "matchCase": "大文字と小文字を区別",
+    "previous": "前へ (⇧⏎)",
+    "next": "次へ (⏎)",
+    "close": "閉じる (Esc)"
   }
 }

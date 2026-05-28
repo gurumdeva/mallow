@@ -99,7 +99,7 @@ pub fn run() {
                     // 개수를 조회 → 통합 확인 1회 → quit_app(전체 종료) 또는 취소(아무것도 안 함).
                     // 이로써 "일부 창만 닫히는" 부분 종료가 발생하지 않는다(원자적 종료).
                     "new_file" | "open" | "save" | "save_as" | "export_pdf" | "show_stats"
-                    | "quit" => {
+                    | "find" | "quit" => {
                         send(format!("menu:{}", id));
                     }
                     other if other.starts_with("recent_") => {
@@ -239,6 +239,7 @@ struct MenuStrings {
     fullscreen: String,
     #[serde(rename = "closeWindow")]
     close_window: String,
+    find: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -385,6 +386,8 @@ fn build_app_menu<R: tauri::Runtime>(
             &PredefinedMenuItem::copy(handle, Some(m.copy.as_str()))?,
             &PredefinedMenuItem::paste(handle, Some(m.paste.as_str()))?,
             &PredefinedMenuItem::select_all(handle, Some(m.select_all.as_str()))?,
+            &PredefinedMenuItem::separator(handle)?,
+            &MenuItem::with_id(handle, "find", m.find.as_str(), true, Some("CmdOrCtrl+F"))?,
         ],
     )?;
 
