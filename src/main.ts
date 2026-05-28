@@ -109,6 +109,24 @@ async function bootstrap(): Promise<void> {
     }
   })
 
+  // ── 자동 저장 ────────────────────────────────────────────
+  // 이미 저장된 문서(filePath 있음)는 편집이 잠시 멈추면 디스크에 자동 반영한다.
+  // 제목 없는 새 문서는 대상이 아니다(저장 다이얼로그를 띄우지 않기 위해).
+  // save()의 isSaving 가드와 외부 변경 sync의 baseline 가드가 동시 쓰기/읽기를 안전하게 처리한다.
+  let autosaveTimer: ReturnType<typeof setTimeout> | null = null
+  doc.on('changed', () => {
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer)
+      autosaveTimer = null
+    }
+    if (doc.isModified && doc.filePath) {
+      autosaveTimer = setTimeout(() => {
+        autosaveTimer = null
+        fileService.save().catch(reportError(t('error.save')))
+      }, 1500)
+    }
+  })
+
   // ── 멀티 창 헬퍼 ─────────────────────────────────────────
   // 단일 프로세스 + 여러 창. New/Open은 현재 문서를 덮지 않고 새 창을 띄운다.
   // 파일 경로는 URL 해시로 전달한다 — 해시는 asset 요청 경로에 포함되지 않아
