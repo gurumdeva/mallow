@@ -10,6 +10,7 @@ Mallow loads as a native macOS app, edits markdown directly in preview mode (no 
 
 - **Live preview editing** — type and edit markdown right inside the rendered view
 - **Find & Replace** (⌘F) — live match highlighting, a match counter, jump between matches, replace one or all, and an optional case-sensitive mode
+- **Paste & drop images** — paste an image from the clipboard or drag an image file into the editor; it's embedded inline so the document stays self-contained
 - **Localized UI (Korean / English / Japanese)** — the whole interface (menu, dialogs, tooltips, panels, dates) follows the device language and shows a single consistent language; any other language falls back to English
 - **Multiple windows** — New (⌘N) and Open (⌘O / Recent / Finder double-click) open in a separate window instead of replacing the current document
 - **Native macOS chrome** — standard menu bar (File / Edit / View / Window), ⌘N / ⌘O / ⌘S / ⇧⌘S / ⌘E / ⌘W shortcuts, file associations for `.md`

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.8.0] - 2026-05-29
+
+### Added
+- **Paste & drop images**: paste an image from the clipboard, or drag an image file into the editor, and it's embedded directly in your document. Images are stored inline, so the document stays self-contained and portable — there are no separate image files to keep track of. Localized (Korean / English / Japanese).
+
 ## [0.7.0] - 2026-05-29
 
 ### Added
@@ -84,6 +89,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.8.0]: https://github.com/gurumdeva/mallow/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/gurumdeva/mallow/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/gurumdeva/mallow/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/gurumdeva/mallow/compare/v0.4.0...v0.5.0

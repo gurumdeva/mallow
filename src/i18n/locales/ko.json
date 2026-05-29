@@ -105,7 +105,8 @@
     "syncFile": "파일 동기화"
   },
   "toast": {
-    "unknownError": "알 수 없는 오류"
+    "unknownError": "알 수 없는 오류",
+    "imageError": "이미지를 추가하지 못했습니다"
   },
   "find": {
     "findPlaceholder": "찾기",
@@ -116,6 +117,13 @@
     "previous": "이전 (⇧⏎)",
     "next": "다음 (⏎)",
     "close": "닫기 (Esc)"
+  },
+  "image": {
+    "upload": "업로드",
+    "uploadFile": "파일 업로드",
+    "confirm": "확인",
+    "pasteLink": "또는 링크 붙여넣기",
+    "caption": "이미지 설명 입력"
   },
   "status": {
     "summary": "{words}단어 · {min}분"

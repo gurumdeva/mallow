@@ -105,7 +105,8 @@
     "syncFile": "ファイル同期"
   },
   "toast": {
-    "unknownError": "不明なエラー"
+    "unknownError": "不明なエラー",
+    "imageError": "画像を追加できませんでした"
   },
   "find": {
     "findPlaceholder": "検索",
@@ -116,6 +117,13 @@
     "previous": "前へ (⇧⏎)",
     "next": "次へ (⏎)",
     "close": "閉じる (Esc)"
+  },
+  "image": {
+    "upload": "アップロード",
+    "uploadFile": "ファイルをアップロード",
+    "confirm": "確定",
+    "pasteLink": "またはリンクを貼り付け",
+    "caption": "画像のキャプションを入力"
   },
   "status": {
     "summary": "{words}語 · {min}分"

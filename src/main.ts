@@ -122,6 +122,8 @@ async function bootstrap(): Promise<void> {
 
   // ── Wiring: editor 변경 → doc 수정 표시 ──────────────────
   editor.on('change', () => doc.markModified())
+  // 이미지 붙여넣기/드롭 실패(용량 초과·읽기 실패·삽입 불가) 시 사용자에게 알린다.
+  editor.on('imageerror', () => toast.error(t('toast.imageError')))
 
   // 이 창의 미저장 여부를 Rust에 보고한다(⌘Q 원자적 종료 판단용).
   // doc 'changed'는 자주 불리므로 isModified가 "실제로 바뀔 때"만 IPC를 보낸다.

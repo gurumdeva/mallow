@@ -105,7 +105,8 @@
     "syncFile": "File Sync"
   },
   "toast": {
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "imageError": "Couldn't add the image"
   },
   "find": {
     "findPlaceholder": "Find",
@@ -116,6 +117,13 @@
     "previous": "Previous (⇧⏎)",
     "next": "Next (⏎)",
     "close": "Close (Esc)"
+  },
+  "image": {
+    "upload": "Upload",
+    "uploadFile": "Upload file",
+    "confirm": "Confirm",
+    "pasteLink": "or paste link",
+    "caption": "Write Image Caption"
   },
   "status": {
     "summary": "{words} words · {min} min"

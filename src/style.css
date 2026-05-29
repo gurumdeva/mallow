@@ -223,6 +223,13 @@ button.titlebar-center:hover {
   max-width: 100% !important;
 }
 
+/* 붙여넣기/드롭으로 삽입된 이미지(data URI 포함)가 본문 폭을 넘지 않도록 제한. */
+#editor .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
 #editor .ProseMirror h1,
 #editor .ProseMirror h2,
 #editor .ProseMirror h3,
