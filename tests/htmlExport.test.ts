@@ -744,6 +744,40 @@ describe('normalizeExportHtml — math', () => {
     expect(pre?.querySelector('code')?.textContent).toBe('\\int_0^1 x')
     expect(dom.querySelector('[data-type="math_block"]')).toBeNull()
   })
+
+  // math:'mathml' 모드 — HTML 내보내기에서 진짜 수식으로 렌더되도록 네이티브 <math>를 남긴다.
+  const mathmlMode = (innerHTML: string): HTMLElement => {
+    const holder = document.createElement('div')
+    holder.innerHTML = normalizeExportHtml(proseMirror(innerHTML), { math: 'mathml' })
+    return holder
+  }
+
+  it("keeps native <math> for inline math in 'mathml' mode and drops the katex-html chrome", () => {
+    const dom = mathmlMode(
+      '<p>x <span data-type="math_inline" data-value="E=mc^2"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mi>E</mi></mrow></math></span><span class="katex-html">JUNK</span></span></span> y</p>',
+    )
+    expect(dom.querySelector('math')).not.toBeNull()
+    expect(dom.querySelector('.katex-html')).toBeNull()
+    expect(dom.querySelector('.katex')).toBeNull()
+    expect(dom.querySelector('[data-type="math_inline"]')).toBeNull()
+    expect(dom.innerHTML).not.toContain('JUNK') // 시각용 KaTeX HTML은 제거됨
+  })
+
+  it("marks block math <math display=\"block\"> in 'mathml' mode", () => {
+    const dom = mathmlMode(
+      '<div data-type="math_block" data-value="x"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mi>x</mi></mrow></math></span><span class="katex-html">J</span></span></span></div>',
+    )
+    const math = dom.querySelector('math')
+    expect(math).not.toBeNull()
+    expect(math?.getAttribute('display')).toBe('block')
+    expect(dom.querySelector('.katex-html')).toBeNull()
+  })
+
+  it("falls back to LaTeX source in 'mathml' mode when no <math> is present", () => {
+    const dom = mathmlMode('<span data-type="math_inline" data-value="a+b"></span>')
+    expect(dom.querySelector('math')).toBeNull()
+    expect(dom.querySelector('code')?.textContent).toBe('a+b')
+  })
 })
 
 describe('normalizeExportHtml — editor scaffolding', () => {

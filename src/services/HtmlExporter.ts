@@ -51,7 +51,9 @@ export class HtmlExporter {
       })
       // 사용자가 취소하면 throw 없이 null 반환(호출자가 토스트를 건너뛰도록).
       if (!selected) return null
-      const body = normalizeExportHtml(source)
+      // HTML 파일은 브라우저가 직접 열어 렌더하므로, 수식은 네이티브 MathML로 남겨 진짜 수식으로
+      // 보이게 한다(의존성 0). (PDF는 html2canvas가 MathML을 못 그려 PdfExporter가 'source'를 쓴다.)
+      const body = normalizeExportHtml(source, { math: 'mathml' })
       // 쓰기 실패는 일부러 던진다(호출자 .catch가 보고).
       await writeTextFile(selected, buildHtmlDocument(base, body, dark))
       return selected
@@ -68,7 +70,18 @@ export class HtmlExporter {
  * 원본은 건드리지 않도록 항상 깊은 클론을 만들어 그 위에서 작업한다.
  * Tauri/에디터 런타임에 의존하지 않으므로 jsdom에서 단위 테스트할 수 있다.
  */
-export function normalizeExportHtml(sourceEl: HTMLElement): string {
+export type MathExportMode = 'mathml' | 'source'
+export interface ExportOptions {
+  /**
+   * 수식 표현 방식. 'mathml'은 KaTeX가 만든 의미론적 <math>(브라우저 네이티브 렌더, 의존성 0)를
+   * 남겨 HTML에서 진짜 수식으로 보이게 한다. 'source'는 LaTeX 원문(<code>/<pre>)으로 남긴다 —
+   * PDF는 html2canvas가 MathML을 그리지 못하므로 'source'를 쓴다. 기본값은 안전한 'source'.
+   */
+  math?: MathExportMode
+}
+
+export function normalizeExportHtml(sourceEl: HTMLElement, opts: ExportOptions = {}): string {
+  const mathMode: MathExportMode = opts.math ?? 'source'
   // 원본 보호: 깊은 클론 위에서만 변형한다.
   const root = sourceEl.cloneNode(true) as HTMLElement
 
@@ -84,9 +97,9 @@ export function normalizeExportHtml(sourceEl: HTMLElement): string {
   normalizeImageBlocks(root)
   // 4) 리스트 wrapper chrome 제거 → 의미론적 <li>
   normalizeListItems(root)
-  // 5) 수식: 편집용 KaTeX 렌더(CSS 없이는 깨져 보이고 MathML+HTML이 중복 노출됨)를
-  //    data-value의 LaTeX 원문으로 치환해 의존성 없이 깔끔하게 남긴다.
-  normalizeMath(root)
+  // 5) 수식: 'mathml'이면 KaTeX가 만든 네이티브 <math>만 남겨 진짜 수식으로(의존성 0), 'source'면
+  //    LaTeX 원문으로 치환한다. 어느 쪽이든 편집용 KaTeX HTML(중복 노출되는 깨진 마크업)은 제거된다.
+  normalizeMath(root, mathMode)
   // 6) 편집 전용 위젯/장식(빈 .ProseMirror-widget, gap cursor, hardbreak 등) 정리.
   stripEditorScaffolding(root)
   // 7) 남아있는 Find 하이라이트 span 언랩(텍스트는 보존).
@@ -407,21 +420,37 @@ function unwrapSoleParagraphInCells(root: HTMLElement): void {
  * 그래서 data-value의 LaTeX 원문만 남긴다(인라인 → <code>, 블록 → <pre><code>). 의존성 없이 깔끔하고
  * 의미가 보존된다. (KaTeX를 그대로 렌더하려면 CSS+폰트 임베드가 필요 — 추후 옵션.)
  */
-function normalizeMath(root: HTMLElement): void {
-  root.querySelectorAll('[data-type="math_inline"]').forEach((el) => {
+function normalizeMath(root: HTMLElement, mode: MathExportMode): void {
+  const replace = (el: Element, block: boolean) => {
+    const docu = el.ownerDocument
+    // 'mathml' 모드: KaTeX가 만든 의미론적 <math>(.katex-mathml 안)을 그대로 남긴다.
+    // 네이티브 MathML이라 CSS/폰트 의존 없이 브라우저가 진짜 수식으로 렌더한다. 시각용으로만
+    // 그려지는 .katex-html(중복 마크업)은 버린다. <math>가 없으면(예외) 아래 source 경로로 폴백.
+    if (mode === 'mathml') {
+      const math = el.querySelector('math')
+      if (math) {
+        const clone = math.cloneNode(true) as HTMLElement
+        if (block) clone.setAttribute('display', 'block')
+        el.replaceWith(clone)
+        return
+      }
+    }
+    // 'source' 모드(또는 MathML 부재 폴백): LaTeX 원문을 코드로 남긴다.
     const latex = el.getAttribute('data-value') ?? el.textContent ?? ''
-    const code = el.ownerDocument.createElement('code')
-    code.textContent = latex
-    el.replaceWith(code)
-  })
-  root.querySelectorAll('[data-type="math_block"]').forEach((el) => {
-    const latex = el.getAttribute('data-value') ?? el.textContent ?? ''
-    const pre = el.ownerDocument.createElement('pre')
-    const code = el.ownerDocument.createElement('code')
-    code.textContent = latex
-    pre.appendChild(code)
-    el.replaceWith(pre)
-  })
+    if (block) {
+      const pre = docu.createElement('pre')
+      const code = docu.createElement('code')
+      code.textContent = latex
+      pre.appendChild(code)
+      el.replaceWith(pre)
+    } else {
+      const code = docu.createElement('code')
+      code.textContent = latex
+      el.replaceWith(code)
+    }
+  }
+  root.querySelectorAll('[data-type="math_inline"]').forEach((el) => replace(el, false))
+  root.querySelectorAll('[data-type="math_block"]').forEach((el) => replace(el, true))
 }
 
 /**
