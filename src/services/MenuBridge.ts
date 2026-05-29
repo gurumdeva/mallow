@@ -64,8 +64,9 @@ export class MenuBridge {
         opts,
       ),
     )
-    // menu:quit은 Rust가 app.emit으로 "전 창"에 broadcast한다(EventTarget::Any →
-    // target 지정 리스너에도 전달됨). 각 창이 받아 스스로 닫기(확인 포함)를 수행.
+    // menu:quit은 Rust가 다른 메뉴 명령과 동일하게 "포커스된 창에만" emit_to로 보낸다(broadcast 아님).
+    // 그 포커스 창이 코디네이터가 되어 onQuit에서 전체 미저장 개수를 조회 → 통합 확인 1회 → 종료/취소.
+    // (그래서 이 리스너도 다른 창의 명령을 받지 않도록 target=현재 창인 opts로 등록한다.)
     u.push(await listen('menu:quit', () => this.actions.onQuit(), opts))
   }
 
