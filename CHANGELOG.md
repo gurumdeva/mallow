@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.21.0] - 2026-05-29
+
+### Changed
+- **Math now renders as real math in HTML export.** Exported HTML uses native MathML (no external libraries or fonts), so inline math like `E = mc²` and block equations display as properly typeset math in any modern browser — instead of showing the raw LaTeX source. (PDF export keeps the LaTeX source, since the PDF renderer can't draw MathML.)
+
 ## [0.20.0] - 2026-05-29
 
 ### Changed
@@ -193,6 +198,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.21.0]: https://github.com/gurumdeva/mallow/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/gurumdeva/mallow/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/gurumdeva/mallow/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/gurumdeva/mallow/compare/v0.17.0...v0.18.0
