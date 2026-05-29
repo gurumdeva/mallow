@@ -1,10 +1,18 @@
 # Mallow
 
-A lightweight WYSIWYG Markdown editor for macOS — built with Tauri + Milkdown.
+**A calm, native Markdown editor for macOS.** You write in the rendered document itself — no split raw/preview pane, no toolbar clutter, no settings to wade through. It follows your system light/dark appearance, keeps each note as a plain `.md` file on your disk, and stays out of your way.
 
-Mallow loads as a native macOS app, edits markdown directly in preview mode (no separate raw view), and ships as a ~5 MB DMG.
+Mallow is for people who just want to *write*. It deliberately isn't a note database, a wiki, or a plugin platform — it's a focused editor that does the writing essentials beautifully and stops there.
 
 ![Mallow screenshot](docs/screenshot.png)
+
+## Why Mallow
+
+- **Genuinely minimal — no settings screen.** Sensible defaults, zero configuration. It looks the way it should the moment you open it.
+- **Distraction-free by design.** Focus Mode dims everything but the line you're on; Typewriter Scrolling keeps that line centered. The chrome fades while you write.
+- **First-class Korean, Japanese & English.** Most minimal editors are English-first. Mallow's entire UI is localized to your device language, and the writing features are built for CJK too — correct word counts for spaceless Japanese/Chinese, IME-safe typewriter scrolling, and smart typography that never touches your Hangul or Kana.
+- **Your files, your disk.** One note = one `.md` file. No account, no cloud lock-in, no proprietary format. Point it at an iCloud or Dropbox folder if you want sync — that's it.
+- **Native and tiny.** A real macOS app (native menus, dialogs, file associations) in a ~5 MB download, built on Tauri + a WKWebView — not a bundled browser.
 
 ## Features
 
@@ -25,14 +33,29 @@ Mallow loads as a native macOS app, edits markdown directly in preview mode (no 
 - **Export as HTML** (⇧⌘E) — save a self-contained, styled HTML file you can open in any browser
 - **Automatic light & dark theme** — follows your macOS appearance and switches live when you change it, with system fonts (SF Pro + Apple SD Gothic Neo)
 
-## Download
+## Download & first launch
 
-Grab the latest `.dmg` from the [Releases](../../releases) page.
+1. Download the latest `Mallow_<version>_aarch64.dmg` from the [Releases](../../releases) page.
+2. Open the DMG and drag **Mallow** into your **Applications** folder.
+3. **First launch (important):** the app is not yet code-signed with an Apple Developer ID, so macOS Gatekeeper will refuse to open it on a normal double-click ("Mallow can't be opened because Apple cannot check it for malicious software"). To get past this **once**:
+   - **Right-click** (or Control-click) `Mallow.app` → choose **Open** → in the dialog, click **Open** again.
+   - *Or:* try to open it once, then go to **System Settings → Privacy & Security**, scroll to the message about Mallow, and click **Open Anyway**.
+4. After this first time, Mallow opens normally with a regular double-click.
 
-> **First launch on macOS:** the build is unsigned, so Gatekeeper blocks the first launch.
-> Right-click `Mallow.app` → **Open** → confirm. From then on it launches normally.
+> This step is only needed because the build is unsigned — it is not a sign of anything wrong with the app. Signing & notarization are planned so future builds open without the prompt.
 
-> **Apple Silicon only.** The current build targets `aarch64-apple-darwin` (M1/M2/M3/M4).
+> **Apple Silicon only.** The released DMG targets `aarch64-apple-darwin` (M1/M2/M3/M4).
+
+## Philosophy
+
+Mallow grows by *sharpening what it is*, not by accumulating everything users might ask for. Some popular features are intentionally **out of scope**, because adding them would trade away the calm, single-file simplicity that is the point:
+
+- **No plugin system, no marketplace** — the curated defaults are the product.
+- **No accounts or built-in cloud sync** — your files are plain `.md`; a synced folder (iCloud/Dropbox) already does this.
+- **No wiki-links / backlinks / tags / graph** — Mallow edits a document, it isn't a knowledge base. (Use Obsidian/Logseq for that.)
+- **No settings sprawl** — preferences that would need a settings screen are answered with a good default instead.
+
+If a change makes Mallow calmer to write in, it belongs. If it adds chrome or configuration, it probably doesn't.
 
 ## Development
 
@@ -50,7 +73,7 @@ npm run tauri build
 Artifacts:
 
 - `src-tauri/target/release/bundle/macos/Mallow.app`
-- `src-tauri/target/release/bundle/dmg/Mallow_0.1.3_aarch64.dmg`
+- `src-tauri/target/release/bundle/dmg/Mallow_<version>_aarch64.dmg`
 
 ## Tech stack
 
