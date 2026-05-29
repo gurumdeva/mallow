@@ -17,6 +17,7 @@ import {
 import { toggleStrikethroughCommand } from '@milkdown/preset-gfm'
 import { EventEmitter } from '../domain/EventEmitter'
 import { t } from '../i18n'
+import { MAX_IMAGE_BYTES, imageFilesFrom, fileToDataURL } from './imageEmbed'
 
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame-dark.css'
@@ -357,6 +358,90 @@ export class EditorController extends EventEmitter {
     })
   }
 
+  // ─── 이미지 붙여넣기 / 드래그-드롭 ───────────────────────────────
+  // paste/drop된 이미지 파일을 data URI 인라인 이미지로 본문에 삽입한다.
+  // FileReader가 비동기라 핸들러는 "처리함"(true)만 먼저 반환하고, 실제 삽입은
+  // insertImageFiles에서 await로 진행한다. 실패 시 'imageerror'를 발행(상위가 토스트).
+
+  /** paste/drop 핸들러를 제공하는 ProseMirror 플러그인. */
+  private imageDropPastePlugin() {
+    return $prose(
+      () =>
+        new Plugin({
+          props: {
+            handlePaste: (view, event) => this.onImagePaste(view, event),
+            handleDrop: (view, event) => this.onImageDrop(view, event),
+          },
+        }),
+    )
+  }
+
+  private onImagePaste(
+    view: import('@milkdown/prose/view').EditorView,
+    event: ClipboardEvent,
+  ): boolean {
+    const files = imageFilesFrom(event.clipboardData)
+    if (files.length === 0) return false // 이미지가 없으면 기본 붙여넣기에 맡긴다
+    event.preventDefault()
+    void this.insertImageFiles(view, files)
+    return true
+  }
+
+  private onImageDrop(
+    view: import('@milkdown/prose/view').EditorView,
+    event: DragEvent,
+  ): boolean {
+    const files = imageFilesFrom(event.dataTransfer)
+    if (files.length === 0) return false // 내부 텍스트 이동 등은 기본 동작 유지
+    const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
+    event.preventDefault() // 브라우저가 드롭한 파일을 열어버리는 기본 동작 차단
+    void this.insertImageFiles(view, files, pos)
+    return true
+  }
+
+  /**
+   * 이미지 파일들을 읽은 순서대로 data URI 인라인 이미지로 삽입한다.
+   * dropPos가 있으면 첫 이미지는 그 위치에, 이후 이미지는 직전 삽입 위치 뒤에 이어 붙는다.
+   */
+  private async insertImageFiles(
+    view: import('@milkdown/prose/view').EditorView,
+    files: File[],
+    dropPos?: number,
+  ): Promise<void> {
+    let first = true
+    for (const file of files) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        this.emit('imageerror')
+        continue
+      }
+      let src: string
+      try {
+        src = await fileToDataURL(file)
+      } catch {
+        this.emit('imageerror')
+        continue
+      }
+      // 읽는 동안 창이 닫혔거나 에디터가 파괴됐으면 중단(dispatch가 throw하는 것 방지).
+      const imageType = view.state.schema.nodes.image
+      if (!this.crepe || !imageType) return
+      try {
+        let tr = view.state.tr
+        if (dropPos != null && first) {
+          const clamped = Math.min(Math.max(dropPos, 0), view.state.doc.content.size)
+          tr = tr.setSelection(TextSelection.near(view.state.doc.resolve(clamped)))
+        }
+        // 파일명(확장자 제거)을 alt로 → 저장된 마크다운이 읽기 쉽고 접근성에도 좋다.
+        const alt = file.name ? file.name.replace(/\.[^./\\]+$/, '') : ''
+        tr = tr.replaceSelectionWith(imageType.create({ src, alt }), false)
+        view.dispatch(tr)
+      } catch {
+        this.emit('imageerror') // 스키마상 삽입 불가(예: 코드블록 내부) 등
+        return
+      }
+      first = false
+    }
+  }
+
   // ─── Internal helpers ────────────────────────────────────────────
 
   /** ProseMirror view를 잡아 raw command를 dispatch. view.focus()로 selection 보호. */
@@ -394,10 +479,23 @@ export class EditorController extends EventEmitter {
         [CrepeFeature.Placeholder]: {
           text: t('editor.placeholder'),
         },
+        // 이미지 블록의 클릭-업로드 UI: 업로드 결과를 data URI로(저장 후 깨지는 blob: URL 방지)
+        // + 버튼/플레이스홀더 텍스트를 기기 언어로. (onUpload은 inline/block 양쪽 기본값에 적용)
+        [CrepeFeature.ImageBlock]: {
+          onUpload: fileToDataURL,
+          inlineUploadButton: t('image.upload'),
+          inlineUploadPlaceholderText: t('image.pasteLink'),
+          blockUploadButton: t('image.uploadFile'),
+          blockConfirmButton: t('image.confirm'),
+          blockUploadPlaceholderText: t('image.pasteLink'),
+          blockCaptionPlaceholderText: t('image.caption'),
+        },
       },
     })
     // 찾기/바꾸기 검색 하이라이트 플러그인 등록(create() 전 — 기능 로드와 동일 경로).
     crepe.editor.use(searchPlugin)
+    // 이미지 paste/드래그-드롭 플러그인 등록.
+    crepe.editor.use(this.imageDropPastePlugin())
     return crepe
   }
 }
