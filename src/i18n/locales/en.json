@@ -8,6 +8,7 @@
     "open": "Open…",
     "openRecent": "Open Recent",
     "recentEmpty": "(None)",
+    "clearRecent": "Clear Recent",
     "save": "Save",
     "saveAs": "Save As…",
     "exportPdf": "Export as PDF…",
@@ -106,7 +107,6 @@
     "openWindow": "Open Window",
     "save": "Save",
     "saveAs": "Save As",
-    "openRecent": "Open Recent",
     "syncFile": "File Sync"
   },
   "toast": {
@@ -114,7 +114,8 @@
     "imageError": "Couldn't add the image",
     "imageTooLarge": "Image is too large (max 10 MB)",
     "exported": "Exported to {name}",
-    "nothingToExport": "Nothing to export"
+    "nothingToExport": "Nothing to export",
+    "recentRemoved": "That file no longer exists — removed from Recents"
   },
   "find": {
     "findPlaceholder": "Find",

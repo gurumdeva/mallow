@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.12.0] - 2026-05-29
+
+### Changed
+- **Open Recent is more reliable**: clicking a recent file always opens the file you clicked, even if the list reordered in the background, and entries that no longer exist are removed automatically (with a brief notice) instead of failing.
+
+### Added
+- **Clear Recent**: an "Open Recent → Clear Recent" menu item to empty the recent-files list.
+
 ## [0.11.0] - 2026-05-29
 
 ### Changed
@@ -124,6 +132,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.12.0]: https://github.com/gurumdeva/mallow/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/gurumdeva/mallow/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/gurumdeva/mallow/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/gurumdeva/mallow/compare/v0.8.0...v0.9.0

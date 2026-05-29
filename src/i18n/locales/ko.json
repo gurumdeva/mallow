@@ -8,6 +8,7 @@
     "open": "열기…",
     "openRecent": "최근 파일 열기",
     "recentEmpty": "(없음)",
+    "clearRecent": "최근 파일 지우기",
     "save": "저장",
     "saveAs": "다른 이름으로 저장…",
     "exportPdf": "PDF로 내보내기…",
@@ -106,7 +107,6 @@
     "openWindow": "새 창 열기",
     "save": "저장",
     "saveAs": "다른 이름으로 저장",
-    "openRecent": "최근 파일 열기",
     "syncFile": "파일 동기화"
   },
   "toast": {
@@ -114,7 +114,8 @@
     "imageError": "이미지를 추가하지 못했습니다",
     "imageTooLarge": "이미지가 너무 큽니다 (최대 10MB)",
     "exported": "{name}(으)로 내보냈습니다",
-    "nothingToExport": "내보낼 내용이 없습니다"
+    "nothingToExport": "내보낼 내용이 없습니다",
+    "recentRemoved": "파일이 더 이상 존재하지 않아 최근 목록에서 제거했습니다"
   },
   "find": {
     "findPlaceholder": "찾기",
