@@ -30,6 +30,13 @@ const DEFAULT_MARKDOWN = ''
 async function bootstrap(): Promise<void> {
   const win = getCurrentWindow()
 
+  // dragDropEnabled=false로 Tauri 네이티브 가로채기를 꺼 webview가 HTML5 drag-drop을 받는다
+  // (crepe가 에디터 위 이미지 드롭을 처리). 단, 에디터 밖(타이틀바·여백)에 파일을 떨어뜨리면
+  // webview 기본 동작이 그 파일로 navigate해 앱 화면이 깨지므로, window 레벨에서 기본 동작을
+  // 막아 navigate를 차단한다. (에디터 내부 드롭은 ProseMirror가 먼저 처리하므로 영향 없음)
+  window.addEventListener('dragover', (e) => e.preventDefault())
+  window.addEventListener('drop', (e) => e.preventDefault())
+
   // ── 테마: OS 외관(라이트/다크)을 따라간다 (수동 선택 UI 없음) ──
   // index.html 인라인 스크립트가 1차 페인트 전에 data-theme를 이미 확정하지만,
   // 여기서 한 번 더 동기화해 (인라인 스크립트가 어떤 이유로 누락돼도) 일관성을 보장하고,
@@ -95,6 +102,27 @@ async function bootstrap(): Promise<void> {
     toast.error(`${label}: ${formatError(e)}`)
   }
 
+  // 내보내기(PDF/HTML) 공용 래퍼: (1) 빈 문서면 다이얼로그를 열지 않고 안내(빈 파일 생성 방지),
+  // (2) 저장 성공 시 성공 토스트(이전엔 조용히 끝나 피드백이 없었다). exporter는 저장 경로|null 반환.
+  const runExport = (
+    exporter: { export(): Promise<string | null> },
+    errorLabel: string,
+  ): void => {
+    if (editor.getMarkdown().trim() === '') {
+      toast.info(t('toast.nothingToExport'))
+      return
+    }
+    exporter
+      .export()
+      .then((savedPath) => {
+        if (savedPath) {
+          const name = savedPath.split(/[/\\]/).pop() || savedPath
+          toast.info(t('toast.exported', { name }))
+        }
+      })
+      .catch(reportError(errorLabel))
+  }
+
   // ── Views (stateless, 상태는 doc/ui에서만 read) ──────────
   new TitleBarView(doc, ui)
   // 파일명 확정: 저장된 문서면 디스크 파일까지 rename, 새 문서면 표시명만 (FileService.applyRename).
@@ -117,13 +145,16 @@ async function bootstrap(): Promise<void> {
   const btnPdf = document.getElementById('btn-pdf')
   btnPdf?.addEventListener('click', (e) => {
     e.stopPropagation()
-    pdfExporter.export().catch(reportError(t('error.exportPdf')))
+    runExport(pdfExporter, t('error.exportPdf'))
   })
 
   // ── Wiring: editor 변경 → doc 수정 표시 ──────────────────
   editor.on('change', () => doc.markModified())
-  // 이미지 붙여넣기/드롭 실패(용량 초과·읽기 실패·삽입 불가) 시 사용자에게 알린다.
-  editor.on('imageerror', () => toast.error(t('toast.imageError')))
+  // 이미지 붙여넣기/드롭/업로드 실패 시 사유에 맞는 토스트를 띄운다.
+  // (용량 초과 vs 읽기·삽입 실패를 구분; 여러 파일이어도 사유당 1회만 발행됨)
+  editor.on('imageerror', (reason) => {
+    toast.error(reason === 'too-large' ? t('toast.imageTooLarge') : t('toast.imageError'))
+  })
 
   // 이 창의 미저장 여부를 Rust에 보고한다(⌘Q 원자적 종료 판단용).
   // doc 'changed'는 자주 불리므로 isModified가 "실제로 바뀔 때"만 IPC를 보낸다.
@@ -178,6 +209,9 @@ async function bootstrap(): Promise<void> {
       height: 760,
       titleBarStyle: 'overlay',
       hiddenTitle: true,
+      // Tauri 네이티브 파일-드롭 가로채기를 꺼서 webview가 HTML5 drag-drop을 받게 한다
+      // (crepe가 에디터 위 이미지 드롭을 처리). main 창은 tauri.conf.json에서 동일 설정.
+      dragDropEnabled: false,
       backgroundColor: [28, 28, 30],
       ...(position ?? {}),
     })
@@ -230,8 +264,8 @@ async function bootstrap(): Promise<void> {
         .catch(reportError(t('error.openFile'))),
     onSave: () => fileService.save().catch(reportError(t('error.save'))),
     onSaveAs: () => fileService.saveAs().catch(reportError(t('error.saveAs'))),
-    onExportPdf: () => pdfExporter.export().catch(reportError(t('error.exportPdf'))),
-    onExportHtml: () => htmlExporter.export().catch(reportError(t('error.exportHtml'))),
+    onExportPdf: () => runExport(pdfExporter, t('error.exportPdf')),
+    onExportHtml: () => runExport(htmlExporter, t('error.exportHtml')),
     onShowStats: () => ui.toggleInfoPopover(),
     onFind: () => findReplace.toggle(),
     onRecentOpen: (i) => {

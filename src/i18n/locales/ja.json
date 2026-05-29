@@ -106,7 +106,10 @@
   },
   "toast": {
     "unknownError": "不明なエラー",
-    "imageError": "画像を追加できませんでした"
+    "imageError": "画像を追加できませんでした",
+    "imageTooLarge": "画像が大きすぎます（最大10MB）",
+    "exported": "{name} に書き出しました",
+    "nothingToExport": "書き出す内容がありません"
   },
   "find": {
     "findPlaceholder": "検索",

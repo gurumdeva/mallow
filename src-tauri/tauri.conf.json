@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Mallow",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "identifier": "com.gwon.mallow",
   "build": {
     "frontendDist": "../dist",
@@ -19,6 +19,7 @@
         "fullscreen": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
+        "dragDropEnabled": false,
         "backgroundColor": "#1C1C1E"
       }
     ],

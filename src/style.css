@@ -230,6 +230,13 @@ button.titlebar-center:hover {
   border-radius: 6px;
 }
 
+/* Crepe 이미지 블록은 기본적으로 object-fit:cover + min-height:100px라, 가로로 길거나
+ * 작은 이미지가 잘려 보인다. 잘림 없이 전체가 보이도록 contain + 자연 높이로 덮어쓴다. */
+#editor .milkdown-image-block .image-wrapper img {
+  object-fit: contain;
+  min-height: 0;
+}
+
 #editor .ProseMirror h1,
 #editor .ProseMirror h2,
 #editor .ProseMirror h3,
@@ -655,9 +662,32 @@ button.titlebar-center:hover {
   font-family: var(--font-mono) !important;
 }
 
+/* 코드블록의 긴 줄이 페이지 밖으로 잘리지 않도록 줄바꿈한다(.pdf-export *의 기본을 보강). */
+.pdf-export pre,
+.pdf-export pre code {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
 .pdf-export blockquote {
   color: #555 !important;
   border-left-color: #aaa !important;
+}
+
+/* 링크가 .pdf-export *의 일괄 검정(color:#1a1a1a)에 묻히지 않도록 링크색을 복원.
+ * (.pdf-export a 가 .pdf-export * 보다 특이도가 높아 !important끼리도 이 규칙이 이긴다) */
+.pdf-export a {
+  color: #0a6cff !important;
+}
+
+/* 코드블록·이미지·표·인용이 페이지 경계에서 반으로 잘리지 않도록 통째 유지. */
+.pdf-export pre,
+.pdf-export img,
+.pdf-export table,
+.pdf-export blockquote {
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 

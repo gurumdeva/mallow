@@ -30,7 +30,7 @@ export class StatusBar {
   }
 
   private render(): void {
-    const s = this.stats.calculate(this.editor.getMarkdown())
+    const s = this.stats.calculate(this.editor.getMarkdown(), getLocale())
     if (s.characters === 0) {
       this.el.classList.add('hidden')
       return
