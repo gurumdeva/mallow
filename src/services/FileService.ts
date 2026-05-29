@@ -16,6 +16,19 @@ export class RenameError extends Error {
 }
 
 /**
+ * 파일 열기가 "읽기 실패"로 끝났음을 알리는 에러. 이 시점에 해당 경로는 이미
+ * 최근 목록(권위 있는 Rust 목록)에서 제거됐다 → 호출부(main.ts)가 일반 오류 대신
+ * "더 이상 존재하지 않아 최근 목록에서 제거함" 토스트를 띄우도록 구분한다.
+ * (삭제/이동된 파일을 recent에서 클릭한 흔한 경우를 사용자에게 명확히 알린다.)
+ */
+export class OpenError extends Error {
+  constructor(readonly cause: unknown) {
+    super('open-failed')
+    this.name = 'OpenError'
+  }
+}
+
+/**
  * 파일 IO(열기 다이얼로그·경로 열기·저장·외부 변경 동기화)를 조립하는 application service.
  * Document·Editor·RecentFilesStore를 함께 mutate한다.
  * (New/Open의 "현재 창 재사용 vs 새 창" 결정은 호출부 main.ts가 담당한다.)
@@ -89,15 +102,16 @@ export class FileService {
   }
 
   async openPath(path: string): Promise<void> {
-    // 읽기(=파일 존재 확인)만 분리해 catch. 읽기 실패일 때만 recent에서 정리하고
-    // 호출자(main.ts)가 toast를 띄우도록 rethrow한다. editor.load 등 읽기 이후
-    // 단계가 실패해도 파일 자체는 유효하므로 recent에서 지우지 않는다.
+    // 읽기(=파일 존재 확인)만 분리해 catch. 읽기 실패는 보통 파일이 삭제/이동된 경우다
+    // → 권위 있는 최근 목록(Rust)에서 그 경로를 제거하고(recent_remove가 영속+메뉴 재빌드),
+    // OpenError로 rethrow해 호출자(main.ts)가 "최근 목록에서 제거함" 토스트를 띄우게 한다.
+    // editor.load 등 읽기 이후 단계의 실패는 파일 자체는 유효하므로 recent를 건드리지 않는다.
     let content: string
     try {
       content = await readTextFile(path)
     } catch (e) {
       await this.recent.remove(path)
-      throw e
+      throw new OpenError(e)
     }
     await this.editor.load(content)
     this.doc.setPath(path)

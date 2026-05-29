@@ -102,8 +102,46 @@ pub fn run() {
                     | "show_stats" | "find" | "quit" => {
                         send(format!("menu:{}", id));
                     }
+                    // 최근 파일 목록 비우기. 권위 있는 Rust 목록을 비우고 영속·메뉴 재생성.
+                    "recent_clear" => {
+                        // state()가 돌려주는 State 가드는 임시값이라, lock 가드를 잡은 채
+                        // 같은 문장에서 해제되면 빌림 오류가 난다 → let으로 수명을 늘린다.
+                        let recent = app.state::<RecentFiles>();
+                        let out = {
+                            let mut v = recent.0.lock().unwrap();
+                            v.clear();
+                            v.clone()
+                        };
+                        persist_and_sync_recents(app, &out);
+                    }
+                    // Open Recent 항목 클릭. 메뉴는 인덱스(recent_<N>)로 식별되지만,
+                    // 메뉴 빌드 시점과 클릭 시점 사이에 목록이 바뀌면(자동 저장이 맨 앞 파일을
+                    // 다시 올리거나 다른 창이 파일을 열어 순서가 변함) 인덱스만 믿으면 "엉뚱한
+                    // 파일"이 열린다. 그래서 JS에 인덱스를 넘겨 다시 조회하게 하지 않고,
+                    // 여기서 권위 있는 목록(RecentFiles)으로부터 클릭 순간의 실제 PATH를
+                    // 즉시 해석해 OS 파일 열기와 동일한 "open:file" 이벤트로 보낸다.
+                    // (메뉴는 항상 이 목록으로부터 재빌드되므로 인덱스→경로 매핑이 일관된다.)
                     other if other.starts_with("recent_") => {
-                        send(format!("menu:{}", other));
+                        if let Some(path) = other
+                            .strip_prefix("recent_")
+                            .and_then(|n| n.parse::<usize>().ok())
+                            .and_then(|i| {
+                                app.state::<RecentFiles>().0.lock().unwrap().get(i).cloned()
+                            })
+                        {
+                            match &target {
+                                Some(label) => {
+                                    let _ = app.emit_to(
+                                        tauri::EventTarget::webview_window(label.clone()),
+                                        "open:file",
+                                        path,
+                                    );
+                                }
+                                None => {
+                                    let _ = app.emit("open:file", path);
+                                }
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -212,6 +250,8 @@ struct MenuStrings {
     open_recent: String,
     #[serde(rename = "recentEmpty")]
     recent_empty: String,
+    #[serde(rename = "clearRecent")]
+    clear_recent: String,
     save: String,
     #[serde(rename = "saveAs")]
     save_as: String,
@@ -337,11 +377,28 @@ fn build_app_menu<R: tauri::Runtime>(
     let r2 = MenuItem::with_id(handle, "recent_2", l2.as_str(), recent_files.len() > 2, None::<&str>)?;
     let r3 = MenuItem::with_id(handle, "recent_3", l3.as_str(), recent_files.len() > 3, None::<&str>)?;
     let r4 = MenuItem::with_id(handle, "recent_4", l4.as_str(), recent_files.len() > 4, None::<&str>)?;
+    // 목록 맨 아래에 구분선 + "최근 항목 지우기". 목록이 비어 있으면(=슬롯이 모두 "(없음)")
+    // 지울 게 없으므로 비활성화해 빈 상태 처리를 슬롯과 동일하게 맞춘다.
+    let clear = MenuItem::with_id(
+        handle,
+        "recent_clear",
+        m.clear_recent.as_str(),
+        !recent_files.is_empty(),
+        None::<&str>,
+    )?;
     let recent_menu = Submenu::with_items(
         handle,
         m.open_recent.as_str(),
         true,
-        &[&r0, &r1, &r2, &r3, &r4],
+        &[
+            &r0,
+            &r1,
+            &r2,
+            &r3,
+            &r4,
+            &PredefinedMenuItem::separator(handle)?,
+            &clear,
+        ],
     )?;
 
     // ── File 메뉴 ────────────────────────────────────────

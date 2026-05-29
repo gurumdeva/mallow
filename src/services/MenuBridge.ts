@@ -1,6 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { MAX_RECENT } from './RecentFilesStore'
 
 export type MenuActions = {
   onNewFile: () => void
@@ -11,7 +10,6 @@ export type MenuActions = {
   onExportHtml: () => void
   onShowStats: () => void
   onFind: () => void
-  onRecentOpen: (idx: number) => void
   onOpenFromOs: (path: string) => void
   onQuit: () => void
 }
@@ -43,9 +41,9 @@ export class MenuBridge {
     u.push(await listen('menu:export_html', () => this.actions.onExportHtml(), opts))
     u.push(await listen('menu:show_stats', () => this.actions.onShowStats(), opts))
     u.push(await listen('menu:find', () => this.actions.onFind(), opts))
-    for (let i = 0; i < MAX_RECENT; i++) {
-      u.push(await listen(`menu:recent_${i}`, () => this.actions.onRecentOpen(i), opts))
-    }
+    // Open Recent 클릭은 인덱스 이벤트로 받지 않는다. 메뉴 빌드/클릭 사이 목록 변경으로
+    // 엉뚱한 파일이 열리는 race를 막기 위해, Rust가 클릭 순간 권위 있는 목록에서 실제 경로를
+    // 해석해 OS 파일 열기와 동일한 "open:file"로 보낸다 → onOpenFromOs로 일원화 처리.
     u.push(
       await listen<string>(
         'open:file',

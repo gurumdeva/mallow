@@ -13,7 +13,7 @@ import { RecentFilesStore } from './services/RecentFilesStore'
 import { WindowTitleSync } from './services/WindowTitleSync'
 import { PdfExporter } from './services/PdfExporter'
 import { HtmlExporter } from './services/HtmlExporter'
-import { FileService, RenameError } from './services/FileService'
+import { FileService, RenameError, OpenError } from './services/FileService'
 import { MenuBridge } from './services/MenuBridge'
 import { TitleBarView } from './ui/TitleBarView'
 import { FilenamePopover } from './ui/FilenamePopover'
@@ -108,6 +108,18 @@ async function bootstrap(): Promise<void> {
   const reportError = (label: string) => (e: unknown) => {
     console.error(label, e)
     toast.error(`${label}: ${formatError(e)}`)
+  }
+
+  // 파일 열기 실패 처리: 읽기 실패(OpenError)는 보통 삭제/이동된 파일이라 이미 최근
+  // 목록에서 제거된 상태 → 일반 오류 대신 "더 이상 존재하지 않아 최근 목록에서 제거함"을
+  // 안내한다. 그 밖의 오류는 일반 파일 열기 오류 토스트로 보고한다.
+  const reportOpenError = (e: unknown): void => {
+    if (e instanceof OpenError) {
+      console.error('openPath failed:', e.cause)
+      toast.info(t('toast.recentRemoved'))
+    } else {
+      reportError(t('error.openFile'))(e)
+    }
   }
 
   // 내보내기(PDF/HTML) 공용 래퍼: (1) 빈 문서면 다이얼로그를 열지 않고 안내(빈 파일 생성 방지),
@@ -236,7 +248,7 @@ async function bootstrap(): Promise<void> {
   // 덕분에 앱을 갓 켠 빈 창에서 열면 빈 창이 남지 않고, 작업 중인 창은 보존된다.
   const handleOpenPath = (filePath: string): void => {
     if (doc.isPristine) {
-      fileService.openPath(filePath).catch(reportError(t('error.openFile')))
+      fileService.openPath(filePath).catch(reportOpenError)
     } else {
       openDocumentWindow(filePath).catch(reportError(t('error.openWindow')))
     }
@@ -282,15 +294,8 @@ async function bootstrap(): Promise<void> {
     onExportHtml: () => runExport(htmlExporter, t('error.exportHtml')),
     onShowStats: () => ui.toggleInfoPopover(),
     onFind: () => findReplace.toggle(),
-    onRecentOpen: (i) => {
-      recent
-        .list()
-        .then((list) => {
-          const p = list[i]
-          if (p) handleOpenPath(p)
-        })
-        .catch(reportError(t('error.openRecent')))
-    },
+    // Open Recent 클릭은 Rust가 클릭 순간 실제 경로를 해석해 open:file로 보낸다
+    // (인덱스 race 방지). OS 파일 열기와 동일 경로(onOpenFromOs)로 처리된다.
     onOpenFromOs: (p) => handleOpenPath(p),
     // ⌘Q: 포커스 창이 코디네이터. 전체 미저장 문서 수를 Rust에서 조회해 통합 확인 1회 →
     // 종료(quit_app=app.exit) 또는 취소. 부분 종료(일부 창만 닫힘)가 발생하지 않는다.
@@ -328,12 +333,12 @@ async function bootstrap(): Promise<void> {
   const hashRaw = location.hash.slice(1)
   const hashFile = hashRaw ? decodeURIComponent(hashRaw) : null
   if (hashFile) {
-    await fileService.openPath(hashFile).catch(reportError(t('error.openFile')))
+    await fileService.openPath(hashFile).catch(reportOpenError)
   } else if (win.label === 'main') {
     try {
       const pending: string[] = await invoke('webview_ready')
       if (pending.length > 0) {
-        await fileService.openPath(pending[0]).catch(reportError(t('error.openFile')))
+        await fileService.openPath(pending[0]).catch(reportOpenError)
         for (const p of pending.slice(1)) openDocumentWindow(p).catch(reportError(t('error.openWindow')))
       } else if (!localStorage.getItem('mallow.welcomed')) {
         // 첫 실행 + 열 파일 없음 → 환영 문서 1회 표시. load()가 change 이벤트를 억제하므로

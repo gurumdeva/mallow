@@ -8,6 +8,7 @@
     "open": "開く…",
     "openRecent": "最近使った項目を開く",
     "recentEmpty": "（なし）",
+    "clearRecent": "最近使った項目を消去",
     "save": "保存",
     "saveAs": "別名で保存…",
     "exportPdf": "PDFで書き出す…",
@@ -106,7 +107,6 @@
     "openWindow": "新規ウインドウ",
     "save": "保存",
     "saveAs": "別名で保存",
-    "openRecent": "最近使った項目を開く",
     "syncFile": "ファイル同期"
   },
   "toast": {
@@ -114,7 +114,8 @@
     "imageError": "画像を追加できませんでした",
     "imageTooLarge": "画像が大きすぎます（最大10MB）",
     "exported": "{name} に書き出しました",
-    "nothingToExport": "書き出す内容がありません"
+    "nothingToExport": "書き出す内容がありません",
+    "recentRemoved": "ファイルが存在しないため、最近使った項目から削除しました"
   },
   "find": {
     "findPlaceholder": "検索",
