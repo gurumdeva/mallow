@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.18.0] - 2026-05-29
+
+### Fixed
+- **Opening a file that's already open no longer creates a duplicate window.** If you open a document that's already open in another window — via Open, Open Recent, or a Finder double-click — Mallow now brings that window to the front instead of opening a second copy. Previously two windows could hold the same file and autosave over each other. The check is race-safe even if the same file is opened twice in quick succession.
+
+### Changed
+- **Hardened file renaming** (defense-in-depth): the backend now independently re-validates that a rename's new name is a plain filename within the same folder, rejecting any value that contains a path separator or would resolve outside the folder — a second safety layer behind the existing in-app guard. No change for normal renames.
+
 ## [0.17.0] - 2026-05-29
 
 ### Fixed
@@ -166,6 +174,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.18.0]: https://github.com/gurumdeva/mallow/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/gurumdeva/mallow/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/gurumdeva/mallow/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/gurumdeva/mallow/compare/v0.14.0...v0.15.0
