@@ -82,6 +82,11 @@ export function normalizeExportHtml(sourceEl: HTMLElement): string {
   normalizeListItems(root)
   // 4) 남아있는 Find 하이라이트 span 언랩(텍스트는 보존).
   unwrapSearchMatches(root)
+  // 5) XSS 방어: 내보낸 .html은 브라우저에서 열리거나 공유될 수 있으므로,
+  //    신뢰할 수 없는 문서에서 온 링크 href와 이미지 src의 스킴을 화이트리스트로 검사한다.
+  //    (이미지 블록 정규화 뒤에 돌려서 거기서 만든 <img>의 src까지 함께 검사한다.)
+  sanitizeLinkHrefs(root)
+  sanitizeImageSrcs(root)
 
   return root.innerHTML
 }
@@ -315,6 +320,87 @@ function unwrapSearchMatches(root: HTMLElement): void {
 }
 
 /**
+ * URL 문자열의 "스킴 부분"을 우회 시도까지 흡수해 정규화한다.
+ *
+ * 공격자는 `JavaScript:`, ` javascript:`(앞 공백), `java\tscript:`(탭),
+ * `java\nscript:`(개행) 같은 변형으로 단순 문자열 비교를 회피하려 한다.
+ * 브라우저는 스킴을 해석할 때 앞뒤 공백을 떼고 스킴 안의 ASCII 제어문자(탭/개행 등)를
+ * 무시하므로, 우리도 동일하게:
+ *   1) 앞뒤 공백 제거(trim)
+ *   2) ASCII 제어문자(0x00–0x1F, 0x7F)와 모든 공백문자 제거
+ *   3) 소문자화
+ * 한 뒤 비교한다. (제어문자/공백은 정상 URL의 의미 있는 부분이 아니므로 전체에서 제거해도 안전하다.)
+ */
+function normalizeUrlForSchemeCheck(raw: string): string {
+  return raw
+    .trim()
+    // ASCII 제어문자(0x00–0x1F, 0x7F)와 모든 공백문자(\s)를 함께 제거한다(java\tscript: 같은 우회 흡수).
+    .replace(/[\x00-\x1f\x7f\s]/g, '')
+    .toLowerCase()
+}
+
+/**
+ * 정규화한 URL이 위험한 스킴(javascript:, data:, vbscript: 등)을 가지는지 검사하기 위한,
+ * "스킴을 가진 URL"의 정의. RFC 3986 의 scheme 문법(첫 글자는 알파벳, 이후 알파벳/숫자/+/-/.)을 따른다.
+ * 매칭되지 않으면(스킴 없음) 상대경로/앵커/쿼리이므로 허용 대상이다.
+ */
+const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/
+
+/**
+ * a[href] 스킴 화이트리스트 검사(FIX #1).
+ *
+ * 허용: http:, https:, mailto:, 그리고 스킴이 없는 상대/앵커/프래그먼트 URL
+ *   (스킴 없음, 또는 / # ? . 로 시작 — 프로토콜 상대 //host 는 스킴이 없으므로 그대로 허용).
+ * 그 외(javascript:, data:, vbscript:, file:, blob:, about: …)는 href 속성을 제거하고
+ * 보이는 텍스트는 유지한다(링크는 죽지만 내용은 남는다).
+ */
+function sanitizeLinkHrefs(root: HTMLElement): void {
+  const anchors = Array.from(root.querySelectorAll('a[href]'))
+  for (const a of anchors) {
+    const raw = a.getAttribute('href')
+    if (raw === null) continue // 방어적: href 없는 <a>는 건드리지 않는다.
+    const normalized = normalizeUrlForSchemeCheck(raw)
+    // 스킴이 없으면(상대/앵커/쿼리/프로토콜 상대) 안전 → 그대로 둔다.
+    const match = normalized.match(SCHEME_RE)
+    if (!match) continue
+    // 스킴 뒤의 ':'까지 포함된 매칭에서 ':'를 떼어 스킴 이름만 얻는다.
+    const scheme = match[0].slice(0, -1)
+    if (scheme === 'http' || scheme === 'https' || scheme === 'mailto') continue
+    // 위험한 스킴: href를 제거해 무력화(텍스트는 보존).
+    a.removeAttribute('href')
+  }
+}
+
+/**
+ * img[src] 스킴 화이트리스트 검사(FIX #2).
+ *
+ * 허용: data:image/...(앱 자체 붙여넣기/드롭 인라인 이미지)과 http:/https:.
+ *   (웹 이미지를 정당하게 참조하는 문서가 있으므로 http/https는 허용한다.)
+ * 그 외(javascript:, data: 중 image 가 아닌 것, vbscript:, file: …)는 <img>를 제거한다.
+ */
+function sanitizeImageSrcs(root: HTMLElement): void {
+  const imgs = Array.from(root.querySelectorAll('img[src]'))
+  for (const img of imgs) {
+    const raw = img.getAttribute('src')
+    if (raw === null) continue
+    const normalized = normalizeUrlForSchemeCheck(raw)
+    const match = normalized.match(SCHEME_RE)
+    // src에 스킴이 없으면(상대경로 등) 위험 스킴은 아니지만, 이미지 정규화 경로상
+    // 정상 이미지는 data:/http(s) 절대 URL이므로 스킴 없는 src도 그대로 허용한다.
+    if (!match) continue
+    const scheme = match[0].slice(0, -1)
+    if (scheme === 'http' || scheme === 'https') continue
+    // data:는 "정적 래스터" 이미지 타입일 때만 허용한다. data:image/svg+xml은 SVG가
+    // 능동 포맷(스크립트/onload 포함 가능)이라 제외한다 — 앱 자체는 FileReader로 만든
+    // 래스터 data URI만 생성하므로 정상 이미지는 영향 없고, 내보낸 파일의 심층방어가 된다.
+    // (img src로 참조된 SVG는 secure-static 모드라 실행은 안 되지만, allowlist 의도와 일치시킨다.)
+    if (scheme === 'data' && /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon)[;,]/.test(normalized)) continue
+    // 그 외 위험한 스킴: <img>를 통째로 제거한다.
+    img.remove()
+  }
+}
+
+/**
  * 본문 HTML을 읽기 좋은 완결된 HTML5 문서로 감싼다.
  *
  * @param dark true면 다크 색 구성(어두운 배경/밝은 텍스트), false면 라이트.
@@ -350,10 +436,21 @@ export function buildHtmlDocument(title: string, bodyHtml: string, dark: boolean
         tableBorder: '#d8d8dd',
       }
 
+  // 심층 방어(FIX #3): 내보낸 파일은 브라우저에서 열리거나 공유될 수 있으므로,
+  // 스킴 검사를 빠져나간 무언가가 있어도 안전하도록 제한적인 CSP meta를 <head>에 박는다.
+  //   - default-src 'none' : 스크립트 포함 모든 리소스를 기본 차단(이 문서엔 스크립트가 없다).
+  //   - img-src data: http: https: : 임베드된 data-URI 이미지와 웹 이미지(정규화 허용 범위)만.
+  //   - style-src 'unsafe-inline' : 문서가 인라인 스타일 한 덩어리로 색을 담으므로 필요.
+  //   - font-src data: : 시스템 폰트 스택만 쓰지만 혹시 모를 data: 폰트만 허용.
+  //   - base-uri 'none' : base 주입으로 상대 URL을 외부로 돌리는 것을 막는다.
+  const csp =
+    "default-src 'none'; img-src data: http: https:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'"
+
   return `<!doctype html>
 <html lang="${document.documentElement.lang || 'en'}">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="${csp}" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="${c.scheme}" />
 <title>${escapeHtml(title)}</title>

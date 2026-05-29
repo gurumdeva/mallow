@@ -436,3 +436,179 @@ describe('buildHtmlDocument — lang attribute', () => {
     expect(buildHtmlDocument('t', '', false)).toContain('<html lang="en">')
   })
 })
+
+describe('normalizeExportHtml — link href sanitization (XSS)', () => {
+  /** href로 <a>를 만든 뒤 normalize 결과에서 그 <a>를 찾아 돌려준다. */
+  function anchorAfterNormalize(href: string): HTMLAnchorElement | null {
+    // 속성값에 "가 섞여도 안전하게 setAttribute로 주입한다.
+    const a = document.createElement('a')
+    a.setAttribute('href', href)
+    a.textContent = 'click me'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.appendChild(a)
+    const holder = document.createElement('div')
+    holder.innerHTML = normalizeExportHtml(pm)
+    return holder.querySelector('a')
+  }
+
+  it('neutralizes a javascript: href but keeps the visible text', () => {
+    const a = anchorAfterNormalize('javascript:alert(1)')
+    expect(a).not.toBeNull()
+    expect(a?.hasAttribute('href')).toBe(false)
+    expect(a?.textContent).toBe('click me')
+  })
+
+  it('neutralizes a data:text/html href', () => {
+    const a = anchorAfterNormalize('data:text/html,<script>alert(1)</script>')
+    expect(a?.hasAttribute('href')).toBe(false)
+  })
+
+  it('neutralizes a vbscript: href', () => {
+    const a = anchorAfterNormalize('vbscript:msgbox(1)')
+    expect(a?.hasAttribute('href')).toBe(false)
+  })
+
+  it('catches control-char / casing bypasses (java\\tscript:, JavaScript:, leading space)', () => {
+    expect(anchorAfterNormalize('java\tscript:alert(1)')?.hasAttribute('href')).toBe(false)
+    expect(anchorAfterNormalize('java\nscript:alert(1)')?.hasAttribute('href')).toBe(false)
+    expect(anchorAfterNormalize('JavaScript:alert(1)')?.hasAttribute('href')).toBe(false)
+    expect(anchorAfterNormalize('  javascript:alert(1)')?.hasAttribute('href')).toBe(false)
+    // 스킴 앞에 제어문자가 섞인 형태(\x01javascript:)도 trim/strip 후 잡힌다.
+    expect(anchorAfterNormalize('javascript:alert(1)')?.hasAttribute('href')).toBe(false)
+  })
+
+  it('keeps http/https hrefs intact', () => {
+    expect(anchorAfterNormalize('http://example.com/x')?.getAttribute('href')).toBe(
+      'http://example.com/x',
+    )
+    expect(anchorAfterNormalize('https://example.com/x?q=1#h')?.getAttribute('href')).toBe(
+      'https://example.com/x?q=1#h',
+    )
+  })
+
+  it('keeps mailto: hrefs intact', () => {
+    expect(anchorAfterNormalize('mailto:foo@bar.com')?.getAttribute('href')).toBe(
+      'mailto:foo@bar.com',
+    )
+  })
+
+  it('keeps relative / anchor / fragment / query hrefs intact', () => {
+    expect(anchorAfterNormalize('/about')?.getAttribute('href')).toBe('/about')
+    expect(anchorAfterNormalize('#section')?.getAttribute('href')).toBe('#section')
+    expect(anchorAfterNormalize('?q=1')?.getAttribute('href')).toBe('?q=1')
+    expect(anchorAfterNormalize('./relative/path.html')?.getAttribute('href')).toBe(
+      './relative/path.html',
+    )
+    expect(anchorAfterNormalize('page.html')?.getAttribute('href')).toBe('page.html')
+  })
+
+  it('keeps protocol-relative //host hrefs (no scheme present)', () => {
+    expect(anchorAfterNormalize('//cdn.example.com/x')?.getAttribute('href')).toBe(
+      '//cdn.example.com/x',
+    )
+  })
+
+  it('leaves an <a> without href untouched', () => {
+    const a = document.createElement('a')
+    a.textContent = 'no href'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.appendChild(a)
+    const holder = document.createElement('div')
+    holder.innerHTML = normalizeExportHtml(pm)
+    const out = holder.querySelector('a')
+    expect(out).not.toBeNull()
+    expect(out?.hasAttribute('href')).toBe(false)
+    expect(out?.textContent).toBe('no href')
+  })
+})
+
+describe('normalizeExportHtml — image src sanitization (XSS)', () => {
+  const pngDataUri =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+
+  /** src로 <img>를 만든 뒤 normalize 결과 컨테이너를 돌려준다(img가 살았는지/죽었는지 확인용). */
+  function imgAfterNormalize(src: string): HTMLElement {
+    const img = document.createElement('img')
+    img.setAttribute('src', src)
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.appendChild(img)
+    const holder = document.createElement('div')
+    holder.innerHTML = normalizeExportHtml(pm)
+    return holder
+  }
+
+  it('drops an <img> with a javascript: src', () => {
+    expect(imgAfterNormalize('javascript:alert(1)').querySelector('img')).toBeNull()
+  })
+
+  it('drops an <img> with a non-image data: src (data:text/html)', () => {
+    expect(
+      imgAfterNormalize('data:text/html,<script>alert(1)</script>').querySelector('img'),
+    ).toBeNull()
+  })
+
+  it('drops an <img> with a vbscript: / file: src', () => {
+    expect(imgAfterNormalize('vbscript:msgbox(1)').querySelector('img')).toBeNull()
+    expect(imgAfterNormalize('file:///etc/passwd').querySelector('img')).toBeNull()
+  })
+
+  it('catches control-char bypass in img src (data:\\timage/...-style fakes)', () => {
+    // "data:image" 처럼 보이지만 실제로는 image 타입이 아닌 경우 → 제거.
+    expect(imgAfterNormalize('data:imagex/png;base64,AAAA').querySelector('img')).toBeNull()
+  })
+
+  it('keeps a data:image/... src', () => {
+    const img = imgAfterNormalize(pngDataUri).querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img?.getAttribute('src')).toBe(pngDataUri)
+  })
+
+  it('drops data:image/svg+xml (active format) but keeps raster data URIs', () => {
+    // SVG는 스크립트/onload를 품을 수 있는 능동 포맷이라 래스터 화이트리스트에서 제외한다.
+    expect(
+      imgAfterNormalize('data:image/svg+xml,<svg onload=alert(1)></svg>').querySelector('img'),
+    ).toBeNull()
+    expect(
+      imgAfterNormalize('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=').querySelector('img'),
+    ).toBeNull()
+    // 콤마 형식(비-base64) 래스터도 허용된다(앱은 ;base64를 쓰지만 손수 작성 가능).
+    expect(
+      imgAfterNormalize('data:image/gif,GIF89a').querySelector('img'),
+    ).not.toBeNull()
+  })
+
+  it('keeps http/https image srcs', () => {
+    expect(
+      imgAfterNormalize('https://example.com/a.png').querySelector('img')?.getAttribute('src'),
+    ).toBe('https://example.com/a.png')
+    expect(
+      imgAfterNormalize('http://example.com/a.png').querySelector('img')?.getAttribute('src'),
+    ).toBe('http://example.com/a.png')
+  })
+})
+
+describe('buildHtmlDocument — CSP meta (defense-in-depth)', () => {
+  it('embeds a restrictive Content-Security-Policy meta in <head>', () => {
+    const html = buildHtmlDocument('t', '<p>x</p>', false)
+    expect(html).toContain('http-equiv="Content-Security-Policy"')
+    // 핵심 디렉티브들이 모두 들어있는지.
+    expect(html).toContain("default-src 'none'")
+    expect(html).toContain('img-src data: http: https:')
+    expect(html).toContain("style-src 'unsafe-inline'")
+    expect(html).toContain('base-uri')
+    // 스크립트는 어디에도 허용되지 않아야 한다(script-src 디렉티브 자체가 없음 → default-src 'none' 적용).
+    expect(html).not.toContain('script-src')
+  })
+
+  it('keeps the color-scheme meta + inline <style> alongside the CSP (legit content not broken)', () => {
+    const dark = buildHtmlDocument('t', '<p>x</p>', true)
+    expect(dark).toContain('name="color-scheme"')
+    expect(dark).toContain('content="dark"')
+    expect(dark).toContain('<style>')
+    // CSP가 들어와도 본문은 그대로 임베드된다.
+    expect(dark).toContain('<p>x</p>')
+  })
+})
