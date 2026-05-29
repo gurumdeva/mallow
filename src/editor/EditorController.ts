@@ -1,5 +1,5 @@
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
-import { commandsCtx, editorViewCtx } from '@milkdown/core'
+import { commandsCtx, editorViewCtx, editorViewOptionsCtx } from '@milkdown/core'
 import { toggleMark } from '@milkdown/prose/commands'
 import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/prose/view'
@@ -18,6 +18,7 @@ import { toggleStrikethroughCommand } from '@milkdown/preset-gfm'
 import { EventEmitter } from '../domain/EventEmitter'
 import { t } from '../i18n'
 import { MAX_IMAGE_BYTES, imageFilesFrom, fileToDataURL } from './imageEmbed'
+import { smartTypographyRules } from './smartTypographyRules'
 
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame-dark.css'
@@ -745,12 +746,24 @@ export class EditorController extends EventEmitter {
         },
       },
     })
+    // 네이티브 맞춤법 검사: ProseMirror contenteditable(.ProseMirror = view.dom)에 spellcheck="true"를
+    // 건다. macOS WKWebView가 우클릭 교정 후보를 제공한다(빨간 밑줄은 안 나오지만 정상 — 별도 라이브러리 없음).
+    // EditorView의 attributes editorProp은 view.dom 속성을 선언적으로 지정하는 공식 경로다.
+    crepe.editor.config((ctx) => {
+      ctx.update(editorViewOptionsCtx, (prev) => ({
+        ...prev,
+        attributes: { ...(prev.attributes as Record<string, string> | undefined), spellcheck: 'true' },
+      }))
+    })
     // 찾기/바꾸기 검색 하이라이트 플러그인 등록(create() 전 — 기능 로드와 동일 경로).
     crepe.editor.use(searchPlugin)
     // Focus Mode(현재 블록 강조) + Typewriter(캐럿 줄 중앙 유지) 플러그인 등록.
     // 둘 다 기본 OFF이며 setFocusMode/setTypewriter로 켜진다(검색 플러그인과 독립적으로 공존).
     crepe.editor.use(focusPlugin)
     crepe.editor.use(typewriterPlugin(this.typewriterHolder))
+    // 스마트 타이포그래피 입력 규칙(따옴표/대시/줄임표). $inputRule이라 core의 단일 inputRules
+    // 플러그인에 합쳐져 IME 보호·코드 제외·Backspace/⌘Z 되돌리기가 그대로 적용된다(기본 ON, 토글 없음).
+    smartTypographyRules.forEach((rule) => crepe.editor.use(rule))
     // 이미지 paste/드래그-드롭 플러그인 등록.
     crepe.editor.use(this.imageDropPastePlugin())
     return crepe

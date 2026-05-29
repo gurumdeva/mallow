@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.14.0] - 2026-05-29
+
+### Added
+- **Smart typography**: as you type, straight quotes become curly (“ ” / ‘ ’), `--` becomes an en dash (–), `---` an em dash (—), and `...` an ellipsis (…). It stays out of code blocks and inline code, leaves a line-leading `---` as a divider, and you can undo any substitution with Backspace or ⌘Z.
+- **Spell check**: the system spell checker is now active in the editor — right-click a misspelled word for suggestions. Uses your macOS language settings; nothing to configure.
+
 ## [0.13.0] - 2026-05-29
 
 ### Added
@@ -138,6 +144,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.14.0]: https://github.com/gurumdeva/mallow/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/gurumdeva/mallow/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/gurumdeva/mallow/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/gurumdeva/mallow/compare/v0.10.0...v0.11.0
