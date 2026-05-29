@@ -18,6 +18,7 @@ import { toggleStrikethroughCommand } from '@milkdown/preset-gfm'
 import { EventEmitter } from '../domain/EventEmitter'
 import { t } from '../i18n'
 import { MAX_IMAGE_BYTES, imageFilesFrom, fileToDataURL } from './imageEmbed'
+import { isBareUrl } from './urlPaste'
 import { smartTypographyRules } from './smartTypographyRules'
 
 import '@milkdown/crepe/theme/common/style.css'
@@ -707,7 +708,9 @@ export class EditorController extends EventEmitter {
       () =>
         new Plugin({
           props: {
-            handlePaste: (view, event) => this.onImagePaste(view, event),
+            // 이미지 붙여넣기 우선 → 아니면 "선택 텍스트 + URL" 링크 감싸기 → 둘 다 아니면 기본 붙여넣기.
+            handlePaste: (view, event) =>
+              this.onImagePaste(view, event) || this.onUrlPaste(view, event),
             handleDrop: (view, event) => this.onImageDrop(view, event),
           },
         }),
@@ -722,6 +725,29 @@ export class EditorController extends EventEmitter {
     if (files.length === 0) return false // 이미지가 없으면 기본 붙여넣기에 맡긴다
     event.preventDefault()
     void this.insertImageFiles(view, files)
+    return true
+  }
+
+  /**
+   * 선택된 텍스트가 있는 상태에서 단일 URL을 붙여넣으면, 그 텍스트를 URL 링크로 감싼다
+   * (GitHub/Slack/Bear식 동작). 예: "docs"를 선택하고 https://example.com 붙여넣기 → [docs](https://…).
+   * 선택이 없거나 클립보드가 URL이 아니면 false를 반환해 기본 붙여넣기(URL을 그대로 삽입)에 맡긴다.
+   * http(s)만 허용하므로 javascript: 등 위험 스킴을 링크로 만드는 일은 없다(isBareUrl 참고).
+   */
+  private onUrlPaste(
+    view: import('@milkdown/prose/view').EditorView,
+    event: ClipboardEvent,
+  ): boolean {
+    const { selection, schema } = view.state
+    if (selection.empty) return false // 선택 없음 → 기본 붙여넣기
+    const text = event.clipboardData?.getData('text/plain')?.trim() ?? ''
+    if (!isBareUrl(text)) return false
+    const linkType = schema.marks.link
+    if (!linkType) return false // 링크 마크가 없으면(이론상) 기본 동작
+    event.preventDefault()
+    const { from, to } = selection
+    // 선택 텍스트는 그대로 두고 link 마크만 입힌다 → 직렬화 시 [text](url).
+    view.dispatch(view.state.tr.addMark(from, to, linkType.create({ href: text })))
     return true
   }
 

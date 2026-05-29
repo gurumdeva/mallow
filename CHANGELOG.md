@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.25.0] - 2026-05-30
+
+### Added
+- **Paste a link onto selected text**: select some text, paste a URL, and Mallow wraps the selection in a link — e.g. select "docs" and paste `https://example.com` to get `[docs](https://example.com)`. Only `http`/`https` URLs trigger this; pasting with no selection still inserts the URL as before.
+
 ## [0.24.0] - 2026-05-30
 
 ### Added
@@ -213,6 +218,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.25.0]: https://github.com/gurumdeva/mallow/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/gurumdeva/mallow/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/gurumdeva/mallow/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/gurumdeva/mallow/compare/v0.21.0...v0.22.0

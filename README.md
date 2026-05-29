@@ -35,6 +35,7 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 - **Export as HTML** (⇧⌘E) — save a self-contained, styled HTML file you can open in any browser (math renders as native MathML; tables and lists come out clean)
 - **Copy as Rich Text** (⌥⌘C) — copy the document as formatted rich text, so pasting into Slack, email, Google Docs, or Notion keeps your headings, bold, lists, tables, and code; plain-text targets receive the markdown source
 - **Paste and Match Style** (⇧⌘V) — paste the clipboard as plain text, without markdown parsing or source formatting
+- **Paste a link onto selected text** — select text and paste an http(s) URL to wrap it in a link
 - **Text zoom** — ⌘+ / ⌘− make the text bigger or smaller; per-window and reset each launch (nothing to configure)
 - **Automatic light & dark theme** — follows your macOS appearance and switches live when you change it, with system fonts (SF Pro + Apple SD Gothic Neo)
 
