@@ -408,22 +408,26 @@ export class EditorController extends EventEmitter {
     files: File[],
     dropPos?: number,
   ): Promise<void> {
+    // 여러 파일을 드롭/붙여넣었을 때 파일마다 토스트를 띄우면 화면이 도배된다.
+    // 사유별(너무 큼 / 읽기·삽입 실패) 횟수만 집계해 끝에서 사유당 1회만 알린다.
+    let tooLarge = 0
+    let failed = 0
     let first = true
     for (const file of files) {
       if (file.size > MAX_IMAGE_BYTES) {
-        this.emit('imageerror')
+        tooLarge++
         continue
       }
       let src: string
       try {
         src = await fileToDataURL(file)
       } catch {
-        this.emit('imageerror')
+        failed++
         continue
       }
       // 읽는 동안 창이 닫혔거나 에디터가 파괴됐으면 중단(dispatch가 throw하는 것 방지).
       const imageType = view.state.schema.nodes.image
-      if (!this.crepe || !imageType) return
+      if (!this.crepe || !imageType) break
       try {
         let tr = view.state.tr
         if (dropPos != null && first) {
@@ -434,12 +438,27 @@ export class EditorController extends EventEmitter {
         const alt = file.name ? file.name.replace(/\.[^./\\]+$/, '') : ''
         tr = tr.replaceSelectionWith(imageType.create({ src, alt }), false)
         view.dispatch(tr)
+        first = false
       } catch {
-        this.emit('imageerror') // 스키마상 삽입 불가(예: 코드블록 내부) 등
-        return
+        failed++ // 스키마상 삽입 불가(예: 코드블록 내부) 등
       }
-      first = false
     }
+    // 사유별 1회만 발행 — 상위(main.ts)가 사유에 맞는 토스트로 변환한다.
+    if (tooLarge > 0) this.emit('imageerror', 'too-large')
+    if (failed > 0) this.emit('imageerror', 'failed')
+  }
+
+  /**
+   * Crepe 이미지 블록의 클릭/링크 업로드 경로용 onUpload. paste/drop과 동일하게
+   * 용량 상한을 적용한다(이 가드가 없으면 업로드 UI로는 10MB 초과 이미지가 그대로 들어간다).
+   * 화살표 필드로 둬서 featureConfig에 넘겨도 this 바인딩이 유지된다.
+   */
+  private uploadImage = async (file: File): Promise<string> => {
+    if (file.size > MAX_IMAGE_BYTES) {
+      this.emit('imageerror', 'too-large')
+      throw new Error('image too large')
+    }
+    return fileToDataURL(file)
   }
 
   // ─── Internal helpers ────────────────────────────────────────────
@@ -482,7 +501,7 @@ export class EditorController extends EventEmitter {
         // 이미지 블록의 클릭-업로드 UI: 업로드 결과를 data URI로(저장 후 깨지는 blob: URL 방지)
         // + 버튼/플레이스홀더 텍스트를 기기 언어로. (onUpload은 inline/block 양쪽 기본값에 적용)
         [CrepeFeature.ImageBlock]: {
-          onUpload: fileToDataURL,
+          onUpload: this.uploadImage,
           inlineUploadButton: t('image.upload'),
           inlineUploadPlaceholderText: t('image.pasteLink'),
           blockUploadButton: t('image.uploadFile'),

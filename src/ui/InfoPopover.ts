@@ -104,7 +104,7 @@ export class InfoPopover {
   }
 
   private renderStatsBody(): string {
-    const s: Stats = this.stats.calculate(this.editor.getMarkdown())
+    const s: Stats = this.stats.calculate(this.editor.getMarkdown(), getLocale())
     const loc = getLocale()
     return `
       <div class="stats-grid">

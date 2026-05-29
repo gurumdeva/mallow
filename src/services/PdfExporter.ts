@@ -18,23 +18,31 @@ export class PdfExporter {
 
   constructor(private readonly doc: Document) {}
 
-  async export(): Promise<void> {
-    if (this.isExporting) return
+  /**
+   * @returns 저장된 경로(성공) 또는 null(사용자가 취소). 호출부가 성공 토스트를 띄울 수 있다.
+   *   (빈 문서 차단·"내보낼 내용 없음" 안내는 호출부에서 처리한다 — HTML 내보내기와 동일 정책)
+   */
+  async export(): Promise<string | null> {
+    if (this.isExporting) return null
     const source = document.querySelector('.ProseMirror') as HTMLElement | null
-    if (!source) return
+    if (!source) return null
 
-    const filenameBase = this.doc.filename.replace(/\.md$/, '') || t('doc.fallbackName')
+    const base = this.doc.filename.replace(/\.md$/i, '') || t('doc.fallbackName')
+    // 저장된 문서면 같은 폴더의 .pdf를 기본값으로(예측 가능), 아니면 이름만. (HtmlExporter와 동일)
+    const defaultPath = this.doc.filePath
+      ? this.doc.filePath.replace(/\.md$/i, '.pdf')
+      : `${base}.pdf`
 
-    // 1) 사용자 path 선택. 취소하면 즉시 종료 (PDF 렌더링 비용 없이).
     // 가드는 dialog 직전에 켜야 dialog가 열려있는 동안에도 중복 호출이 막힌다.
     this.isExporting = true
     try {
       const selected = await saveDialog({
-        defaultPath: `${filenameBase}.pdf`,
+        defaultPath,
         filters: [{ name: 'PDF', extensions: ['pdf'] }],
       })
-      if (!selected) return
+      if (!selected) return null
       await this.renderAndSave(source, selected)
+      return selected
     } finally {
       this.isExporting = false
     }
@@ -64,7 +72,8 @@ export class PdfExporter {
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] },
+          // 코드블록·이미지·표·인용은 페이지 경계에서 잘리지 않도록 통째로 다음 페이지로 넘긴다.
+          pagebreak: { mode: ['css', 'legacy'], avoid: ['pre', 'img', 'table', 'blockquote'] },
         } as any)
         .from(clone)
         .outputPdf('blob')

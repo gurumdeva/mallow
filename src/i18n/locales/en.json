@@ -106,7 +106,10 @@
   },
   "toast": {
     "unknownError": "Unknown error",
-    "imageError": "Couldn't add the image"
+    "imageError": "Couldn't add the image",
+    "imageTooLarge": "Image is too large (max 10 MB)",
+    "exported": "Exported to {name}",
+    "nothingToExport": "Nothing to export"
   },
   "find": {
     "findPlaceholder": "Find",

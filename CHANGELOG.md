@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.9.0] - 2026-05-29
+
+### Added
+- **Drag & drop images now work**: dragging an image file from Finder (or another app) onto the editor embeds it inline, the same as pasting. Previously the drop was intercepted before it reached the editor.
+- **Export confirmation**: exporting to PDF or HTML now shows a brief confirmation with the saved file name, and exporting an empty document tells you there's nothing to export instead of silently writing a blank file.
+
+### Changed
+- **HTML export fidelity**: bulleted, numbered, and task lists, code blocks, and images now export as clean, correct HTML (previously editor scaffolding leaked into the file). The exported file also follows your light/dark appearance.
+- **PDF export polish**: links keep their color, code blocks / images / tables are no longer split across page breaks, and long code lines wrap instead of being clipped.
+- **More accurate statistics**: word count now handles Japanese and Chinese (which don't use spaces between words), reading time is estimated per language, and the paragraph count no longer includes headings, lists, or code blocks. Embedded images are excluded from all counts (a single pasted image no longer shows an enormous reading time).
+- **Clearer image errors**: distinct messages for "image is too large" vs. "couldn't add the image", and dropping several images at once shows at most one message per reason instead of one per file. The image upload button now also respects the size limit, and embedded images are no longer cropped.
+
 ## [0.8.0] - 2026-05-29
 
 ### Added
@@ -89,6 +101,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.9.0]: https://github.com/gurumdeva/mallow/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/gurumdeva/mallow/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/gurumdeva/mallow/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/gurumdeva/mallow/compare/v0.5.0...v0.6.0
