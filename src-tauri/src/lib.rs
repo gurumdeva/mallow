@@ -108,8 +108,10 @@ pub fn run() {
             set_window_path_for,
             clear_window_path,
             focus_or_claim_window_for_path,
+            path_open_in_other_window,
             quit_app,
             rename_file,
+            write_file_atomic,
             close_document_window,
             apply_dark_webview,
             webview_ready,
@@ -1097,6 +1099,35 @@ fn focus_or_claim_window_for_path(
     true
 }
 
+/// 주어진 경로가 "호출 창이 아닌 다른 창"에 이미 열려 있는지 검사한다(읽기 전용, 부수효과 없음).
+///
+/// 왜 필요한가: 파일 "열기"의 중복 창은 focus_or_claim_window_for_path가 막지만, "다른 이름으로
+/// 저장(Save As)"과 제목 없는 문서의 최초 저장은 그 경로를 거치지 않는다. 그래서 사용자가 다른
+/// 창에 이미 열려 있는 파일 위로 Save As 하면, 두 창이 같은 파일을 각자 자동 저장해 서로의 편집을
+/// 말없이 덮어쓰는 cross-window lost update(데이터 손실)가 생긴다. 프런트엔드는 쓰기 직전 이 검사로
+/// 그런 경로를 거부한다(덮어쓰지 않고 안내 토스트). 자기 자신(호출 창)이 가진 경로는 제외하므로,
+/// 이미 그 파일을 연 창이 같은 경로로 다시 저장하는 정상 동작은 막지 않는다.
+///
+/// 경로 비교는 focus_or_claim_window_for_path와 동일하게 canonicalize로 심볼릭 링크/중복 슬래시
+/// 차이를 흡수하고, 실패 시 원본 문자열로 폴백한다.
+#[tauri::command]
+fn path_open_in_other_window(
+    window_paths: tauri::State<WindowPaths>,
+    window: tauri::WebviewWindow,
+    path: String,
+) -> bool {
+    let normalize = |p: &str| {
+        std::fs::canonicalize(p)
+            .map(|c| c.to_string_lossy().to_string())
+            .unwrap_or_else(|_| p.to_string())
+    };
+    let target = normalize(&path);
+    let me = window.label().to_string();
+    let map = window_paths.0.lock().unwrap();
+    map.iter()
+        .any(|(label, p)| label.as_str() != me && normalize(p) == target)
+}
+
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
@@ -1139,6 +1170,42 @@ fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
         }
     }
     std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string())
+}
+
+/// 문서를 "원자적으로" 저장한다: 같은 디렉터리의 임시 파일에 먼저 쓴 뒤 rename으로 교체한다.
+///
+/// 왜 필요한가: 일반 쓰기(open-truncate-write)는 파일을 먼저 0바이트로 자른 뒤 내용을 채우므로,
+/// 쓰는 도중 프로세스가 강제 종료되면(⌘Q app.exit, 크래시, 전원 차단) 파일이 반쪽으로 남아
+/// "이전에 저장돼 있던 내용까지" 통째로 잃을 수 있다(특히 이미지가 박힌 큰 문서). 같은 디렉터리
+/// 임시 파일 → rename은 동일 파일시스템에서 원자적이라, 중단되면 원본이 그대로 유지되고 절대
+/// 찢긴 파일을 남기지 않는다. (window.json 영속이 쓰는 것과 동일한 패턴.)
+///
+/// 임시 파일은 반드시 대상과 "같은 디렉터리"에 둔다 — rename이 cross-device(다른 볼륨/temp)에서는
+/// 원자적이지 않고 복사+삭제로 풀리기 때문이다. Rust std::fs라 프런트의 fs 스코프 영향은 없다
+/// (rename_file과 동일).
+#[tauri::command]
+fn write_file_atomic(path: String, content: String) -> Result<(), String> {
+    // 대상이 심볼릭 링크면 링크가 가리키는 "실제 파일"을 따라가 그 자리에 쓴다. 이렇게 하지 않으면
+    // tmp→rename이 링크 자체를 일반 파일로 바꿔 링크를 끊는다(예: 동기화 폴더로 심링크한 노트 →
+    // 원본이 더는 갱신되지 않음). canonicalize는 "존재하는 경로"에만 성공하므로, 최초 저장(아직
+    // 없는 새 파일)은 폴백되어 원래 경로를 그대로 쓴다(이때는 따라갈 링크도 없다). 절대 경로/`..`도
+    // 함께 정규화된다. (일반 writeTextFile은 open이 링크를 따라가므로, 이 처리로 동일 충실도를 맞춘다.)
+    let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| std::path::PathBuf::from(&path));
+    let p = resolved.as_path();
+    let dir = p.parent().ok_or_else(|| "invalid path".to_string())?;
+    let file_name = p
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "invalid path".to_string())?;
+    // 숨김(.) 임시 이름 — 사용자에게 잘 안 보이고, 같은 폴더라 rename이 원자적이다.
+    let tmp = dir.join(format!(".{file_name}.mallow.tmp"));
+    std::fs::write(&tmp, content.as_bytes()).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::rename(&tmp, p) {
+        // rename 실패 시 임시 파일을 남기지 않는다(찌꺼기 방지). 원본은 손대지 않았으므로 그대로다.
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.to_string());
+    }
+    Ok(())
 }
 
 /// 현재 창만 닫는다(destroy). 마지막 창이면 RunEvent::WindowEvent::Destroyed에서

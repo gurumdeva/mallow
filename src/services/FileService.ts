@@ -1,5 +1,5 @@
 import { ask, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { readTextFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
 import { Document } from '../domain/Document'
 import { EditorController } from '../editor/EditorController'
@@ -73,6 +73,21 @@ export class OpenError extends Error {
   constructor(readonly cause: unknown) {
     super('open-failed')
     this.name = 'OpenError'
+  }
+}
+
+/**
+ * 저장/다른 이름으로 저장이 "다른 창에 이미 열려 있는 파일"을 대상으로 했을 때 던진다.
+ * 그대로 쓰면 두 창이 같은 파일을 각자 자동 저장해 서로의 편집을 덮어쓰는 cross-window
+ * lost update(데이터 손실)가 되므로, 쓰기 전에 막고 호출부(main.ts)가 사유별 토스트를 띄운다.
+ * fileName은 안내 토스트에 쓸 표시용 파일명(경로의 마지막 구성요소).
+ */
+export class SaveConflictError extends Error {
+  readonly fileName: string
+  constructor(readonly path: string) {
+    super('save-conflict')
+    this.name = 'SaveConflictError'
+    this.fileName = path.split('/').pop() ?? path
   }
 }
 
@@ -230,6 +245,18 @@ export class FileService {
     this.baselineContent = this.editor.getMarkdown() // 정규화된 기준(외부 .md 정규화 오탐 방지)
   }
 
+  /**
+   * 대상 경로가 "다른 창"에 이미 열려 있으면 SaveConflictError를 던진다(쓰기 전 가드).
+   * 파일 "열기"의 중복 창은 focus_or_claim이 막지만, Save As와 제목 없는 문서의 최초 저장은
+   * 그 경로를 거치지 않아 두 창이 같은 파일을 덮어쓰는 lost update가 날 수 있다. 그 지점에서만
+   * 호출한다(이미 자기 창이 소유한 경로로의 자동 저장/⌘S는 검사하지 않는다 — Rust가 호출 창을
+   * 제외하므로 통과하지만, 불필요한 IPC를 피하려 다이얼로그로 새 경로를 고른 지점에서만 부른다).
+   */
+  private async assertNotOpenElsewhere(path: string): Promise<void> {
+    const conflict = await invoke<boolean>('path_open_in_other_window', { path }).catch(() => false)
+    if (conflict) throw new SaveConflictError(path)
+  }
+
   async save(): Promise<void> {
     // rename 진행 중이면 디스크 경로가 old→new로 바뀌는 중이라 stale 경로로 쓸 위험이 있다.
     // 자동 저장이 끼어들어도 여기서 막고, rename 종료 후 dirty가 남아 있으면 다시 발화한다.
@@ -252,10 +279,14 @@ export class FileService {
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       })
       if (!selected) return
+      // 다른 창에 이미 열린 파일 위로 최초 저장하면 두 창이 같은 파일을 자동 저장해 서로를
+      // 덮어쓴다(cross-window lost update). 그 경로는 거부한다(호출부가 안내 토스트를 띄운다).
+      await this.assertNotOpenElsewhere(selected)
       path = selected
     }
     const md = this.editor.getMarkdown()
-    await writeTextFile(path, md)
+    // 원자적 저장(임시 파일 → rename): 쓰는 도중 강제 종료돼도 원본이 찢기지 않는다.
+    await invoke('write_file_atomic', { path, content: md })
     this.doc.setPath(path)
     await this.recent.add(path)
     // write는 비동기다. await 동안 사용자가 더 타이핑했다면 에디터 내용이 디스크보다
@@ -287,8 +318,11 @@ export class FileService {
       filters: [{ name: 'Markdown', extensions: ['md'] }],
     })
     if (!selected) return
+    // Save As가 다른 창에 열린 파일을 덮어써 cross-window lost update가 나는 것을 막는다.
+    await this.assertNotOpenElsewhere(selected)
     const md = this.editor.getMarkdown()
-    await writeTextFile(selected, md)
+    // 원자적 저장(임시 파일 → rename): 쓰는 도중 강제 종료돼도 원본이 찢기지 않는다.
+    await invoke('write_file_atomic', { path: selected, content: md })
     this.doc.setPath(selected)
     await this.recent.add(selected)
     // save()와 동일한 내용 기반 재조정: write await 동안 사용자가 더 친 내용이 있으면

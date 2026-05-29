@@ -14,7 +14,7 @@ import { RecentFilesStore } from './services/RecentFilesStore'
 import { WindowTitleSync } from './services/WindowTitleSync'
 import { PdfExporter } from './services/PdfExporter'
 import { HtmlExporter, normalizeExportHtml } from './services/HtmlExporter'
-import { FileService, RenameError, OpenError } from './services/FileService'
+import { FileService, RenameError, OpenError, SaveConflictError } from './services/FileService'
 import { MenuBridge } from './services/MenuBridge'
 import { planStartup } from './services/StartupPlanner'
 import { TitleBarView } from './ui/TitleBarView'
@@ -122,6 +122,13 @@ async function bootstrap(): Promise<void> {
     } else {
       reportError(t('error.openFile'))(e)
     }
+  }
+
+  // 저장 실패 처리: 다른 창에 이미 열린 파일을 덮어쓰려 한 경우(SaveConflictError)는 전용 안내
+  // (두 창이 같은 파일을 자동 저장해 서로를 덮어쓰는 손실 방지)를, 그 외에는 일반 저장 오류 토스트를 띄운다.
+  const handleSaveError = (label: string) => (e: unknown): void => {
+    if (e instanceof SaveConflictError) toast.error(t('error.saveConflict', { name: e.fileName }))
+    else reportError(label)(e)
   }
 
   // 내보내기(PDF/HTML) 공용 래퍼: (1) 빈 문서면 다이얼로그를 열지 않고 안내(빈 파일 생성 방지),
@@ -415,8 +422,8 @@ async function bootstrap(): Promise<void> {
           if (p) return handleOpenPath(p)
         })
         .catch(reportError(t('error.openFile'))),
-    onSave: () => fileService.save().catch(reportError(t('error.save'))),
-    onSaveAs: () => fileService.saveAs().catch(reportError(t('error.saveAs'))),
+    onSave: () => fileService.save().catch(handleSaveError(t('error.save'))),
+    onSaveAs: () => fileService.saveAs().catch(handleSaveError(t('error.saveAs'))),
     onExportPdf: () => runExport(pdfExporter, t('error.exportPdf')),
     onExportHtml: () => runExport(htmlExporter, t('error.exportHtml')),
     onShowStats: () => ui.toggleInfoPopover(),

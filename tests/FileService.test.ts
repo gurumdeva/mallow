@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shouldMarkSaved, decideSyncAction } from '../src/services/FileService.ts'
+import { shouldMarkSaved, decideSyncAction, SaveConflictError } from '../src/services/FileService.ts'
 
 /**
  * FileService 의 "내용 기반 재조정" 순수 결정 함수에 대한 단위 테스트.
@@ -79,5 +79,24 @@ describe('decideSyncAction — 외부 변경 동기화 결정 (bug #3)', () => {
     expect(decideSyncAction('', '', '')).toBe('noop')
     expect(decideSyncAction('', '', 'external')).toBe('silent') // 로컬 편집 없음
     expect(decideSyncAction('typed', '', 'external')).toBe('prompt') // 로컬 편집 있음
+  })
+})
+
+describe('SaveConflictError — Save As가 다른 창에 열린 파일을 덮어쓰는 손실 방지 (cross-window)', () => {
+  it('toast 표시용 fileName을 경로의 마지막 구성요소로 뽑는다', () => {
+    const e = new SaveConflictError('/Users/me/notes/todo.md')
+    expect(e.fileName).toBe('todo.md')
+    expect(e.path).toBe('/Users/me/notes/todo.md')
+  })
+
+  it('instanceof로 식별 가능하고 name이 고정된다(호출부가 사유별 토스트를 고르는 기준)', () => {
+    const e = new SaveConflictError('/x/y.md')
+    expect(e).toBeInstanceOf(Error)
+    expect(e).toBeInstanceOf(SaveConflictError)
+    expect(e.name).toBe('SaveConflictError')
+  })
+
+  it('경로에 슬래시가 없으면 경로 전체를 fileName으로 쓴다(방어적)', () => {
+    expect(new SaveConflictError('todo.md').fileName).toBe('todo.md')
   })
 })
