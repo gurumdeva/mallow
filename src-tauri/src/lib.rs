@@ -35,6 +35,16 @@ struct RecentFiles(Mutex<Vec<String>>);
 #[derive(Default)]
 struct DirtyWindows(Mutex<HashSet<String>>);
 
+/// 창(label) → 현재 열려 있는 문서의 절대 경로 매핑. 같은 파일이 두 창에 동시에 열려
+/// 각자 자동 저장하면 cross-window lost update가 나므로(item #5), 새 창을 열기 전에 이
+/// 맵으로 "이미 그 경로를 연 다른 창"이 있는지 보고 있으면 그 창을 포커스해 중복 창을
+/// 만들지 않는다. 창은 다중 프로세스에 가깝고 cross-window 상태는 Rust가 소유하므로
+/// (DirtyWindows와 동일 패턴) 이 맵도 Rust가 권위 있게 보관한다. 프런트엔드는 doc 경로가
+/// 바뀔 때마다 set_window_path로 자기 항목을 upsert하고, Destroyed에서 정리한다.
+/// (제목 없는 새 문서는 경로가 없어 등록되지 않으므로 절대 dedup되지 않는다.)
+#[derive(Default)]
+struct WindowPaths(Mutex<std::collections::HashMap<String, String>>);
+
 /// 보기 메뉴의 두 토글(Focus Mode / Typewriter)의 체크마크 상태.
 /// macOS 메뉴 막대는 모든 창이 공유하는 단일 객체이고, 메뉴는 최근 파일이 바뀔 때마다
 /// build_app_menu로 재생성된다. 이 atomic은 재생성 후에도 체크마크가 유지되도록(빌드 시
@@ -81,6 +91,7 @@ pub fn run() {
         .manage(AppReady::default())
         .manage(RecentFiles::default())
         .manage(DirtyWindows::default())
+        .manage(WindowPaths::default())
         .manage(MenuToggles::default())
         .manage(WindowGeometry::default())
         .invoke_handler(tauri::generate_handler![
@@ -89,6 +100,10 @@ pub fn run() {
             recent_remove,
             set_window_dirty,
             dirty_window_count,
+            set_window_path,
+            set_window_path_for,
+            clear_window_path,
+            focus_or_claim_window_for_path,
             quit_app,
             rename_file,
             close_document_window,
@@ -304,6 +319,14 @@ pub fn run() {
                             // 닫힌 창의 dirty 표시를 정리(누수 방지).
                             app_handle
                                 .state::<DirtyWindows>()
+                                .0
+                                .lock()
+                                .unwrap()
+                                .remove(&label);
+                            // 닫힌 창의 경로 매핑도 정리한다(누수 방지 + 닫힌 창을 가리키는
+                            // 잔존 항목으로 focus_or_claim_window_for_path가 오작동하지 않게).
+                            app_handle
+                                .state::<WindowPaths>()
                                 .0
                                 .lock()
                                 .unwrap()
@@ -920,6 +943,124 @@ fn dirty_window_count(dirty_windows: tauri::State<DirtyWindows>) -> usize {
     dirty_windows.0.lock().unwrap().len()
 }
 
+// ── 경로별 창 추적 + 중복 창 dedup (item #5) ──────────────────
+/// 호출한 창의 현재 문서 경로를 맵에 upsert한다. 프런트엔드는 doc.setPath가 일어나는
+/// 모든 경로(파일 열기 성공·저장·다른 이름으로 저장·이름 변경)에서 이 명령을 호출해,
+/// 맵이 항상 각 창의 살아 있는 경로를 반영하게 한다. 같은 창이 다른 파일로 바뀌면
+/// 옛 경로는 자동으로 덮어써진다(이름 변경 시 옛 경로가 더 이상 이 창을 가리키지 않음).
+#[tauri::command]
+fn set_window_path(
+    window_paths: tauri::State<WindowPaths>,
+    window: tauri::WebviewWindow,
+    path: String,
+) {
+    window_paths
+        .0
+        .lock()
+        .unwrap()
+        .insert(window.label().to_string(), path);
+}
+
+/// 부모가 "곧 띄울 새 창"의 label로 경로를 생성 직후(로드 전에) 등록(claim)한다. 시작 시 파일
+/// 열기(startup plan)는 focus_or_claim을 거치지 않으므로, 여기서 등록해야 이후 같은 파일 열기가
+/// 그 창으로 dedup된다(item #5). handleOpenPath의 새 창 분기는 focus_or_claim이 같은 label·경로를
+/// 이미 claim했으므로, 여기 호출은 동일 값 재등록(멱등)이라 무해하다.
+#[tauri::command]
+fn set_window_path_for(window_paths: tauri::State<WindowPaths>, label: String, path: String) {
+    window_paths.0.lock().unwrap().insert(label, path);
+}
+
+/// 경로 등록을 제거한다. label이 주어지면 그 창의 항목을, 없으면 호출 창 자신의 항목을 지운다.
+/// 두 가지 롤백에 쓴다: (1) in-place 열기가 실패하면(파일이 막 사라지는 등) 호출 창이 미리 claim한
+/// 경로를 지운다(label 생략). (2) 새 창 "생성 자체"가 실패하면 그 새 창 label로 claim해 둔 경로가
+/// 영구 잔존해 그 경로를 다시 못 여는 soft-lock이 되므로, 부모가 새 창 label을 주어 지운다.
+#[tauri::command]
+fn clear_window_path(
+    window_paths: tauri::State<WindowPaths>,
+    window: tauri::WebviewWindow,
+    label: Option<String>,
+) {
+    let key = label.unwrap_or_else(|| window.label().to_string());
+    window_paths.0.lock().unwrap().remove(&key);
+}
+
+/// "열기 의도" 시점에 검사와 등록(claim)을 같은 락 안에서 원자적으로 수행한다(item #5).
+/// 주어진 경로가 "claim 대상이 아닌 다른 창"에 이미 열려 있으면 그 창을 포커스(필요하면
+/// 최소화 해제)하고 true를, 없으면 그 경로를 claim_label로 즉시 등록하고 false를 반환한다.
+/// 호출부는 false일 때만 새로 연다(새 창 생성 또는 in-place 로드).
+///
+/// 왜 원자적이어야 하나(TOCTOU): 예전엔 "검사(focus_window_for_path) → 비동기 로드 → 등록"
+/// 순서라, 검사와 등록 사이(파일 로드 시간 + IPC)에 같은 파일을 다시 열면 아직 등록 안 된
+/// 창을 못 보고 또 창이 열려, 두 창이 같은 파일을 자동 저장하는 lost update가 생겼다. 또한
+/// JS 이벤트 루프는 await 지점마다 끼어들 수 있어, 프런트엔드만으로는 검사-등록을 원자화할 수
+/// 없다. 그래서 Rust에서 맵 락을 한 번 잡고 검사+claim을 함께 처리한다.
+///
+/// claim_label 의미: 이번 열기가 "소유자로 기록할 창"의 label. 새 창 분기에선 곧 만들 새 창의
+/// label(미리 생성해 전달), in-place 분기에선 생략 → 호출 창 자신의 label을 쓴다. 검색에서 이
+/// label을 제외하므로, 같은 파일을 "현재 창"에서 다시 열 때 자기 자신을 매치해 막는 일이 없다.
+/// (반대로 호출 창과 다른 창이 그 경로를 가졌다면 — 예: 비-pristine 창에 이미 열린 파일을 또
+///  열 때 — 그 창을 포커스해 중복 창을 deterministic하게 막는다. 예전 self-skip 설계의 허점.)
+///
+/// 경로 비교: 앱이 절대 경로만 저장하므로 정확히(==) 비교하되, 견고성을 위해 canonicalize를
+/// 시도하고 실패하면(파일이 막 이동/삭제되는 등) 원본 문자열로 폴백한다.
+#[tauri::command]
+fn focus_or_claim_window_for_path(
+    app: tauri::AppHandle,
+    window_paths: tauri::State<WindowPaths>,
+    window: tauri::WebviewWindow,
+    path: String,
+    claim_label: Option<String>,
+) -> bool {
+    // 정확 비교 보강: 가능하면 canonical 경로로 맞춰 심볼릭 링크/중복 슬래시 차이를 흡수한다.
+    let normalize = |p: &str| {
+        std::fs::canonicalize(p)
+            .map(|c| c.to_string_lossy().to_string())
+            .unwrap_or_else(|_| p.to_string())
+    };
+    let target = normalize(&path);
+    // claim_label 미지정 시 호출 창 자신을 소유자로 삼는다(in-place 재사용).
+    let claim = claim_label.unwrap_or_else(|| window.label().to_string());
+
+    // 1) 검사 + claim을 같은 락 안에서 원자적으로 수행한다.
+    //    claim 대상이 아닌 창 중 같은 경로를 가진 첫 창을 찾는다. 없으면 즉시 claim한다.
+    let found = {
+        let mut map = window_paths.0.lock().unwrap();
+        let existing = map
+            .iter()
+            .find(|(label, p)| label.as_str() != claim && normalize(p) == target)
+            .map(|(label, _)| label.clone());
+        if existing.is_none() {
+            map.insert(claim.clone(), path.clone());
+        }
+        existing
+    };
+
+    // 아무도 안 가졌으면 claim 완료 → 호출부가 새로 연다.
+    let Some(label) = found else {
+        return false;
+    };
+
+    // 이미 다른 창이 가졌으면 그 창을 사용자 앞으로 가져온다. 최소화면 먼저 복원한다.
+    let Some(target_window) = app.get_webview_window(&label) else {
+        // 매핑은 있으나 창 핸들이 없다 — 두 경우다:
+        //  (a) 첫 claim 직후 새 창이 아직 "생성되지 않음"(IPC 왕복 사이). 거의 동시에 같은
+        //      파일을 두 번 열 때(더블클릭 등) 두 번째 호출이 첫 호출이 막 claim한 label을 본다.
+        //  (b) 막 닫혀 Destroyed 정리 "직전"의 잔존 항목.
+        // 둘 다 "이미 누군가 그 경로를 여는 중"으로 보고 물러난다(true). 그래야 (a)에서 두 번째
+        // 열기가 또 창을 만들지 않아 중복 자동 저장(lost update)을 막는다 — 첫 창이 곧 나타나
+        // 그 경로를 소유한다(포커스는 그 시점엔 no-op이지만 의도는 dedup). (b)는 Destroyed가
+        // 항목을 곧 지우므로 다시 열면 정상 동작한다(인간 조작 속도에선 사실상 도달 불가).
+        // 만약 첫 창 "생성 자체가 실패"하면 openDocumentWindow의 에러 핸들러가 이 잔존 claim을
+        // 지워, 그 경로를 영영 못 여는 soft-lock을 막는다.
+        return true;
+    };
+    if target_window.is_minimized().unwrap_or(false) {
+        let _ = target_window.unminimize();
+    }
+    let _ = target_window.set_focus();
+    true
+}
+
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
@@ -936,6 +1077,15 @@ fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
     //     나가는 이동을 차단한다(프런트의 normalizeFilename 가드에 대한 2차 방어선).
     if np.parent() != op.parent() {
         return Err("invalid".into());
+    }
+    // (1b) 새 경로의 마지막 구성요소가 "순수 파일명"인지 독립 검증한다(프런트의
+    //      normalizeFilename 가드를 Rust 경계에서 한 번 더 — defense-in-depth).
+    //      file_name()이 None이면(끝이 "/"이거나 ".."로 끝남) 거부하고, 방어적으로
+    //      파일명 구성요소 자체에 경로 분리자가 들어 있으면(예: 분리자가 섞인 비정상
+    //      입력) 거부한다. 정상 입력(같은 폴더 + 순수 파일명)에는 영향이 없다.
+    match np.file_name().and_then(|n| n.to_str()) {
+        Some(name) if !name.contains('/') && !name.contains('\\') => {}
+        _ => return Err("invalid".into()),
     }
     // (2) 대상이 이미 존재하면 덮어쓰지 않는다(데이터 손실 방지). 단, 대상이 사실은 원본과
     //     "같은 파일"인 경우(대소문자 비구분 볼륨에서 foo.md → Foo.md 같은 recase)는 허용한다.

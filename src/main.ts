@@ -211,6 +211,21 @@ async function bootstrap(): Promise<void> {
     }
   })
 
+  // 이 창의 현재 문서 경로를 Rust에 등록한다(같은 파일을 두 창에서 열어 양쪽이 자동
+  // 저장하는 cross-window lost update를 막기 위한 dedup 맵, item #5). doc.setPath가
+  // 일어나는 모든 경로(파일 열기 성공·저장·다른 이름으로 저장·이름 변경)가 'changed'를
+  // emit하므로, 여기를 단일 choke point로 삼아 경로가 "실제로 바뀔 때"만 IPC를 보낸다.
+  // (제목 없는 새 문서는 filePath가 null이라 등록하지 않는다 → 절대 dedup되지 않는다.
+  //  이름 변경 시엔 새 경로로 덮어써져, 옛 경로는 더 이상 이 창을 가리키지 않는다.)
+  let reportedPath: string | null = null
+  doc.on('changed', () => {
+    const path = doc.filePath
+    if (path && path !== reportedPath) {
+      reportedPath = path
+      invoke('set_window_path', { path }).catch(() => {})
+    }
+  })
+
   // ── 자동 저장 ────────────────────────────────────────────
   // 이미 저장된 문서(filePath 있음)는 편집이 잠시 멈추면 디스크에 자동 반영한다.
   // 제목 없는 새 문서는 대상이 아니다(저장 다이얼로그를 띄우지 않기 위해).
@@ -233,8 +248,14 @@ async function bootstrap(): Promise<void> {
   // 단일 프로세스 + 여러 창. New/Open은 현재 문서를 덮지 않고 새 창을 띄운다.
   // 파일 경로는 URL 해시로 전달한다 — 해시는 asset 요청 경로에 포함되지 않아
   // 정적 파일 로드를 방해하지 않고, 새 창 bootstrap이 location.hash로 읽는다.
-  const openDocumentWindow = async (filePath: string | null): Promise<void> => {
-    const label = `doc-${crypto.randomUUID()}`
+  const openDocumentWindow = async (
+    filePath: string | null,
+    presetLabel?: string,
+  ): Promise<void> => {
+    // presetLabel: handleOpenPath의 새 창 분기가 focus_or_claim으로 "이미 claim한" label을
+    // 넘긴다. 그 label로 창을 만들어야 claim과 실제 창이 같은 키를 가리킨다. 없으면(시작 시
+    // 파일 열기, ⌘N 등) 새로 생성한다.
+    const label = presetLabel ?? `doc-${crypto.randomUUID()}`
     const url = filePath ? `index.html#${encodeURIComponent(filePath)}` : 'index.html'
     // 현재 창에서 살짝 어긋난 위치(cascade)로 띄운다. 같은 위치에 완전히 겹쳐
     // "안 열린 것처럼" 보이는 걸 막는다(macOS 기본 계단식 배치와 동일한 UX).
@@ -260,16 +281,54 @@ async function bootstrap(): Promise<void> {
       backgroundColor: [28, 28, 30],
       ...(position ?? {}),
     })
-    void w.once('tauri://error', (e) => reportError(t('error.openWindow'))(e.payload))
+    void w.once('tauri://error', (e) => {
+      // 창 생성 실패: 이 label로 미리 claim해 둔 경로(focus_or_claim 또는 아래 set_window_path_for)가
+      // 영구 잔존하면, 그 경로를 다시 열 때 focus_or_claim이 "생성 중"으로 오인해 물러나(true) 영영
+      // 못 여는 soft-lock이 된다. 그 잔존 claim을 지운다.
+      if (filePath) invoke('clear_window_path', { label }).catch(() => {})
+      reportError(t('error.openWindow'))(e.payload)
+    })
+    // 중복 창 방지(item #5): 새 창의 경로를 생성 직후(로드 전에) 동기 등록한다. 시작 시 파일
+    // 열기(startup plan)는 focus_or_claim을 거치지 않으므로 여기서 등록해야 이후 같은 파일
+    // 열기가 이 창으로 dedup된다. handleOpenPath의 새 창 분기는 focus_or_claim이 같은
+    // label·경로를 이미 claim했으므로 여긴 동일 값 재등록(멱등)이라 무해하다.
+    if (filePath) invoke('set_window_path_for', { label, path: filePath }).catch(() => {})
   }
 
   // 파일 열기: 현재 창이 "깨끗한 새 문서"면 그 창을 재사용(in-place), 아니면 새 창.
   // 덕분에 앱을 갓 켠 빈 창에서 열면 빈 창이 남지 않고, 작업 중인 창은 보존된다.
-  const handleOpenPath = (filePath: string): void => {
+  //
+  // 중복 창 방지(item #5)는 focus_or_claim_window_for_path 한 번으로 원자적으로 처리한다:
+  // 그 경로가 "다른 창"에 이미 열려 있으면 그 창을 포커스(→ true)하고, 아니면 이번 열기의
+  // 소유 label로 경로를 즉시 claim(→ false)한다. false일 때만 실제로 연다. 검사와 claim이
+  // 같은 락 안에서 일어나므로, 같은 파일을 거의 동시에 두 번 열어도(로드 지연 중 더블클릭 등)
+  // 두 창이 같은 파일을 자동 저장하는 lost update가 생기지 않는다.
+  const handleOpenPath = async (filePath: string): Promise<void> => {
     if (doc.isPristine) {
-      fileService.openPath(filePath).catch(reportOpenError)
+      // in-place 재사용: claim_label 생략 → Rust가 호출 창(이 창) 자신을 소유자로 claim한다.
+      const focused = await invoke<boolean>('focus_or_claim_window_for_path', {
+        path: filePath,
+      }).catch(() => false)
+      if (focused) return // 다른 창에 이미 열려 있어 그 창을 포커스함
+      // 여기 도달 = 이 창이 filePath를 claim함. 이제 디스크에서 로드한다. openPath는 비동기라
+      // 로드가 끝나기 전에도 claim이 이미 맵에 있어 동시 열기가 dedup된다.
+      reportedPath = filePath // 로드 후 choke point의 중복 set_window_path 방지
+      await fileService.openPath(filePath).catch((e) => {
+        // 로드 실패: 미리 claim한 경로가 무효이므로 이 창의 등록을 지워 롤백한다.
+        reportedPath = null
+        invoke('clear_window_path').catch(() => {})
+        reportOpenError(e)
+      })
     } else {
-      openDocumentWindow(filePath).catch(reportError(t('error.openWindow')))
+      // 새 창 분기: 곧 만들 새 창의 label을 미리 만들어 그 label로 claim한다. claim이 성공하면
+      // (focused=false) 그 label로 창을 생성해 claim과 실제 창의 키를 일치시킨다.
+      const label = `doc-${crypto.randomUUID()}`
+      const focused = await invoke<boolean>('focus_or_claim_window_for_path', {
+        path: filePath,
+        claimLabel: label,
+      }).catch(() => false)
+      if (focused) return // 다른 창(현재 창 포함)에 이미 열려 있어 그 창을 포커스함
+      await openDocumentWindow(filePath, label).catch(reportError(t('error.openWindow')))
     }
   }
 
@@ -304,7 +363,7 @@ async function bootstrap(): Promise<void> {
       fileService
         .pickOpenPath()
         .then((p) => {
-          if (p) handleOpenPath(p)
+          if (p) return handleOpenPath(p)
         })
         .catch(reportError(t('error.openFile'))),
     onSave: () => fileService.save().catch(reportError(t('error.save'))),
@@ -318,7 +377,8 @@ async function bootstrap(): Promise<void> {
     onToggleTypewriter: (on) => applyTypewriter(on),
     // Open Recent 클릭은 Rust가 클릭 순간 실제 경로를 해석해 open:file로 보낸다
     // (인덱스 race 방지). OS 파일 열기와 동일 경로(onOpenFromOs)로 처리된다.
-    onOpenFromOs: (p) => handleOpenPath(p),
+    // (handleOpenPath는 내부에서 자체 오류를 처리하므로 방어적으로만 catch한다.)
+    onOpenFromOs: (p) => void handleOpenPath(p).catch(reportError(t('error.openFile'))),
     // ⌘Q: 포커스 창이 코디네이터. 전체 미저장 문서 수를 Rust에서 조회해 통합 확인 1회 →
     // 종료(quit_app=app.exit) 또는 취소. 부분 종료(일부 창만 닫힘)가 발생하지 않는다.
     onQuit: () => {
