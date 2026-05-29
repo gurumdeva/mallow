@@ -31,7 +31,8 @@
     "zoom": "확대/축소",
     "fullscreen": "전체 화면 전환",
     "closeWindow": "윈도우 닫기",
-    "find": "찾기…"
+    "find": "찾기…",
+    "copyRichText": "서식 있는 텍스트로 복사"
   },
   "titlebar": {
     "styleTip": "텍스트 스타일",
@@ -111,7 +112,8 @@
     "openWindow": "새 창 열기",
     "save": "저장",
     "saveAs": "다른 이름으로 저장",
-    "syncFile": "파일 동기화"
+    "syncFile": "파일 동기화",
+    "copyRichText": "서식 있는 텍스트 복사에 실패했습니다"
   },
   "toast": {
     "unknownError": "알 수 없는 오류",
@@ -119,7 +121,9 @@
     "imageTooLarge": "이미지가 너무 큽니다 (최대 10MB)",
     "exported": "{name}(으)로 내보냈습니다",
     "nothingToExport": "내보낼 내용이 없습니다",
-    "recentRemoved": "파일이 더 이상 존재하지 않아 최근 목록에서 제거했습니다"
+    "recentRemoved": "파일이 더 이상 존재하지 않아 최근 목록에서 제거했습니다",
+    "copiedRich": "서식 있는 텍스트로 복사했습니다",
+    "nothingToCopy": "복사할 내용이 없습니다"
   },
   "find": {
     "findPlaceholder": "찾기",

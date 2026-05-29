@@ -1,7 +1,7 @@
 {
   "name": "mallow",
   "private": true,
-  "version": "0.21.0",
+  "version": "0.22.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -27,6 +27,7 @@
     "@milkdown/preset-gfm": "^7.21.1",
     "@milkdown/prose": "^7.21.1",
     "@milkdown/utils": "^7.21.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2.5.1",
     "html2pdf.js": "^0.14.0"

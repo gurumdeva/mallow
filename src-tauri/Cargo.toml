@@ -1,6 +1,6 @@
 [package]
 name = "mallow"
-version = "0.21.0"
+version = "0.22.0"
 description = "Mallow markdown editor"
 authors = ["gurumdeva"]
 license = ""
@@ -28,6 +28,7 @@ tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-fs = "2.5.1"
+tauri-plugin-clipboard-manager = "2"
 
 # WKWebView 배경을 직접 투명화하기 위해 macOS에서만 objc2 사용.
 # (다크 모드 cold-start 시 WKWebView 자체가 흰색으로 1프레임 그려져 발생하는

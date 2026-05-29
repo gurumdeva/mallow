@@ -31,7 +31,8 @@
     "zoom": "Zoom",
     "fullscreen": "Toggle Full Screen",
     "closeWindow": "Close Window",
-    "find": "Find…"
+    "find": "Find…",
+    "copyRichText": "Copy as Rich Text"
   },
   "titlebar": {
     "styleTip": "Text Style",
@@ -111,7 +112,8 @@
     "openWindow": "Open Window",
     "save": "Save",
     "saveAs": "Save As",
-    "syncFile": "File Sync"
+    "syncFile": "File Sync",
+    "copyRichText": "Couldn’t copy as rich text"
   },
   "toast": {
     "unknownError": "Unknown error",
@@ -119,7 +121,9 @@
     "imageTooLarge": "Image is too large (max 10 MB)",
     "exported": "Exported to {name}",
     "nothingToExport": "Nothing to export",
-    "recentRemoved": "That file no longer exists — removed from Recents"
+    "recentRemoved": "That file no longer exists — removed from Recents",
+    "copiedRich": "Copied as rich text",
+    "nothingToCopy": "Nothing to copy"
   },
   "find": {
     "findPlaceholder": "Find",

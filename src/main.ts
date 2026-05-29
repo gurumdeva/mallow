@@ -3,6 +3,7 @@ import { ask } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { invoke } from '@tauri-apps/api/core'
+import { writeHtml } from '@tauri-apps/plugin-clipboard-manager'
 
 import { Document } from './domain/Document'
 import { UIState } from './domain/UIState'
@@ -12,7 +13,7 @@ import { TocExtractor } from './analysis/TocExtractor'
 import { RecentFilesStore } from './services/RecentFilesStore'
 import { WindowTitleSync } from './services/WindowTitleSync'
 import { PdfExporter } from './services/PdfExporter'
-import { HtmlExporter } from './services/HtmlExporter'
+import { HtmlExporter, normalizeExportHtml } from './services/HtmlExporter'
 import { FileService, RenameError, OpenError } from './services/FileService'
 import { MenuBridge } from './services/MenuBridge'
 import { planStartup } from './services/StartupPlanner'
@@ -142,6 +143,23 @@ async function bootstrap(): Promise<void> {
         }
       })
       .catch(reportError(errorLabel))
+  }
+
+  // "서식 있는 텍스트로 복사"(⌥⌘C): 본문을 HTML 내보내기와 같은 정규화 파이프라인으로 깨끗한
+  // 의미론적 HTML로 만들어 클립보드에 쓴다. Slack/메일/Docs/Notion에 붙여넣으면 제목·굵게·목록·
+  // 표·코드가 유지되고, plaintext만 받는 곳엔 마크다운 원문이 붙는다(writeHtml의 altText 폴백).
+  // 수식은 'source'(LaTeX 원문)로 — 붙여넣는 앱이 MathML을 못 그리는 경우가 많아 더 안전하다.
+  const copyAsRichText = (): void => {
+    const source = document.querySelector('.ProseMirror') as HTMLElement | null
+    const md = editor.getMarkdown()
+    if (!source || md.trim() === '') {
+      toast.info(t('toast.nothingToCopy'))
+      return
+    }
+    const html = normalizeExportHtml(source, { math: 'source' })
+    writeHtml(html, md)
+      .then(() => toast.info(t('toast.copiedRich')))
+      .catch(reportError(t('error.copyRichText')))
   }
 
   // ── Views (stateless, 상태는 doc/ui에서만 read) ──────────
@@ -382,6 +400,7 @@ async function bootstrap(): Promise<void> {
     onExportHtml: () => runExport(htmlExporter, t('error.exportHtml')),
     onShowStats: () => ui.toggleInfoPopover(),
     onFind: () => findReplace.toggle(),
+    onCopyRichText: () => copyAsRichText(),
     // Rust가 보낸 새 상태(boolean)를 그대로 적용한다(체크마크는 Rust가 이미 갱신).
     onToggleFocusMode: (on) => applyFocusMode(on),
     onToggleTypewriter: (on) => applyTypewriter(on),

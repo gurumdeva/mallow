@@ -87,6 +87,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        // "Copy as Rich Text"가 HTML(+plaintext 폴백)을 클립보드에 쓰기 위함. 네이티브 메뉴에서
+        // 호출되므로 웹 navigator.clipboard(사용자 제스처 필요)가 아니라 Rust 측 쓰기를 쓴다.
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(PendingOpens::default())
         .manage(AppReady::default())
         .manage(RecentFiles::default())
@@ -155,7 +158,7 @@ pub fn run() {
                     // 개수를 조회 → 통합 확인 1회 → quit_app(전체 종료) 또는 취소(아무것도 안 함).
                     // 이로써 "일부 창만 닫히는" 부분 종료가 발생하지 않는다(원자적 종료).
                     "new_file" | "open" | "save" | "save_as" | "export_pdf" | "export_html"
-                    | "show_stats" | "find" | "quit" => {
+                    | "show_stats" | "find" | "copy_rich_text" | "quit" => {
                         send(format!("menu:{}", id));
                     }
                     // Focus Mode / Typewriter 토글: 공유 메뉴의 체크마크를 뒤집고(+ atomic에 보존),
@@ -416,6 +419,8 @@ struct MenuStrings {
     #[serde(rename = "closeWindow")]
     close_window: String,
     find: String,
+    #[serde(rename = "copyRichText")]
+    copy_rich_text: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -614,6 +619,16 @@ fn build_app_menu<R: tauri::Runtime>(
             &PredefinedMenuItem::copy(handle, Some(m.copy.as_str()))?,
             &PredefinedMenuItem::paste(handle, Some(m.paste.as_str()))?,
             &PredefinedMenuItem::select_all(handle, Some(m.select_all.as_str()))?,
+            &PredefinedMenuItem::separator(handle)?,
+            // 현재 문서를 서식 있는 리치 텍스트(HTML)로 클립보드에 복사 → Slack/메일/Docs/Notion에
+            // 붙여넣으면 제목·굵게·목록·표·코드가 그대로 유지된다. plaintext 폴백은 마크다운 원문.
+            &MenuItem::with_id(
+                handle,
+                "copy_rich_text",
+                m.copy_rich_text.as_str(),
+                true,
+                Some("Alt+CmdOrCtrl+C"),
+            )?,
             &PredefinedMenuItem::separator(handle)?,
             &MenuItem::with_id(handle, "find", m.find.as_str(), true, Some("CmdOrCtrl+F"))?,
         ],
