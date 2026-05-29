@@ -86,7 +86,9 @@
     },
     "unsavedQuit": {
       "title": "Quit",
-      "body": "You have {count} document(s) with unsaved changes.\nQuit and discard the changes?"
+      "body": "You have {count} document(s) with unsaved changes.\nQuit and discard the changes?",
+      "bodyOne": "1 document has unsaved changes.\nQuit and discard the changes?",
+      "bodyMany": "{count} documents have unsaved changes.\nQuit and discard the changes?"
     },
     "externalChange": {
       "title": "External Change Detected",
@@ -119,7 +121,9 @@
     "matchCase": "Match Case",
     "previous": "Previous (⇧⏎)",
     "next": "Next (⏎)",
-    "close": "Close (Esc)"
+    "close": "Close (Esc)",
+    "noResults": "No results",
+    "replacedCount": "{n} replaced"
   },
   "image": {
     "upload": "Upload",

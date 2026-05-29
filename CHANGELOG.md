@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.10.0] - 2026-05-29
+
+### Added
+- **Find & Replace refinements**: the find field is pre-filled with your current selection when you open it (⌘F), "Replace All" confirms how many were replaced, and replacing text now keeps the original formatting (bold/italic) of the match. When nothing matches, the counter shows "No results" instead of "0/0".
+
+### Changed
+- **Find no longer jumps the page on every keystroke** — the view stays put as you type and only moves when you go to the next/previous match; closing the bar returns you to where you were.
+- **Accessibility**: the Style panel, document-info panel, toasts, and the live word-count are now announced to screen readers and labeled; toolbar buttons have accessible names; Escape closes the Style and Statistics panels (matching Find and the rename field).
+- **Tidier notifications**: identical messages no longer stack up, the number on screen is capped, and animations respect the system "reduce motion" setting.
+- The English quit prompt is now grammatical for a single document ("1 document has unsaved changes").
+
+### Fixed
+- Closing Find/Replace now returns keyboard focus to the editor.
+
 ## [0.9.0] - 2026-05-29
 
 ### Added
@@ -101,6 +115,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.10.0]: https://github.com/gurumdeva/mallow/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/gurumdeva/mallow/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/gurumdeva/mallow/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/gurumdeva/mallow/compare/v0.6.0...v0.7.0

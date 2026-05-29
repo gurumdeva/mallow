@@ -242,11 +242,17 @@ export class EditorController extends EventEmitter {
   insertDivider(): void { this.callMilkdown(insertHrCommand.key) }
 
   // ─── Find & Replace ──────────────────────────────────────────────
-  // 모든 검색 동작은 searchKey 플러그인 상태를 meta로 갱신하거나, 매치 위치로
-  // selection을 옮겨 scrollIntoView한다. 입력창 포커스를 뺏지 않도록 view.focus()는
-  // 호출하지 않는다(치환도 트랜잭션이라 포커스 없이 적용된다).
+  // 검색어 입력(setSearchQuery)은 하이라이트 decoration만 갱신하고, selection 이동·
+  // scrollIntoView는 명시적 탐색(next/prev/Enter = stepSearch)·치환에서만 일어난다.
+  // 입력창 포커스를 뺏지 않도록 view.focus()는 호출하지 않는다(치환도 트랜잭션이라
+  // 포커스 없이 적용된다). 오버레이 진입/종료 시의 selection 보존은 뷰가 담당한다.
 
-  /** 검색어/대소문자 설정. query가 비면 하이라이트가 사라진다. */
+  /**
+   * 검색어/대소문자 설정. query가 비면 하이라이트가 사라진다.
+   * 하이라이트(decoration)만 갱신하고 selection/스크롤은 건드리지 않는다 —
+   * 입력창에 한 글자 칠 때마다 문서가 스크롤되거나 선택이 옮겨지는 일을 막는다.
+   * 실제 selection 이동은 next/prev/Enter에서만(stepSearch) 일어난다.
+   */
   setSearchQuery(query: string, caseSensitive: boolean): void {
     if (!this.crepe) return
     this.crepe.editor.action((ctx) => {
@@ -255,7 +261,45 @@ export class EditorController extends EventEmitter {
         view.state.tr.setMeta(searchKey, { query, caseSensitive, current: query ? 0 : -1 }),
       )
     })
-    this.scrollToCurrentMatch()
+  }
+
+  /** 현재 문서 selection의 평문(plain text). 오버레이가 열릴 때 찾기 입력 시드용(읽기 전용). */
+  getSelectionText(): string {
+    let text = ''
+    this.crepe?.editor.action((ctx) => {
+      const { state } = ctx.get(editorViewCtx)
+      const { from, to } = state.selection
+      if (from < to) text = state.doc.textBetween(from, to, '\n')
+    })
+    return text
+  }
+
+  /** 현재 selection 위치(오버레이 진입 시 저장 → 닫을 때 복원용). */
+  getSelection(): { from: number; to: number } {
+    let sel = { from: 0, to: 0 }
+    this.crepe?.editor.action((ctx) => {
+      const { selection } = ctx.get(editorViewCtx).state
+      sel = { from: selection.from, to: selection.to }
+    })
+    return sel
+  }
+
+  /** 저장해 둔 selection을 복원한다(범위가 문서 밖이면 클램프). 검색 없이 오버레이를 닫을 때 사용. */
+  restoreSelection(sel: { from: number; to: number }): void {
+    this.crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const size = view.state.doc.content.size
+      const from = Math.min(Math.max(sel.from, 0), size)
+      const to = Math.min(Math.max(sel.to, 0), size)
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)))
+    })
+  }
+
+  /** ProseMirror view에 포커스를 준다. 찾기 오버레이를 닫을 때 에디터로 포커스를 되돌리는 데 사용. */
+  focus(): void {
+    this.crepe?.editor.action((ctx) => {
+      ctx.get(editorViewCtx).focus()
+    })
   }
 
   /** 현재 매치 수/위치(1-based). UI의 "3 / 12" 라벨용. */
@@ -271,6 +315,26 @@ export class EditorController extends EventEmitter {
   searchNext(): void { this.stepSearch(1) }
   searchPrev(): void { this.stepSearch(-1) }
 
+  /**
+   * 현재 매치(인덱스 변경 없이)를 선택하고 뷰에 보이게 스크롤한다.
+   * setSearchQuery는 입력 중 화면을 흔들지 않으려 스크롤하지 않으므로, 첫 탐색 시
+   * "현재 매치(보통 0번)"를 건너뛰지 않고 그 위치를 드러내는 데 쓴다(첫 Next/Prev가
+   * 1번/마지막으로 점프해 0번을 지나치는 문제 방지).
+   */
+  revealCurrentMatch(): void {
+    this.crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const s = searchKey.getState(view.state)
+      if (!s || s.current < 0 || !s.matches[s.current]) return
+      const m = s.matches[s.current]
+      view.dispatch(
+        view.state.tr
+          .setSelection(TextSelection.create(view.state.doc, m.from, m.to))
+          .scrollIntoView(),
+      )
+    })
+  }
+
   private stepSearch(dir: 1 | -1): void {
     this.crepe?.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
@@ -281,20 +345,6 @@ export class EditorController extends EventEmitter {
       view.dispatch(
         view.state.tr
           .setMeta(searchKey, { current: next })
-          .setSelection(TextSelection.create(view.state.doc, m.from, m.to))
-          .scrollIntoView(),
-      )
-    })
-  }
-
-  private scrollToCurrentMatch(): void {
-    this.crepe?.editor.action((ctx) => {
-      const view = ctx.get(editorViewCtx)
-      const s = searchKey.getState(view.state)
-      if (!s || s.current < 0 || !s.matches[s.current]) return
-      const m = s.matches[s.current]
-      view.dispatch(
-        view.state.tr
           .setSelection(TextSelection.create(view.state.doc, m.from, m.to))
           .scrollIntoView(),
       )
@@ -314,8 +364,12 @@ export class EditorController extends EventEmitter {
       if (!s || s.current < 0 || !s.matches[s.current]) return
       const m = s.matches[s.current]
       const tr = view.state.tr
-      if (replacement) tr.replaceWith(m.from, m.to, view.state.schema.text(replacement))
-      else tr.delete(m.from, m.to)
+      if (replacement) {
+        // 매치 시작 위치의 마크를 그대로 물려준다 → 굵게/기울임 등 안의 단어를
+        // 치환해도 서식이 유지된다(plain text로 끼워 넣어 서식이 풀리는 일 방지).
+        const marks = view.state.doc.resolve(m.from).marks()
+        tr.replaceWith(m.from, m.to, view.state.schema.text(replacement, marks))
+      } else tr.delete(m.from, m.to)
       view.dispatch(tr) // docChanged → 매치 자동 재계산 (view.state 갱신됨)
 
       // 삽입한 텍스트 끝(after) 이후의 첫 매치로 이동(없으면 처음으로 wrap).
@@ -334,8 +388,12 @@ export class EditorController extends EventEmitter {
     })
   }
 
-  /** 모든 매치를 한 번에 치환(끝→앞 순서로 앞쪽 위치 보존). */
-  searchReplaceAll(replacement: string): void {
+  /**
+   * 모든 매치를 한 번에 치환(끝→앞 순서로 앞쪽 위치 보존). 치환한 개수를 반환한다.
+   * searchReplace와 동일하게 각 매치 시작 위치의 마크를 물려줘 서식을 유지한다.
+   */
+  searchReplaceAll(replacement: string): number {
+    let count = 0
     this.crepe?.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
       const s = searchKey.getState(view.state)
@@ -343,11 +401,15 @@ export class EditorController extends EventEmitter {
       const tr = view.state.tr
       for (let i = s.matches.length - 1; i >= 0; i--) {
         const m = s.matches[i]
-        if (replacement) tr.replaceWith(m.from, m.to, view.state.schema.text(replacement))
-        else tr.delete(m.from, m.to)
+        if (replacement) {
+          const marks = view.state.doc.resolve(m.from).marks()
+          tr.replaceWith(m.from, m.to, view.state.schema.text(replacement, marks))
+        } else tr.delete(m.from, m.to)
       }
       view.dispatch(tr)
+      count = s.matches.length
     })
+    return count
   }
 
   /** 검색 종료 — 하이라이트 제거. */
