@@ -7,10 +7,81 @@
   --text-faint: #6d6d72;
   --border: rgba(255, 255, 255, 0.08);
   --accent: #ffffff;
+
+  /* 의미 기반 표면/오버레이 토큰. :root 기본값은 기존 다크 리터럴과 "정확히" 동일하게
+   * 둬서 다크 모드는 바이트 단위로 변하지 않는다. 라이트 값은 아래
+   * :root[data-theme="light"]에서만 덮어쓴다. */
+  --surface-card: rgba(72, 72, 74, 0.45);      /* stat-card / stats-meta / style-btn 배경 */
+  --surface-card-hover: rgba(96, 96, 98, 0.6); /* style-btn:hover */
+  --surface-card-active: rgba(112, 112, 114, 0.7); /* style-btn:active */
+  --corner-btn-bg: rgba(60, 60, 62, 0.55);     /* corner-btn 배경 */
+  --corner-btn-bg-hover: rgba(80, 80, 82, 0.7);
+  --corner-btn-bg-active: rgba(96, 96, 98, 0.8);
+  --overlay-weak: rgba(255, 255, 255, 0.05);   /* toc-item:hover */
+  --overlay-tabs-track: rgba(0, 0, 0, 0.25);   /* stats-tabs 트랙 */
+  --input-bg: rgba(255, 255, 255, 0.06);       /* filename-input:focus / find·replace input */
+  --input-bg-focus: rgba(255, 255, 255, 0.09); /* find·replace input:focus */
+  --btn-overlay-hover: rgba(255, 255, 255, 0.12); /* find-btn:hover */
+  --btn-overlay-active: rgba(255, 255, 255, 0.16); /* find-btn:active */
+  --border-strong: rgba(255, 255, 255, 0.18);  /* style-btn:hover border */
+  --status-bar-bg: rgba(44, 44, 46, 0.7);      /* status-bar 배경 */
+
   /* macOS: SF Pro Text + Apple SD Gothic Neo가 자동 적용됩니다. */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
     system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+}
+
+/* ─── Light 테마 (OS 외관에 따라 자동 적용) ──────────────────
+ * 다크가 BASE이고, 라이트는 순수 override다. macOS가 라이트일 때
+ * <html data-theme="light">가 붙으면 아래 값들이 위 :root 기본값을 덮는다. */
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-elevated: #f0f0f2;
+  --bg-popover: rgba(250, 250, 252, 0.92);
+  --text: #1c1c1e;
+  --text-dim: #6b6b70;
+  --text-faint: #9b9ba0;
+  --border: rgba(0, 0, 0, 0.1);
+  --accent: #1c1c1e;
+
+  --surface-card: #e8e8ec;
+  --surface-card-hover: #dddde2;
+  --surface-card-active: #d2d2d8;
+  --corner-btn-bg: rgba(0, 0, 0, 0.05);
+  --corner-btn-bg-hover: rgba(0, 0, 0, 0.09);
+  --corner-btn-bg-active: rgba(0, 0, 0, 0.12);
+  --overlay-weak: rgba(0, 0, 0, 0.05);
+  --overlay-tabs-track: rgba(0, 0, 0, 0.06);
+  --input-bg: rgba(0, 0, 0, 0.04);
+  --input-bg-focus: rgba(0, 0, 0, 0.07);
+  --btn-overlay-hover: rgba(0, 0, 0, 0.08);
+  --btn-overlay-active: rgba(0, 0, 0, 0.12);
+  --border-strong: rgba(0, 0, 0, 0.18);
+  --status-bar-bg: rgba(240, 240, 242, 0.7);
+}
+
+/* ─── Crepe(에디터) 토큰 라이트 override ─────────────────────
+ * EditorController가 frame-dark.css로 .milkdown에 다크 토큰을 깔아둔 위에,
+ * 라이트일 때만 .milkdown 토큰을 라이트 값으로 덮는다. (다크 import는 유지) */
+:root[data-theme="light"] .milkdown {
+  --crepe-color-background: #ffffff;
+  --crepe-color-on-background: #000000;
+  --crepe-color-surface: #f7f7f7;
+  --crepe-color-surface-low: #ededed;
+  --crepe-color-on-surface: #1c1c1c;
+  --crepe-color-on-surface-variant: #4d4d4d;
+  --crepe-color-outline: #a8a8a8;
+  --crepe-color-primary: #333333;
+  --crepe-color-secondary: #cfcfcf;
+  --crepe-color-on-secondary: #000000;
+  --crepe-color-inverse: #f0f0f0;
+  --crepe-color-on-inverse: #1a1a1a;
+  --crepe-color-inline-code: #ba1a1a;
+  --crepe-color-error: #ba1a1a;
+  --crepe-color-hover: #e0e0e0;
+  --crepe-color-selected: #d5d5d5;
+  --crepe-color-inline-area: #cacaca;
 }
 
 * {
@@ -120,7 +191,7 @@ button.titlebar-center:hover {
 }
 
 #filename-input:focus {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--input-bg);
 }
 
 #filename-input::selection {
@@ -245,7 +316,7 @@ button.titlebar-center:hover {
 
 /* ─── Corner actions (PDF / Info) — 타이틀바 우측에 사용 ──── */
 .corner-btn {
-  background: rgba(60, 60, 62, 0.55);
+  background: var(--corner-btn-bg);
   border: 1px solid var(--border);
   color: var(--text-dim);
   width: 30px;
@@ -263,11 +334,11 @@ button.titlebar-center:hover {
 
 .corner-btn:hover {
   color: var(--text);
-  background: rgba(80, 80, 82, 0.7);
+  background: var(--corner-btn-bg-hover);
 }
 
 .corner-btn:active {
-  background: rgba(96, 96, 98, 0.8);
+  background: var(--corner-btn-bg-active);
 }
 
 /* ─── Stats popover ──────────────────────────────────────── */
@@ -302,7 +373,7 @@ button.titlebar-center:hover {
 
 .stats-tabs {
   display: flex;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--overlay-tabs-track);
   border-radius: 8px;
   padding: 2px;
   margin-bottom: 12px;
@@ -333,7 +404,7 @@ button.titlebar-center:hover {
 }
 
 .stat-card {
-  background: rgba(72, 72, 74, 0.45);
+  background: var(--surface-card);
   border-radius: 12px;
   padding: 12px 14px;
   display: flex;
@@ -370,7 +441,7 @@ button.titlebar-center:hover {
 .stats-meta {
   margin-top: 8px;
   padding: 12px 14px;
-  background: rgba(72, 72, 74, 0.45);
+  background: var(--surface-card);
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -414,7 +485,7 @@ button.titlebar-center:hover {
 }
 
 .toc-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--overlay-weak);
   color: var(--text);
 }
 
@@ -521,7 +592,7 @@ button.titlebar-center:hover {
 .style-grid-2 { grid-template-columns: repeat(2, 1fr); }
 
 .style-btn {
-  background: rgba(72, 72, 74, 0.45);
+  background: var(--surface-card);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 10px;
@@ -537,12 +608,12 @@ button.titlebar-center:hover {
 }
 
 .style-btn:hover {
-  background: rgba(96, 96, 98, 0.6);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: var(--surface-card-hover);
+  border-color: var(--border-strong);
 }
 
 .style-btn:active {
-  background: rgba(112, 112, 114, 0.7);
+  background: var(--surface-card-active);
 }
 
 .style-btn-h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
@@ -689,7 +760,7 @@ button.titlebar-center:hover {
 .replace-input {
   flex: 1 1 auto;
   min-width: 200px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--text);
@@ -702,7 +773,7 @@ button.titlebar-center:hover {
 .find-input:focus,
 .replace-input:focus {
   border-color: rgba(10, 132, 255, 0.55);
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--input-bg-focus);
 }
 
 .find-input::placeholder,
@@ -726,7 +797,7 @@ button.titlebar-center:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--text-dim);
@@ -737,12 +808,12 @@ button.titlebar-center:hover {
 }
 
 .find-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--btn-overlay-hover);
   color: var(--text);
 }
 
 .find-btn:active {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--btn-overlay-active);
 }
 
 .find-btn.find-text {
@@ -781,7 +852,7 @@ button.titlebar-center:hover {
   z-index: 50;
   padding: 3px 10px;
   border-radius: 11px;
-  background: rgba(44, 44, 46, 0.7);
+  background: var(--status-bar-bg);
   backdrop-filter: blur(8px) saturate(160%);
   -webkit-backdrop-filter: blur(8px) saturate(160%);
   font-size: 11px;
@@ -794,4 +865,23 @@ button.titlebar-center:hover {
 
 #status-bar.hidden {
   display: none;
+}
+
+/* ─── Light 테마 마이크로 보정 ──────────────────────────────
+ * 다크 기준으로 맞춘 값 중 흰 배경에서 어색한 것만 라이트에서 덮어쓴다(다크 무손상). */
+:root[data-theme="light"] #filename-popover,
+:root[data-theme="light"] #stats-popover,
+:root[data-theme="light"] #style-popover,
+:root[data-theme="light"] #find-replace,
+:root[data-theme="light"] .toast {
+  /* 다크용 진한 그림자(rgba(0,0,0,0.45))는 흰 배경에서 탁한 회색 halo가 되므로 가볍게. */
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.14),
+    0 2px 6px rgba(0, 0, 0, 0.08);
+}
+:root[data-theme="light"] .search-match {
+  background: rgba(255, 196, 0, 0.45);
+}
+:root[data-theme="light"] .search-match-current {
+  background: rgba(255, 138, 0, 0.7);
 }

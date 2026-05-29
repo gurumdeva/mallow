@@ -30,6 +30,27 @@ const DEFAULT_MARKDOWN = ''
 async function bootstrap(): Promise<void> {
   const win = getCurrentWindow()
 
+  // ── 테마: OS 외관(라이트/다크)을 따라간다 (수동 선택 UI 없음) ──
+  // index.html 인라인 스크립트가 1차 페인트 전에 data-theme를 이미 확정하지만,
+  // 여기서 한 번 더 동기화해 (인라인 스크립트가 어떤 이유로 누락돼도) 일관성을 보장하고,
+  // OS 외관이 "실행 중에" 바뀌면 즉시 반영되도록 리스너를 단다. (창마다 각자 수행)
+  const applyTheme = (dark: boolean): void => {
+    // data-theme뿐 아니라 index.html 인라인 스크립트가 1차 페인트 전에 세팅한
+    // html 배경·color-scheme도 함께 갱신한다. 안 그러면 실행 중 OS 외관이 바뀔 때
+    // (라이브 전환) 인라인 값이 그대로 남아 스크롤바 등 native 컨트롤 색이 어긋난다.
+    const root = document.documentElement
+    root.setAttribute('data-theme', dark ? 'dark' : 'light')
+    root.style.background = dark ? '#1c1c1e' : '#ffffff'
+    root.style.colorScheme = dark ? 'dark' : 'light'
+  }
+  try {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    applyTheme(mq.matches)
+    mq.addEventListener('change', (e) => applyTheme(e.matches))
+  } catch {
+    /* matchMedia 미지원 → index.html의 다크 폴백을 그대로 둔다 */
+  }
+
   // 새 창(doc-*)의 다크 webview 처리를 "가장 먼저" 호출한다. main 창은 Rust setup()이
   // 처리하지만 doc 창은 이 invoke로만 처리된다. locale IPC 등 다른 await 뒤로 밀리면
   // 첫 페인트에서 흰 flash가 1프레임 보일 수 있어, locale 판정보다 앞에 둔다(fire-and-forget).

@@ -9,15 +9,18 @@ Mallow loads as a native macOS app, edits markdown directly in preview mode (no 
 ## Features
 
 - **Live preview editing** — type and edit markdown right inside the rendered view
+- **Find & Replace** (⌘F) — live match highlighting, a match counter, jump between matches, replace one or all, and an optional case-sensitive mode
 - **Localized UI (Korean / English / Japanese)** — the whole interface (menu, dialogs, tooltips, panels, dates) follows the device language and shows a single consistent language; any other language falls back to English
 - **Multiple windows** — New (⌘N) and Open (⌘O / Recent / Finder double-click) open in a separate window instead of replacing the current document
 - **Native macOS chrome** — standard menu bar (File / Edit / View / Window), ⌘N / ⌘O / ⌘S / ⇧⌘S / ⌘E / ⌘W shortcuts, file associations for `.md`
 - **Modified indicator** — unsaved changes show as ● in the window title (macOS standard)
+- **Autosave** — once a document has been saved to a file, edits are written to disk automatically a moment after you stop typing
 - **External-change reload** — edit a file in another app and Mallow refreshes from disk when you return (it asks first if you have unsaved edits)
 - **Recent files** — File → Open Recent (persisted across sessions)
-- **Statistics & Table of Contents** — word/character/paragraph count, read time, and a collapsible TOC (⌘⇧I)
+- **Statistics & Table of Contents** — word/character/paragraph count, read time, and a collapsible TOC (⌘⇧I), plus a live word-count badge in the corner while you write
 - **PDF export** — quick export to a clean light-theme PDF
-- **Dark theme** with system fonts (SF Pro + Apple SD Gothic Neo)
+- **Export as HTML** (⇧⌘E) — save a self-contained, styled HTML file you can open in any browser
+- **Automatic light & dark theme** — follows your macOS appearance and switches live when you change it, with system fonts (SF Pro + Apple SD Gothic Neo)
 
 ## Download
 
