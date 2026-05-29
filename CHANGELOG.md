@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.17.0] - 2026-05-29
+
+### Fixed
+- **Prevented several rare ways edits could be lost.** Continuing to type while a save was being written to disk, an external-change reload arriving mid-typing, or renaming a file at the same moment an autosave fired could each, in a narrow timing window, drop your most recent edits. Save/reload now reconcile against the actual editor contents (not a delayed "modified" flag), and renaming is serialized against saving.
+
+### Security
+- **HTML export is now sanitized.** When you Export as HTML, links and images carrying unsafe URL schemes (e.g. `javascript:`, non-image `data:`) are stripped, and the exported file now includes a strict Content-Security-Policy — so a malicious `.md` you open and re-export can't carry script into the exported file. (In-app rendering was already protected by the app's CSP.)
+
 ## [0.16.0] - 2026-05-29
 
 ### Added
@@ -158,6 +166,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.17.0]: https://github.com/gurumdeva/mallow/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/gurumdeva/mallow/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/gurumdeva/mallow/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/gurumdeva/mallow/compare/v0.13.0...v0.14.0

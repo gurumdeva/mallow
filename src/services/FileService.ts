@@ -6,6 +6,54 @@ import { EditorController } from '../editor/EditorController'
 import { RecentFilesStore } from './RecentFilesStore'
 import { t } from '../i18n'
 
+/**
+ * 저장(write) 직후 "문서를 saved로 표시해도 되는가"를 결정하는 순수 함수.
+ *
+ * 배경: write는 비동기(await writeTextFile)다. 그 사이에 사용자가 계속 타이핑하면
+ * 디스크에 쓴 내용(written)보다 에디터의 현재 내용(current)이 더 새롭다. 이때
+ * 무조건 markSaved()를 하면, 디스크에 반영되지 않은 그 최신 편집의 dirty 플래그까지
+ * 지워져 자동 저장이 다시 발화하지 않고 → 에디터가 디스크보다 영원히 앞선 채 손실된다.
+ * (doc.isModified는 Milkdown markdownUpdated의 trailing 200ms debounce라 타이핑 도중엔
+ *  stale-false일 수 있어 플래그로 판단하면 안 된다 → 실제 내용으로 판단한다.)
+ *
+ * 규칙: write에 넣은 내용과 지금 에디터 내용이 "그대로 같을 때"만 true.
+ *  - true  → markSaved() + lastDiskContent = written (방금 쓴 내용이 곧 디스크 내용)
+ *  - false → dirty 유지 (write 도중 더 친 내용이 있음 → 후속 저장이 최신 내용을 다시 쓴다)
+ */
+export function shouldMarkSaved(written: string, current: string): boolean {
+  return written === current
+}
+
+/**
+ * 외부 변경 동기화(syncFromDiskIfChanged)에서 "무엇을 할지"를 결정하는 순수 함수.
+ *
+ * 배경: focus 시점에 디스크를 다시 읽어(diskText) 마지막으로 IO한 원본(lastDiskContent)과
+ * 비교한다. 외부 변경이 있을 때 "조용히 reload" vs "사용자 확인(prompt)"을 가르는 기준은
+ * doc.isModified가 아니라 "에디터 현재 내용이 마지막 IO 내용과 같은가"여야 한다.
+ * isModified는 trailing debounce라 타이핑 도중엔 stale-false → 그 순간 외부 변경이 들어오면
+ * 조용히 덮어써 진행 중 편집이 손실된다. 실제 내용(editorText)으로 판단해 그 손실을 막는다.
+ *
+ * 반환:
+ *  - 'noop'   → diskText === lastDiskContent: 외부 변경 없음(할 일 없음).
+ *  - 'silent' → 외부 변경 O + editorText === lastDiskContent(로컬 편집 없음): 손실 위험 없이 reload.
+ *  - 'prompt' → 외부 변경 O + 로컬 편집 O(editorText !== lastDiskContent): 한쪽을 버려야 하므로 확인.
+ *
+ * 세 인자 모두 string이다. lastDiskContent는 저장/열기 후에만 의미가 있으므로(null인 동안엔
+ * 비교 기준이 없다) 호출부가 null을 걸러낸 뒤 이 함수를 부른다(아래 syncFromDiskIfChanged 참조).
+ */
+export type SyncDecision = 'noop' | 'silent' | 'prompt'
+export function decideSyncAction(
+  editorText: string,
+  lastDiskContent: string,
+  diskText: string,
+): SyncDecision {
+  if (diskText === lastDiskContent) return 'noop' // 외부 변경 없음
+  // 외부 변경 O. 로컬 편집이 없으면(에디터 = 마지막 IO 내용) 안전하게 조용히 reload.
+  if (editorText === lastDiskContent) return 'silent'
+  // 외부 변경 + 로컬 편집 동시 존재 → 충돌 → 사용자 확인.
+  return 'prompt'
+}
+
 /** rename 실패 사유. 호출부(main.ts)가 code로 사유별 지역화 토스트를 고른다. */
 export type RenameErrorCode = 'invalid' | 'exists'
 export class RenameError extends Error {
@@ -45,6 +93,17 @@ export class FileService {
   private isSyncing = false
   /** save/saveAs 재진입 방지 (빠른 ⌘S 연타·⌘S+버튼 동시 → 더블 다이얼로그/쓰기 차단). */
   private isSaving = false
+  /**
+   * 진행 중인 save/saveAs의 promise. rename이 시작 전에 이를 await해, "디스크 rename과
+   * 동시에 옛 경로로 쓰기가 진행 중"인 race를 없앤다(save #4). 진행 중이 없으면 null.
+   */
+  private savePromise: Promise<void> | null = null
+  /**
+   * rename 진행 중 플래그. true인 동안 save/saveAs는 즉시 early-return해, rename이 디스크
+   * 경로를 old→new로 바꾸는 창에서 자동 저장이 stale한 doc.filePath(=old)로 써 옛 파일을
+   * 되살리거나 최신 편집을 옛 파일에 가두는 race(#4)를 막는다.
+   */
+  private isRenaming = false
 
   constructor(
     private readonly doc: Document,
@@ -76,29 +135,52 @@ export class FileService {
     // 빈 이름이나 경로 분리자 포함(폴더 탈출 시도) → 무효. 호출부가 안내 토스트를 띄운다.
     if (!newName) throw new RenameError('invalid')
 
-    const oldPath = this.doc.filePath
-    if (!oldPath) {
-      this.doc.rename(name) // 아직 저장 안 된 새 문서 → 표시명만
+    // 저장 전(새 문서)은 디스크 rename이 없고 표시명만 바꾼다 → 가드/직렬화 불필요.
+    if (!this.doc.filePath) {
+      this.doc.rename(name)
       return
     }
-    if (newName === this.doc.filename) return // 변경 없음
 
-    const slash = oldPath.lastIndexOf('/')
-    const newPath = oldPath.slice(0, slash + 1) + newName
-    // Rust rename_file이 (1) 같은 폴더 내인지 (2) 대상이 이미 있는지 검사해 거부할 수 있다.
-    // 거부 코드를 RenameError로 변환해 호출부가 사유별 토스트를 띄우게 한다.
+    // ── save와 직렬화(#4) ──────────────────────────────────────────────
+    // 진행 중인 save가 있으면 끝나길 기다린다. 그 save는 (아직 존재하는) 옛 경로로 쓰기를
+    // 마치므로 내용 손실이 없다. 그 뒤 isRenaming을 세워 새 자동 저장이 디스크 rename 창에서
+    // stale 경로로 쓰는 것을 막는다. (save 자체의 에러는 그 호출부에서 이미 처리되므로 여기선 무시.)
+    const pendingSave = this.savePromise
+    if (pendingSave) await pendingSave.catch(() => {})
+
+    this.isRenaming = true
     try {
-      await invoke('rename_file', { oldPath, newPath })
-    } catch (e) {
-      const code = String(e)
-      if (code === 'exists') throw new RenameError('exists')
-      if (code === 'invalid') throw new RenameError('invalid')
-      throw e // 그 밖의 OS 오류는 그대로(상위가 일반 rename 오류 토스트)
+      // oldPath/filename은 in-flight save를 기다린 "뒤"에 읽어, 그 사이 경로가 바뀌었을
+      // 가능성(예: 직전 saveAs)까지 반영한다.
+      const oldPath = this.doc.filePath
+      if (!oldPath) {
+        this.doc.rename(name) // 대기 중 경로가 사라진 비정상 경우 → 표시명만
+        return
+      }
+      if (newName === this.doc.filename) return // 변경 없음
+
+      const slash = oldPath.lastIndexOf('/')
+      const newPath = oldPath.slice(0, slash + 1) + newName
+      // Rust rename_file이 (1) 같은 폴더 내인지 (2) 대상이 이미 있는지 검사해 거부할 수 있다.
+      // 거부 코드를 RenameError로 변환해 호출부가 사유별 토스트를 띄우게 한다.
+      try {
+        await invoke('rename_file', { oldPath, newPath })
+      } catch (e) {
+        const code = String(e)
+        if (code === 'exists') throw new RenameError('exists')
+        if (code === 'invalid') throw new RenameError('invalid')
+        throw e // 그 밖의 OS 오류는 그대로(상위가 일반 rename 오류 토스트)
+      }
+      // 디스크 rename 직후 await 없이 곧바로 경로를 갱신한다(#4의 핵심): rename과 setPath
+      // 사이에 yield가 없어, 설령 가드를 벗어난 save가 있더라도 stale 경로를 노릴 수 없다.
+      this.doc.setPath(newPath) // filename + path 갱신
+      // recent 정리는 경로 갱신 "뒤"에 둔다(여기서 await가 일어나도 doc.filePath는 이미 newPath).
+      await this.recent.remove(oldPath)
+      await this.recent.add(newPath)
+      // 내용은 그대로이므로 lastDiskContent는 유지.
+    } finally {
+      this.isRenaming = false
     }
-    await this.recent.remove(oldPath)
-    this.doc.setPath(newPath) // filename + path 갱신
-    await this.recent.add(newPath)
-    // 내용은 그대로이므로 lastDiskContent는 유지.
   }
 
   async openPath(path: string): Promise<void> {
@@ -121,46 +203,70 @@ export class FileService {
   }
 
   async save(): Promise<void> {
-    if (this.isSaving) return
+    // rename 진행 중이면 디스크 경로가 old→new로 바뀌는 중이라 stale 경로로 쓸 위험이 있다.
+    // 자동 저장이 끼어들어도 여기서 막고, rename 종료 후 dirty가 남아 있으면 다시 발화한다.
+    if (this.isSaving || this.isRenaming) return
     this.isSaving = true
-    try {
-      let path = this.doc.filePath
-      if (!path) {
-        const selected = await saveDialog({
-          defaultPath: this.doc.filename,
-          filters: [{ name: 'Markdown', extensions: ['md'] }],
-        })
-        if (!selected) return
-        path = selected
-      }
-      const md = this.editor.getMarkdown()
-      await writeTextFile(path, md)
-      this.doc.setPath(path)
-      this.doc.markSaved()
-      await this.recent.add(path)
-      this.lastDiskContent = md
-    } finally {
+    // 진행 중 promise를 노출해 applyRename이 await할 수 있게 한다(동시 쓰기 race 차단).
+    const run = this.runSave().finally(() => {
       this.isSaving = false
-    }
+      this.savePromise = null
+    })
+    this.savePromise = run
+    return run
   }
 
-  async saveAs(): Promise<void> {
-    if (this.isSaving) return
-    this.isSaving = true
-    try {
+  private async runSave(): Promise<void> {
+    let path = this.doc.filePath
+    if (!path) {
       const selected = await saveDialog({
         defaultPath: this.doc.filename,
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       })
       if (!selected) return
-      const md = this.editor.getMarkdown()
-      await writeTextFile(selected, md)
-      this.doc.setPath(selected)
+      path = selected
+    }
+    const md = this.editor.getMarkdown()
+    await writeTextFile(path, md)
+    this.doc.setPath(path)
+    await this.recent.add(path)
+    // write는 비동기다. await 동안 사용자가 더 타이핑했다면 에디터 내용이 디스크보다
+    // 새롭다 → markSaved()로 dirty를 지우면 그 최신 편집이 자동 저장에서 누락된다.
+    // 실제 내용으로 비교해, "쓴 내용 == 현재 내용"일 때만 saved 처리하고 기준선을 갱신한다.
+    // 다르면 dirty를 유지해 기존 자동 저장 'changed' 경로가 최신 내용을 다시 쓰게 둔다.
+    // (lastDiskContent는 "실제로 쓴 내용"일 때만 갱신 — 후속 저장이 최신 내용을 쓰고 그때 갱신.)
+    if (shouldMarkSaved(md, this.editor.getMarkdown())) {
       this.doc.markSaved()
-      await this.recent.add(selected)
       this.lastDiskContent = md
-    } finally {
+    }
+  }
+
+  async saveAs(): Promise<void> {
+    if (this.isSaving || this.isRenaming) return
+    this.isSaving = true
+    const run = this.runSaveAs().finally(() => {
       this.isSaving = false
+      this.savePromise = null
+    })
+    this.savePromise = run
+    return run
+  }
+
+  private async runSaveAs(): Promise<void> {
+    const selected = await saveDialog({
+      defaultPath: this.doc.filename,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    })
+    if (!selected) return
+    const md = this.editor.getMarkdown()
+    await writeTextFile(selected, md)
+    this.doc.setPath(selected)
+    await this.recent.add(selected)
+    // save()와 동일한 내용 기반 재조정: write await 동안 사용자가 더 친 내용이 있으면
+    // dirty를 유지해(자동 저장이 새 경로로 최신 내용을 다시 쓰게) 손실을 막는다.
+    if (shouldMarkSaved(md, this.editor.getMarkdown())) {
+      this.doc.markSaved()
+      this.lastDiskContent = md
     }
   }
 
@@ -200,11 +306,17 @@ export class FileService {
       // 그 경우 위에서 읽은 disk는 stale → 이 sync를 폐기해야, 방금 저장한 내용을
       // 옛 디스크 내용으로 되돌리는 race(데이터 손실)를 막는다.
       if (this.lastDiskContent !== baseline) return
+      // path가 설정돼 있으면(openPath/save/saveAs를 거쳤으면) lastDiskContent는 항상 non-null.
+      // 기준선이 없으면 외부 변경을 신뢰성 있게 판단할 수 없어, 손실 위험을 피해 보수적으로 skip.
+      if (baseline === null) return
 
-      if (disk === this.lastDiskContent) return // 외부 변경 없음
+      // reload/prompt 결정은 debounce된 doc.isModified가 아니라 "실제 에디터 내용"으로 한다.
+      // (타이핑 도중 isModified는 stale-false라, 그 순간 외부 변경이 조용히 덮어쓸 수 있다.)
+      const action = decideSyncAction(this.editor.getMarkdown(), baseline, disk)
+      if (action === 'noop') return // 외부 변경 없음
 
-      if (!this.doc.isModified) {
-        // 로컬 편집이 없으므로 손실 위험 없이 바로 디스크 내용 반영.
+      if (action === 'silent') {
+        // 로컬 편집이 없으므로(에디터 내용 == 마지막 IO 내용) 손실 위험 없이 디스크 내용 반영.
         await this.editor.load(disk)
         this.doc.markSaved() // load가 emit한 'change'로 dirty 표시된 것을 되돌림
         this.lastDiskContent = disk
