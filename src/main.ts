@@ -202,6 +202,7 @@ async function bootstrap(): Promise<void> {
   // 루트 클래스(focus-mode / typewriter-mode)로 CSS(블록 디밍·크롬 페이드·중앙 패딩)를 켠다.
   let focusModeOn = false
   let typewriterOn = false
+  let keepOnTopOn = false
   const root = document.documentElement
   const applyFocusMode = (on: boolean): void => {
     focusModeOn = on
@@ -212,6 +213,12 @@ async function bootstrap(): Promise<void> {
     typewriterOn = on
     root.classList.toggle('typewriter-mode', on)
     editor.setTypewriter(on)
+  }
+  // 항상 위에 고정: 이 창을 다른 앱 위에 떠 있게 한다(창별·일시적, 실행마다 off로 시작).
+  // Rust가 보낸 새 상태(boolean)를 그대로 적용한다(focus/typewriter와 동일 패턴).
+  const applyKeepOnTop = (on: boolean): void => {
+    keepOnTopOn = on
+    win.setAlwaysOnTop(on).catch(reportError(t('error.keepOnTop')))
   }
 
   // ── Title bar의 PDF 아이콘 클릭 → export ─────────────────
@@ -419,6 +426,7 @@ async function bootstrap(): Promise<void> {
     // Rust가 보낸 새 상태(boolean)를 그대로 적용한다(체크마크는 Rust가 이미 갱신).
     onToggleFocusMode: (on) => applyFocusMode(on),
     onToggleTypewriter: (on) => applyTypewriter(on),
+    onToggleKeepOnTop: (on) => applyKeepOnTop(on),
     // Open Recent 클릭은 Rust가 클릭 순간 실제 경로를 해석해 open:file로 보낸다
     // (인덱스 race 방지). OS 파일 열기와 동일 경로(onOpenFromOs)로 처리된다.
     // (handleOpenPath는 내부에서 자체 오류를 처리하므로 방어적으로만 catch한다.)
@@ -540,6 +548,7 @@ async function bootstrap(): Promise<void> {
       // 이 창의 실제 모드 상태로 맞춘다(다른 창에서 토글돼 어긋난 체크마크를 교정).
       invoke('set_menu_check', { id: 'focus_mode', checked: focusModeOn }).catch(() => {})
       invoke('set_menu_check', { id: 'typewriter', checked: typewriterOn }).catch(() => {})
+      invoke('set_menu_check', { id: 'keep_on_top', checked: keepOnTopOn }).catch(() => {})
     } else {
       // 포커스를 잃을 때 이 창의 미저장 여부를 "실제 내용" 기준으로 즉시 보고한다. ⌘Q는 포커스
       // 창에서만 들어오므로, 다른 창에서 타이핑 직후(200ms debounce 전) 이 창으로 전환해 ⌘Q하면

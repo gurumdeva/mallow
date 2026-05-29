@@ -33,7 +33,8 @@
     "closeWindow": "Close Window",
     "find": "Find…",
     "copyRichText": "Copy as Rich Text",
-    "pasteMatchStyle": "Paste and Match Style"
+    "pasteMatchStyle": "Paste and Match Style",
+    "keepOnTop": "Keep on Top"
   },
   "titlebar": {
     "styleTip": "Text Style",
@@ -114,7 +115,8 @@
     "save": "Save",
     "saveAs": "Save As",
     "syncFile": "File Sync",
-    "copyRichText": "Couldn’t copy as rich text"
+    "copyRichText": "Couldn’t copy as rich text",
+    "keepOnTop": "Couldn’t change “Keep on Top”"
   },
   "toast": {
     "unknownError": "Unknown error",
