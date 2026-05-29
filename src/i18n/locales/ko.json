@@ -59,7 +59,9 @@
   "toc": {
     "title": "목차",
     "tabTip": "목차",
-    "empty": "표시할 헤딩이 없습니다."
+    "empty": "표시할 헤딩이 없습니다.",
+    "jump": "헤딩으로 이동",
+    "toggle": "하위 헤딩 펼치기/접기"
   },
   "style": {
     "title": "스타일",
@@ -139,6 +141,7 @@
     "caption": "이미지 설명 입력"
   },
   "status": {
-    "summary": "{words}단어 · {min}분"
+    "summary": "{words}단어 · {min}분",
+    "selection": "선택 {words}단어 · {chars}자"
   }
 }

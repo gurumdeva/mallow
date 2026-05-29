@@ -165,6 +165,44 @@ const typewriterPlugin = (holder: TypewriterHolder) =>
       }),
   )
 
+// ─── Selection change 신호: 상태바의 "선택 단어 수"용 ────────────────
+// ProseMirror는 selection만 바뀌어도 doc의 markdownUpdated를 발화하지 않으므로(편집이
+// 아니므로), 상태바가 선택 변화를 알 길이 없다. view.update 훅에서 selection이 실제로
+// 바뀐 프레임에만 콜백을 부른다. rAF로 throttle해 드래그 중 매 프레임 폭주를 막는다
+// (Find의 검색 하이라이트·Focus·Typewriter 플러그인과 독립적으로 공존).
+const selectionPlugin = (onChange: () => void) =>
+  $prose(
+    () =>
+      new Plugin({
+        view: () => {
+          let raf = 0
+          const fire = (): void => {
+            raf = 0
+            onChange()
+          }
+          return {
+            update: (view, prevState) => {
+              const prevSel = prevState.selection
+              const sel = view.state.selection
+              // selection이 바뀐 경우에만 신호(doc만 바뀐 편집은 'change'가 따로 처리).
+              // 동일 위치 재설정(eq)·decoration-only 변경엔 반응하지 않는다.
+              if (prevSel.eq(sel)) return
+              // 순수 캐럿 이동(이전·현재 모두 빈 선택)은 무시한다. "선택 단어 수"는 선택이
+              // 있을 때만 의미가 있고, 전체 문서 카운트는 doc 'changed'가 이미 갱신한다.
+              // 이 가드가 없으면 화살표·클릭 같은 캐럿 이동마다 상태바가 getMarkdown()으로
+              // 문서 전체를 매 프레임 재직렬화해(성능 저하) 보이는 변화도 없이 비용만 든다.
+              if (prevSel.empty && sel.empty) return
+              if (raf) cancelAnimationFrame(raf)
+              raf = requestAnimationFrame(fire)
+            },
+            destroy: () => {
+              if (raf) cancelAnimationFrame(raf)
+            },
+          }
+        },
+      }),
+  )
+
 /** 검색 상태 + 하이라이트 decoration을 관리하는 ProseMirror 플러그인. */
 const searchPlugin = $prose(
   () =>
@@ -426,6 +464,35 @@ export class EditorController extends EventEmitter {
   focus(): void {
     this.crepe?.editor.action((ctx) => {
       ctx.get(editorViewCtx).focus()
+    })
+  }
+
+  /**
+   * 목차에서 고른 헤딩 DOM 요소로 점프한다(클릭 시점에 해석 — 스테일 방지).
+   * view.posAtDOM으로 그 요소의 문서 위치를 구하고, 캐럿을 헤딩 시작으로 옮긴 뒤
+   * scrollIntoView로 화면에 보이게 한다. 위치 해석이 실패하면 DOM scrollIntoView로 폴백한다.
+   */
+  scrollToHeading(el: HTMLElement): void {
+    if (!this.crepe) return
+    this.crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      let pos: number
+      try {
+        // posAtDOM(node, offset): 렌더된 헤딩 요소의 시작 문서 위치. offset 0 = 요소 앞.
+        pos = view.posAtDOM(el, 0)
+      } catch {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return
+      }
+      const size = view.state.doc.content.size
+      const clamped = Math.min(Math.max(pos, 0), size)
+      view.focus()
+      // 헤딩 텍스트 시작에 캐럿을 둔다(near로 가장 가까운 유효 텍스트 위치 보정).
+      view.dispatch(
+        view.state.tr
+          .setSelection(TextSelection.near(view.state.doc.resolve(clamped)))
+          .scrollIntoView(),
+      )
     })
   }
 
@@ -761,6 +828,8 @@ export class EditorController extends EventEmitter {
     // 둘 다 기본 OFF이며 setFocusMode/setTypewriter로 켜진다(검색 플러그인과 독립적으로 공존).
     crepe.editor.use(focusPlugin)
     crepe.editor.use(typewriterPlugin(this.typewriterHolder))
+    // 선택 변화 신호 플러그인: 상태바가 "선택 단어 수"를 다시 계산하도록 'selectionchange'를 발행.
+    crepe.editor.use(selectionPlugin(() => this.emit('selectionchange')))
     // 스마트 타이포그래피 입력 규칙(따옴표/대시/줄임표). $inputRule이라 core의 단일 inputRules
     // 플러그인에 합쳐져 IME 보호·코드 제외·Backspace/⌘Z 되돌리기가 그대로 적용된다(기본 ON, 토글 없음).
     smartTypographyRules.forEach((rule) => crepe.editor.use(rule))

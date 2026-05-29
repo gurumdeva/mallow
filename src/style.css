@@ -499,6 +499,15 @@ button.titlebar-center:hover {
 }
 
 .toc-item {
+  /* 이제 포커스 가능한 <button>이다. 기본 버튼 스타일을 제거해 기존 항목 모양을 유지하고,
+     전폭(block)·좌측 정렬로 div처럼 보이게 한다. */
+  display: block;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: none;
+  border: none;
+  font-family: inherit;
   padding: 6px 10px;
   font-size: 13px;
   color: var(--text-dim);
@@ -513,6 +522,13 @@ button.titlebar-center:hover {
 .toc-item:hover {
   background: var(--overlay-weak);
   color: var(--text);
+}
+
+/* 키보드 포커스 표시(마우스 클릭에는 안 뜨고 Tab 이동 시에만). a11y 패스: 항목이 포커스 가능. */
+.toc-item:focus-visible,
+.toc-arrow:focus-visible {
+  outline: 2px solid var(--accent, #4a9eff);
+  outline-offset: -2px;
 }
 
 .toc-empty {
@@ -531,15 +547,19 @@ button.titlebar-center:hover {
   display: none;
 }
 
-.toc-root {
+/* 루트 행: 펼침 화살표(<button>)와 점프 버튼(.toc-root)을 한 줄에 둔다. */
+.toc-root-row {
   display: flex;
   align-items: center;
+}
+
+.toc-root {
+  flex: 1;
   font-weight: 500;
   color: var(--text);
 }
 
 .toc-text {
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -555,6 +575,11 @@ button.titlebar-center:hover {
   cursor: pointer;
   color: var(--text-faint);
   transition: transform 0.15s, color 0.15s;
+  /* <button> 기본 스타일 제거. */
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 .toc-arrow:hover {

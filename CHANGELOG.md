@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.15.0] - 2026-05-29
+
+### Added
+- **Selection word count**: select some text and the corner badge shows that selection's word and character count; it returns to the whole-document count when you deselect.
+- **Jump to heading**: click a heading in the Table of Contents (⌘⇧I → Contents) to scroll straight to it. The outline entries are now keyboard-focusable.
+
 ## [0.14.0] - 2026-05-29
 
 ### Added
@@ -144,6 +150,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.15.0]: https://github.com/gurumdeva/mallow/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/gurumdeva/mallow/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/gurumdeva/mallow/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/gurumdeva/mallow/compare/v0.11.0...v0.12.0
