@@ -31,7 +31,8 @@
     "zoom": "拡大/縮小",
     "fullscreen": "フルスクリーンの切り替え",
     "closeWindow": "ウインドウを閉じる",
-    "find": "検索…"
+    "find": "検索…",
+    "copyRichText": "リッチテキストとしてコピー"
   },
   "titlebar": {
     "styleTip": "テキストスタイル",
@@ -111,7 +112,8 @@
     "openWindow": "新規ウインドウ",
     "save": "保存",
     "saveAs": "別名で保存",
-    "syncFile": "ファイル同期"
+    "syncFile": "ファイル同期",
+    "copyRichText": "リッチテキストのコピーに失敗しました"
   },
   "toast": {
     "unknownError": "不明なエラー",
@@ -119,7 +121,9 @@
     "imageTooLarge": "画像が大きすぎます（最大10MB）",
     "exported": "{name} に書き出しました",
     "nothingToExport": "書き出す内容がありません",
-    "recentRemoved": "ファイルが存在しないため、最近使った項目から削除しました"
+    "recentRemoved": "ファイルが存在しないため、最近使った項目から削除しました",
+    "copiedRich": "リッチテキストとしてコピーしました",
+    "nothingToCopy": "コピーする内容がありません"
   },
   "find": {
     "findPlaceholder": "検索",

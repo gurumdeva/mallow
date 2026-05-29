@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.22.0] - 2026-05-30
+
+### Added
+- **Copy as Rich Text** (Edit → Copy as Rich Text, ⌥⌘C): copies the whole document to the clipboard as formatted rich text, so pasting into Slack, email, Google Docs, or Notion keeps your headings, bold/italic, lists, tables, and code — instead of pasting raw markdown. Apps that accept only plain text receive the clean markdown source. Localized (Korean / English / Japanese).
+
 ## [0.21.0] - 2026-05-29
 
 ### Changed
@@ -198,6 +203,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.22.0]: https://github.com/gurumdeva/mallow/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/gurumdeva/mallow/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/gurumdeva/mallow/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/gurumdeva/mallow/compare/v0.18.0...v0.19.0
