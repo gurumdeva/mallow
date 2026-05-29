@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.19.0] - 2026-05-29
+
+### Fixed
+- **Closing or quitting right after typing no longer loses edits.** If you typed and then immediately closed a window (⌘W) or quit (⌘Q) within a fraction of a second, the unsaved-changes prompt could fail to appear and the most recent edits were lost — for a never-saved document, unrecoverably. Close and quit now check the editor's actual contents instead of a delayed "modified" flag, so you're always asked first.
+- **Reading time no longer explodes from pasted/linked images.** A reference-style image (`[id]: data:…`) or an image whose title contained deeply nested parentheses could leak its huge embedded data into the statistics, showing absurd character counts and reading times (e.g. "1601 min"). All embedded image data is now excluded from the counts.
+- **Find & Replace keeps formatting when replacing the first word of a styled run.** Replacing a word that began a bold/italic span (e.g. the "bar" in **bar** baz) previously dropped the formatting; the replacement now inherits the run's style correctly.
+
 ## [0.18.0] - 2026-05-29
 
 ### Fixed
@@ -174,6 +181,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.19.0]: https://github.com/gurumdeva/mallow/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/gurumdeva/mallow/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/gurumdeva/mallow/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/gurumdeva/mallow/compare/v0.15.0...v0.16.0

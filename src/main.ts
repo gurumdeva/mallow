@@ -336,13 +336,23 @@ async function bootstrap(): Promise<void> {
   // 마지막 창이면 Rust RunEvent가 webview_windows 빈 것을 보고 앱을 종료한다.
   // 창 닫기 버튼/⌘W(onCloseRequested)와 ⌘Q(menu:quit) 양쪽에서 공용으로 쓴다.
   const closeThisWindow = async (): Promise<void> => {
-    if (doc.isModified) {
+    // 미저장 여부는 debounce된 doc.isModified가 아니라 "실제 내용"으로 판단한다. 타이핑 직후
+    // (markdownUpdated 200ms debounce 창) 닫으면 isModified가 stale-false라, 그대로 닫으면 방금
+    // 친 내용이 확인 없이 사라진다(제목 없는 새 문서는 디스크에도 없어 복구 불가). hasUnsavedChanges는
+    // 에디터 현재 내용과 마지막 깨끗한 기준을 직접 비교한다.
+    if (fileService.hasUnsavedChanges()) {
       // 멀티 창에서 여러 확인창이 떠도 구분되도록 파일명을 함께 표시.
       const ok = await ask(
         t('dialog.unsavedClose.body', { name: doc.filename }),
         { title: t('dialog.unsavedClose.title'), kind: 'warning' },
       )
       if (!ok) return // 취소 → 창 유지
+    }
+    // 실제로 닫기로 했으니 대기 중인 자동 저장 타이머를 정리한다 — 닫기/버리기 의도 뒤에
+    // 뒤늦게 저장이 발화하지 않도록(취소 시엔 위에서 이미 return하므로 타이머는 유지된다).
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer)
+      autosaveTimer = null
     }
     invoke('close_document_window').catch(() => {})
   }
@@ -385,6 +395,14 @@ async function bootstrap(): Promise<void> {
       if (quitting) return
       quitting = true
       void (async () => {
+        // 집계 전에 이 창(⌘Q를 받은 포커스 창 = 방금 타이핑하던 창)의 미저장 여부를 "실제 내용"
+        // 기준으로 즉시 보고한다. reportedDirty는 debounce된 isModified 기반이라 타이핑 직후엔
+        // stale일 수 있어, 종료 직전 한 번 더 맞춰 "방금 친 내용"이 확인 없이 사라지는 걸 막는다.
+        const liveDirty = fileService.hasUnsavedChanges()
+        if (liveDirty !== reportedDirty) {
+          reportedDirty = liveDirty
+          await invoke('set_window_dirty', { dirty: liveDirty }).catch(() => {})
+        }
         const n = await invoke<number>('dirty_window_count').catch(() => 0)
         if (n > 0) {
           // 영어 단/복수 구분(item 14): 1건이면 단수("1 document has…"), 그 외 복수형.
@@ -472,6 +490,11 @@ async function bootstrap(): Promise<void> {
       break
   }
 
+  // 시작 콘텐츠가 자리잡았으니 미저장 판단의 "깨끗한 기준"을 현재 내용으로 고정한다. 환영/빈
+  // 문서는 여기서 기준이 잡혀, 손대지 않고 닫으면 확인이 뜨지 않는다(파일을 연 경우엔 openPath가
+  // 이미 같은 값으로 갱신해 무해). 이후 편집은 이 기준과 달라져 hasUnsavedChanges가 true가 된다.
+  fileService.captureBaseline()
+
   // ── 외부 변경 감지: 다른 앱에서 파일을 수정하고 Mallow로 돌아오면 동기화 ──
   // focus를 트리거로 디스크를 다시 읽어 비교한다. fs watcher 대신 focus를 쓰는 이유:
   //  (1) 사용자가 "돌아왔을 때" 갱신되길 기대하는 시나리오에 정확히 부합
@@ -483,6 +506,15 @@ async function bootstrap(): Promise<void> {
       // 이 창의 실제 모드 상태로 맞춘다(다른 창에서 토글돼 어긋난 체크마크를 교정).
       invoke('set_menu_check', { id: 'focus_mode', checked: focusModeOn }).catch(() => {})
       invoke('set_menu_check', { id: 'typewriter', checked: typewriterOn }).catch(() => {})
+    } else {
+      // 포커스를 잃을 때 이 창의 미저장 여부를 "실제 내용" 기준으로 즉시 보고한다. ⌘Q는 포커스
+      // 창에서만 들어오므로, 다른 창에서 타이핑 직후(200ms debounce 전) 이 창으로 전환해 ⌘Q하면
+      // 방금 떠난 창의 미저장이 집계에서 누락될 수 있다. blur 시점에 맞춰 그 누락(데이터 손실)을 막는다.
+      const liveDirty = fileService.hasUnsavedChanges()
+      if (liveDirty !== reportedDirty) {
+        reportedDirty = liveDirty
+        invoke('set_window_dirty', { dirty: liveDirty }).catch(() => {})
+      }
     }
   })
 

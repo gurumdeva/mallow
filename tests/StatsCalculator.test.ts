@@ -151,4 +151,26 @@ describe('StatsCalculator.calculate', () => {
     expect(s.characters).toBe('see  here'.length) // 이미지 자리만 사라지고 잔여 문자 없음
     expect(s.words).toBe(2) // "see", "here"
   })
+
+  it('excludes reference-style image definitions (huge data URI on a [id]: line) from stats', () => {
+    // 참조형 이미지: 사용부 ![alt][id]는 짧지만, 정의부 [id]: data:...의 거대한 base64가
+    // 예전엔 통계에 새어 들어가 읽기 시간이 폭증했다(예: "1601분"). 둘 다 제외돼야 한다.
+    const huge = 'A'.repeat(100000)
+    const md = `memo\n\n![screenshot][img]\n\n[img]: data:image/png;base64,${huge}`
+    const s = calc.calculate(md, 'ko')
+    expect(s.words).toBe(1) // "memo"만
+    expect(s.characters).toBe('memo'.length)
+    expect(s.readMinutes).toBe(1) // 거대한 data URI가 빠져 1분
+  })
+
+  it('strips an inline image whose title has two levels of nested parentheses (data-URI safety net)', () => {
+    // 균형 괄호 패턴은 1단계까지만 매치한다. 제목에 2단계 중첩 괄호가 있으면 이미지 전체 매치에
+    // 실패하지만, data: 안전망이 거대한 base64를 통째로 제거해 통계 폭증을 막는다.
+    const huge = 'A'.repeat(100000)
+    const md = `note ![x](data:image/png;base64,${huge} "(a(b))")`
+    const s = calc.calculate(md, 'en')
+    // 거대한 data URI는 빠지고(읽기 시간 정상), 잔여 짧은 토막만 남는다.
+    expect(s.characters).toBeLessThan(60)
+    expect(s.readMinutes).toBe(1)
+  })
 })

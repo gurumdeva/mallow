@@ -89,6 +89,12 @@ export class FileService {
    *  실제 IO된 원본 문자열을 보관해야 오탐이 없다.)
    */
   private lastDiskContent: string | null = null
+  /**
+   * 제목 없는(미저장) 문서의 "깨끗한 기준" 내용. 시작 시 환영 문서/빈 문서 등 최초 콘텐츠를
+   * 담아 두고(captureBaseline), hasUnsavedChanges가 미저장 문서의 미저장 편집을 판단하는 데 쓴다.
+   * (lastDiskContent는 디스크 IO가 있어야 의미가 있어 미저장 문서엔 null이므로 별도 기준이 필요하다.)
+   */
+  private baselineContent = ''
   /** syncFromDiskIfChanged 재진입 방지 (ask 다이얼로그가 열린 동안 focus 재발화 등). */
   private isSyncing = false
   /** save/saveAs 재진입 방지 (빠른 ⌘S 연타·⌘S+버튼 동시 → 더블 다이얼로그/쓰기 차단). */
@@ -110,6 +116,27 @@ export class FileService {
     private readonly editor: EditorController,
     private readonly recent: RecentFilesStore,
   ) {}
+
+  /**
+   * 현재 "깨끗한 기준" 내용을 에디터의 현재 직렬화 결과로 고정한다. 시작 시 최초 콘텐츠가
+   * 자리잡은 직후(환영/빈/복원 문서)에 main.ts가 호출한다. 이후 hasUnsavedChanges가 이 기준과
+   * 비교해 미저장 편집을 판단한다. (열기/저장/리로드 시에는 각 IO 지점에서 함께 갱신된다.)
+   */
+  captureBaseline(): void {
+    this.baselineContent = this.editor.getMarkdown()
+  }
+
+  /**
+   * 마지막으로 "깨끗했던" 시점 대비 미저장 편집이 있는지 실제 내용 기준으로 판단한다(창 닫기·종료
+   * 확인용). doc.isModified는 markdownUpdated의 trailing 200ms debounce라 타이핑 직후엔 stale-false일
+   * 수 있어, 그 플래그로 닫기/종료를 판단하면 방금 친 내용이 확인 없이 사라진다(데이터 손실).
+   * shouldMarkSaved/decideSyncAction과 동일하게 에디터의 현재 직렬화 내용을 직접 비교한다.
+   * 기준(baselineContent)은 "정규화된 에디터 출력"이라, 외부에서 만든 .md를 열어 에디터가 마크다운을
+   * 정규화하더라도 편집이 없으면 동일 → 닫을 때 거짓 미저장 확인이 뜨지 않는다.
+   */
+  hasUnsavedChanges(): boolean {
+    return this.editor.getMarkdown() !== this.baselineContent
+  }
 
   /**
    * 열기 다이얼로그만 띄워 선택된 경로를 반환한다(로드는 하지 않음).
@@ -200,6 +227,7 @@ export class FileService {
     this.doc.markSaved()
     await this.recent.add(path)
     this.lastDiskContent = content
+    this.baselineContent = this.editor.getMarkdown() // 정규화된 기준(외부 .md 정규화 오탐 방지)
   }
 
   async save(): Promise<void> {
@@ -238,6 +266,7 @@ export class FileService {
     if (shouldMarkSaved(md, this.editor.getMarkdown())) {
       this.doc.markSaved()
       this.lastDiskContent = md
+      this.baselineContent = md // 방금 쓴 내용(=현재 에디터 내용)이 새 깨끗한 기준
     }
   }
 
@@ -267,6 +296,7 @@ export class FileService {
     if (shouldMarkSaved(md, this.editor.getMarkdown())) {
       this.doc.markSaved()
       this.lastDiskContent = md
+      this.baselineContent = md // 방금 쓴 내용이 새 깨끗한 기준
     }
   }
 
@@ -316,10 +346,14 @@ export class FileService {
       if (action === 'noop') return // 외부 변경 없음
 
       if (action === 'silent') {
+        // 조합(IME) 중이면 getMarkdown()에 아직 확정되지 않은 조합 글자가 빠져 'silent'로 오판될 수
+        // 있다. 그 상태로 load하면 조합 입력이 사라지므로, 조합이 끝난 다음 기회(다음 focus)로 미룬다.
+        if (this.editor.isComposing()) return
         // 로컬 편집이 없으므로(에디터 내용 == 마지막 IO 내용) 손실 위험 없이 디스크 내용 반영.
         await this.editor.load(disk)
         this.doc.markSaved() // load가 emit한 'change'로 dirty 표시된 것을 되돌림
         this.lastDiskContent = disk
+        this.baselineContent = this.editor.getMarkdown() // reload한 내용이 새 깨끗한 기준
       } else {
         // 로컬 편집 + 외부 변경이 동시에 존재 → 한쪽을 버려야 하므로 사용자 확인.
         const reload = await ask(
@@ -329,8 +363,10 @@ export class FileService {
         if (reload) {
           await this.editor.load(disk)
           this.doc.markSaved()
+          this.baselineContent = this.editor.getMarkdown() // 디스크 내용 수용 → 새 기준
         }
         // 거절하더라도 "이 디스크 버전은 확인함"으로 기록 → 동일 내용 재프롬프트 방지.
+        // (거절 시 baselineContent는 그대로 둬, 사용자가 지킨 로컬 편집이 여전히 "미저장"으로 남는다.)
         this.lastDiskContent = disk
       }
     } finally {
