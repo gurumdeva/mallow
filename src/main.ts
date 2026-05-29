@@ -3,7 +3,7 @@ import { ask } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { invoke } from '@tauri-apps/api/core'
-import { writeHtml } from '@tauri-apps/plugin-clipboard-manager'
+import { writeHtml, readText } from '@tauri-apps/plugin-clipboard-manager'
 
 import { Document } from './domain/Document'
 import { UIState } from './domain/UIState'
@@ -160,6 +160,17 @@ async function bootstrap(): Promise<void> {
     writeHtml(html, md)
       .then(() => toast.info(t('toast.copiedRich')))
       .catch(reportError(t('error.copyRichText')))
+  }
+
+  // "서식 없이 붙여넣기"(⇧⌘V): 클립보드 평문을 마크다운 파싱 없이 커서 위치에 그대로 넣는다.
+  // (일반 ⌘V는 crepe가 마크다운/HTML을 노드로 변환하므로, 그 변환을 원치 않을 때의 탈출구.)
+  // 클립보드 읽기는 Tauri(네이티브)라 웹 navigator.clipboard의 사용자 제스처 요건이 없다.
+  const pasteMatchStyle = (): void => {
+    readText()
+      .then((text) => editor.insertPlainText(text))
+      .catch(() => {
+        /* 클립보드 읽기 실패(빈 클립보드/권한 등)는 비치명적 — 조용히 무시 */
+      })
   }
 
   // ── Views (stateless, 상태는 doc/ui에서만 read) ──────────
@@ -404,6 +415,7 @@ async function bootstrap(): Promise<void> {
     onShowStats: () => ui.toggleInfoPopover(),
     onFind: () => findReplace.toggle(),
     onCopyRichText: () => copyAsRichText(),
+    onPasteMatchStyle: () => pasteMatchStyle(),
     // Rust가 보낸 새 상태(boolean)를 그대로 적용한다(체크마크는 Rust가 이미 갱신).
     onToggleFocusMode: (on) => applyFocusMode(on),
     onToggleTypewriter: (on) => applyTypewriter(on),

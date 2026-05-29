@@ -158,7 +158,7 @@ pub fn run() {
                     // 개수를 조회 → 통합 확인 1회 → quit_app(전체 종료) 또는 취소(아무것도 안 함).
                     // 이로써 "일부 창만 닫히는" 부분 종료가 발생하지 않는다(원자적 종료).
                     "new_file" | "open" | "save" | "save_as" | "export_pdf" | "export_html"
-                    | "show_stats" | "find" | "copy_rich_text" | "quit" => {
+                    | "show_stats" | "find" | "copy_rich_text" | "paste_match_style" | "quit" => {
                         send(format!("menu:{}", id));
                     }
                     // Focus Mode / Typewriter 토글: 공유 메뉴의 체크마크를 뒤집고(+ atomic에 보존),
@@ -421,6 +421,8 @@ struct MenuStrings {
     find: String,
     #[serde(rename = "copyRichText")]
     copy_rich_text: String,
+    #[serde(rename = "pasteMatchStyle")]
+    paste_match_style: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -618,6 +620,14 @@ fn build_app_menu<R: tauri::Runtime>(
             &PredefinedMenuItem::cut(handle, Some(m.cut.as_str()))?,
             &PredefinedMenuItem::copy(handle, Some(m.copy.as_str()))?,
             &PredefinedMenuItem::paste(handle, Some(m.paste.as_str()))?,
+            // 서식 없이 붙여넣기(⇧⌘V): 클립보드 평문을 마크다운 파싱 없이 그대로 끼워 넣는다.
+            &MenuItem::with_id(
+                handle,
+                "paste_match_style",
+                m.paste_match_style.as_str(),
+                true,
+                Some("Shift+CmdOrCtrl+V"),
+            )?,
             &PredefinedMenuItem::select_all(handle, Some(m.select_all.as_str()))?,
             &PredefinedMenuItem::separator(handle)?,
             // 현재 문서를 서식 있는 리치 텍스트(HTML)로 클립보드에 복사 → Slack/메일/Docs/Notion에

@@ -32,7 +32,8 @@
     "fullscreen": "전체 화면 전환",
     "closeWindow": "윈도우 닫기",
     "find": "찾기…",
-    "copyRichText": "서식 있는 텍스트로 복사"
+    "copyRichText": "서식 있는 텍스트로 복사",
+    "pasteMatchStyle": "서식 없이 붙여넣기"
   },
   "titlebar": {
     "styleTip": "텍스트 스타일",

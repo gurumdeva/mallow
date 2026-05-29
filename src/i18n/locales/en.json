@@ -32,7 +32,8 @@
     "fullscreen": "Toggle Full Screen",
     "closeWindow": "Close Window",
     "find": "Find…",
-    "copyRichText": "Copy as Rich Text"
+    "copyRichText": "Copy as Rich Text",
+    "pasteMatchStyle": "Paste and Match Style"
   },
   "titlebar": {
     "styleTip": "Text Style",

@@ -11,6 +11,7 @@ export type MenuActions = {
   onShowStats: () => void
   onFind: () => void
   onCopyRichText: () => void
+  onPasteMatchStyle: () => void
   // Focus Mode / Typewriter 토글: Rust가 체크마크를 뒤집고 "새 상태(boolean)"를 보내므로
   // 콜백은 그 값을 그대로 받아 적용한다(프런트가 로컬에서 토글을 추측하지 않음).
   onToggleFocusMode: (on: boolean) => void
@@ -47,6 +48,7 @@ export class MenuBridge {
     u.push(await listen('menu:show_stats', () => this.actions.onShowStats(), opts))
     u.push(await listen('menu:find', () => this.actions.onFind(), opts))
     u.push(await listen('menu:copy_rich_text', () => this.actions.onCopyRichText(), opts))
+    u.push(await listen('menu:paste_match_style', () => this.actions.onPasteMatchStyle(), opts))
     // 토글 이벤트는 payload로 새 boolean 상태를 싣고 온다(Rust가 체크마크와 함께 결정).
     u.push(
       await listen<boolean>('menu:focus_mode', (e) => this.actions.onToggleFocusMode(e.payload), opts),
