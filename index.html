@@ -3,17 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- WebView/브라우저에 다크 테마임을 알린다.
-         color-scheme: dark는 외부 CSS 로딩 전 unstyled 단계의 기본 배경/스크롤바/입력
-         컨트롤 색까지 즉시 다크로 만들어, 간헐적 흰 paint 한 프레임을 막는다. -->
-    <meta name="color-scheme" content="dark" />
+    <!-- WebView/브라우저에 라이트·다크 둘 다 지원함을 알린다. 실제 적용 외관은
+         아래 인라인 스크립트가 OS 외관(prefers-color-scheme)에 맞춰 결정한다.
+         "light dark"로 두면 unstyled 단계의 기본 배경/스크롤바/입력 컨트롤 색이
+         OS 외관을 따라가, 외부 CSS 로딩 전 한 프레임의 색 어긋남을 막는다. -->
+    <meta name="color-scheme" content="light dark" />
     <title>Mallow</title>
-    <!-- 외부 CSS 로딩 전에 다크 배경을 적용해 초기 흰 flash를 막는다.
-         (Tauri window의 backgroundColor와 함께 1차 페인트부터 일관된 톤 유지) -->
-    <style>
-      :root { color-scheme: dark; }
-      html, body { margin: 0; background: #1c1c1e; color: #f2f2f7; }
-    </style>
+    <!-- 외부 CSS 로딩 "전에", 그리고 1차 페인트 전에 OS 외관을 읽어 테마를 확정한다.
+         data-theme 속성으로 style.css의 라이트/다크 토큰을 선택하고, html 배경과
+         color-scheme를 즉시 맞춰 초기 흰/검 flash를 양쪽 외관 모두에서 막는다.
+         (Tauri window backgroundColor가 다크(28,28,30)이므로, 라이트 OS에서는 특히
+         이 스크립트가 html을 흰색으로 덮어 첫 프레임부터 일관된 톤을 유지한다.)
+         matchMedia 미지원 등 예외 시 기존처럼 다크로 폴백한다. -->
+    <script>
+      (function () {
+        var dark = true
+        try {
+          dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        } catch (e) {
+          /* matchMedia 미지원 → 다크 폴백 */
+        }
+        var root = document.documentElement
+        root.dataset.theme = dark ? 'dark' : 'light'
+        root.style.background = dark ? '#1c1c1e' : '#ffffff'
+        root.style.colorScheme = dark ? 'dark' : 'light'
+      })()
+    </script>
   </head>
   <body>
     <!-- data-tauri-drag-region: Tauri(WKWebView)에서 창을 드래그로 이동시키는 표준 방식.
