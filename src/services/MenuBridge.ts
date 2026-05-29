@@ -16,6 +16,7 @@ export type MenuActions = {
   // 콜백은 그 값을 그대로 받아 적용한다(프런트가 로컬에서 토글을 추측하지 않음).
   onToggleFocusMode: (on: boolean) => void
   onToggleTypewriter: (on: boolean) => void
+  onToggleKeepOnTop: (on: boolean) => void
   onOpenFromOs: (path: string) => void
   onQuit: () => void
 }
@@ -55,6 +56,9 @@ export class MenuBridge {
     )
     u.push(
       await listen<boolean>('menu:typewriter', (e) => this.actions.onToggleTypewriter(e.payload), opts),
+    )
+    u.push(
+      await listen<boolean>('menu:keep_on_top', (e) => this.actions.onToggleKeepOnTop(e.payload), opts),
     )
     // Open Recent 클릭은 인덱스 이벤트로 받지 않는다. 메뉴 빌드/클릭 사이 목록 변경으로
     // 엉뚱한 파일이 열리는 race를 막기 위해, Rust가 클릭 순간 권위 있는 목록에서 실제 경로를

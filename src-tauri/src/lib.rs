@@ -54,6 +54,7 @@ struct WindowPaths(Mutex<std::collections::HashMap<String, String>>);
 struct MenuToggles {
     focus_mode: AtomicBool,
     typewriter: AtomicBool,
+    keep_on_top: AtomicBool,
 }
 
 /// 메인 창의 크기·위치(논리 좌표, logical px). 다음 실행에서 같은 자리·크기로 복원해
@@ -129,7 +130,7 @@ pub fn run() {
             let recents = load_recents(handle);
             *app.state::<RecentFiles>().0.lock().unwrap() = recents.clone();
             // 토글은 실행마다 OFF로 시작한다(영속 없음 — no-settings 철학). 따라서 (false, false).
-            let menu = build_app_menu(handle, &recents, (false, false))?;
+            let menu = build_app_menu(handle, &recents, (false, false, false))?;
             app.set_menu(menu)?;
 
             app.on_menu_event(move |app, event| {
@@ -165,12 +166,12 @@ pub fn run() {
                     // 새 boolean 상태를 포커스된 창에만 전달한다. 프런트엔드는 받은 boolean을
                     // 권위값으로 그대로 적용한다(로컬에서 추측 토글하지 않음). 단일 메뉴 막대를
                     // 모든 창이 공유하므로, 체크마크는 "마지막으로 토글/포커스된 창" 기준이다.
-                    "focus_mode" | "typewriter" => {
+                    "focus_mode" | "typewriter" | "keep_on_top" => {
                         let toggles = app.state::<MenuToggles>();
-                        let flag = if id == "focus_mode" {
-                            &toggles.focus_mode
-                        } else {
-                            &toggles.typewriter
+                        let flag = match id.as_str() {
+                            "focus_mode" => &toggles.focus_mode,
+                            "typewriter" => &toggles.typewriter,
+                            _ => &toggles.keep_on_top,
                         };
                         // 현재 상태를 반전해 보존하고, 같은 값으로 라이브 메뉴 항목도 갱신한다.
                         let next = !flag.load(Ordering::SeqCst);
@@ -398,6 +399,8 @@ struct MenuStrings {
     #[serde(rename = "focusMode")]
     focus_mode: String,
     typewriter: String,
+    #[serde(rename = "keepOnTop")]
+    keep_on_top: String,
     quit: String,
     // predefined 항목 — muda가 영문 하드코딩한 제목을 명시 텍스트로 덮어쓴다.
     about: String,
@@ -485,6 +488,7 @@ fn set_menu_check(app: tauri::AppHandle, toggles: tauri::State<MenuToggles>, id:
     match id.as_str() {
         "focus_mode" => toggles.focus_mode.store(checked, Ordering::SeqCst),
         "typewriter" => toggles.typewriter.store(checked, Ordering::SeqCst),
+        "keep_on_top" => toggles.keep_on_top.store(checked, Ordering::SeqCst),
         _ => return, // 알 수 없는 id는 무시
     }
     set_view_check(&app, &id, checked);
@@ -506,8 +510,8 @@ fn recent_label(recent: &[String], i: usize, empty: &str) -> String {
 fn build_app_menu<R: tauri::Runtime>(
     handle: &tauri::AppHandle<R>,
     recent_files: &[String],
-    // (focus_mode, typewriter) 체크마크 초기 상태. 메뉴 재생성 시 보존된 값을 그대로 반영한다.
-    checks: (bool, bool),
+    // (focus_mode, typewriter, keep_on_top) 체크마크 초기 상태. 메뉴 재생성 시 보존된 값을 반영한다.
+    checks: (bool, bool, bool),
 ) -> tauri::Result<Menu<R>> {
     // 기기 언어의 메뉴 문자열. muda는 predefined 항목 제목을 영문으로 하드코딩하므로
     // (macOS가 자동 현지화해 주지 않는다) About/Hide/Cut/Copy/Close Window 등에도
@@ -658,6 +662,11 @@ fn build_app_menu<R: tauri::Runtime>(
         .checked(checks.1)
         .accelerator("CmdOrCtrl+Ctrl+T")
         .build(handle)?;
+    // 항상 위에 고정(창별 토글). 떠 있는 메모지처럼 다른 앱 위에 두고 참고/메모하는 용도.
+    // focus/typewriter와 같은 체크마크 토글 패턴(set_view_check가 view_menu에서 찾으므로 여기 둔다).
+    let keep_on_top_item = CheckMenuItemBuilder::with_id("keep_on_top", m.keep_on_top.as_str())
+        .checked(checks.2)
+        .build(handle)?;
     let view_menu = Submenu::with_id_and_items(
         handle,
         "view_menu",
@@ -674,6 +683,7 @@ fn build_app_menu<R: tauri::Runtime>(
             &PredefinedMenuItem::separator(handle)?,
             &focus_item,
             &typewriter_item,
+            &keep_on_top_item,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::fullscreen(handle, Some(m.fullscreen.as_str()))?,
         ],
@@ -901,6 +911,7 @@ fn persist_and_sync_recents(app: &tauri::AppHandle, list: &[String]) {
     let checks = (
         toggles.focus_mode.load(Ordering::SeqCst),
         toggles.typewriter.load(Ordering::SeqCst),
+        toggles.keep_on_top.load(Ordering::SeqCst),
     );
     if let Ok(menu) = build_app_menu(app, list, checks) {
         let _ = app.set_menu(menu);

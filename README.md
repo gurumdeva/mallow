@@ -37,6 +37,7 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 - **Paste and Match Style** (⇧⌘V) — paste the clipboard as plain text, without markdown parsing or source formatting
 - **Paste a link onto selected text** — select text and paste an http(s) URL to wrap it in a link
 - **Text zoom** — ⌘+ / ⌘− make the text bigger or smaller; per-window and reset each launch (nothing to configure)
+- **Keep on Top** (View → Keep on Top) — pin a window above other apps as a floating scratchpad/reference; per-window, reset each launch
 - **Automatic light & dark theme** — follows your macOS appearance and switches live when you change it, with system fonts (SF Pro + Apple SD Gothic Neo)
 
 ## Download & first launch

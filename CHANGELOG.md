@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.26.0] - 2026-05-30
+
+### Added
+- **Keep on Top** (View → Keep on Top): pins the current window above other apps, so you can keep a note or reference visible while working elsewhere — like a floating scratchpad. It's per-window and resets each launch; nothing to configure.
+
 ## [0.25.0] - 2026-05-30
 
 ### Added
@@ -218,6 +223,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.26.0]: https://github.com/gurumdeva/mallow/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/gurumdeva/mallow/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/gurumdeva/mallow/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/gurumdeva/mallow/compare/v0.22.0...v0.23.0

@@ -1968,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "mallow"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "log",
  "objc2 0.5.2",
