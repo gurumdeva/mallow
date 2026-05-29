@@ -40,6 +40,11 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 3. **First launch (important):** the app is not yet code-signed with an Apple Developer ID, so macOS Gatekeeper will refuse to open it on a normal double-click ("Mallow can't be opened because Apple cannot check it for malicious software"). To get past this **once**:
    - **Right-click** (or Control-click) `Mallow.app` → choose **Open** → in the dialog, click **Open** again.
    - *Or:* try to open it once, then go to **System Settings → Privacy & Security**, scroll to the message about Mallow, and click **Open Anyway**.
+   - *Or, from Terminal* — remove the quarantine flag macOS attaches to downloaded apps:
+     ```bash
+     xattr -dr com.apple.quarantine /Applications/Mallow.app
+     ```
+     `-d` deletes the `com.apple.quarantine` attribute; `-r` applies it recursively through the whole app bundle. If you get a permission error, prefix the command with `sudo`.
 4. After this first time, Mallow opens normally with a regular double-click.
 
 > This step is only needed because the build is unsigned — it is not a sign of anything wrong with the app. Signing & notarization are planned so future builds open without the prompt.
