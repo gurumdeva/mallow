@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.23.0] - 2026-05-30
+
+### Added
+- **Text zoom**: press ⌘+ / ⌘− to make the editor text bigger or smaller (uses WebKit page zoom, so the caret stays accurate). It's per-window and resets to 100% each launch — true to the no-settings design, there's nothing to configure.
+
 ## [0.22.0] - 2026-05-30
 
 ### Added
@@ -203,6 +208,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.23.0]: https://github.com/gurumdeva/mallow/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/gurumdeva/mallow/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/gurumdeva/mallow/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/gurumdeva/mallow/compare/v0.19.0...v0.20.0

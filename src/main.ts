@@ -296,6 +296,9 @@ async function bootstrap(): Promise<void> {
       // Tauri 네이티브 파일-드롭 가로채기를 꺼서 webview가 HTML5 drag-drop을 받게 한다
       // (crepe가 에디터 위 이미지 드롭을 처리). main 창은 tauri.conf.json에서 동일 설정.
       dragDropEnabled: false,
+      // 브라우저식 텍스트 확대/축소(⌘+/⌘−). macOS는 WebKit pageZoom를 쓰는 폴리필이라 에디터
+      // 좌표(캐럿) 계산을 깨지 않는다. 창마다 일시적(실행마다 100%로 시작) — 설정 저장 없음.
+      zoomHotkeysEnabled: true,
       backgroundColor: [28, 28, 30],
       ...(position ?? {}),
     })
