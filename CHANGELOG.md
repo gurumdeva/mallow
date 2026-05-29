@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.20.0] - 2026-05-29
+
+### Changed
+- **Much cleaner HTML and PDF export.** Exported documents no longer carry editor-only scaffolding:
+  - **Tables** export as clean, bordered tables. Previously the row/column drag handles, insert/delete buttons, and icons leaked into the output.
+  - **Math** is written as readable LaTeX source instead of broken, unstyled markup.
+  - Stray editor widgets and hard-break artifacts are removed, and long code lines now wrap instead of being clipped.
+  - **PDF export now uses the same pipeline as HTML export**, so the two render consistently (previously PDF embedded the raw editor view).
+
+### Fixed
+- **Nested list items and table cells no longer lose content on export.** Nested bullet/numbered items kept their text (they could export empty), and a table cell containing a list or extra paragraphs now exports in full.
+
 ## [0.19.0] - 2026-05-29
 
 ### Fixed
@@ -181,6 +193,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.20.0]: https://github.com/gurumdeva/mallow/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/gurumdeva/mallow/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/gurumdeva/mallow/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/gurumdeva/mallow/compare/v0.16.0...v0.17.0

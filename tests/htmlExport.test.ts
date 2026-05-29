@@ -612,3 +612,154 @@ describe('buildHtmlDocument — CSP meta (defense-in-depth)', () => {
     expect(dark).toContain('<p>x</p>')
   })
 })
+
+describe('normalizeExportHtml — tables', () => {
+  // crepe 표 클론(실제 구조 축약): .milkdown-table-block 안에 드래그 핸들/추가 버튼/빈 미리보기
+  // 표가 잔뜩 있고, 진짜 내용은 table.children > tbody.content-dom 안에 있다.
+  const tableBlock = `
+    <div class="milkdown-table-block" data-v-app="">
+      <div>
+        <div data-role="col-drag-handle" class="handle cell-handle"><span class="milkdown-icon"><svg viewBox="0 0 16 16"><path d="M3"></path></svg></span><div class="button-group"><button type="button"><span class="milkdown-icon"><svg><path d="x"></path></svg></span></button></div></div>
+        <div data-role="row-drag-handle" class="handle cell-handle"><span class="milkdown-icon"><svg><path></path></svg></span></div>
+        <div class="table-wrapper">
+          <div class="drag-preview" data-direction="vertical"><table><tbody></tbody></table></div>
+          <div data-role="x-line-drag-handle" class="handle line-handle"><button type="button" class="add-button"><span class="milkdown-icon"><svg><path></path></svg></span></button></div>
+          <table class="children"><tbody data-content-dom="true" class="content-dom">
+            <tr data-is-header="true"><th style="text-align: left;"><p>Feature</p></th><th style="text-align: right;"><p>Status</p></th></tr>
+            <tr><td style="text-align: left;"><p>Headings</p></td><td style="text-align: right;"><p>Done</p></td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </div>`
+
+  it('produces one clean <table> with the real rows and drops the empty drag-preview table', () => {
+    const dom = normalizedDom(tableBlock)
+    const tables = dom.querySelectorAll('table')
+    expect(tables.length).toBe(1) // 빈 drag-preview 표는 버려진다
+    const rows = dom.querySelectorAll('tr')
+    expect(rows.length).toBe(2)
+    expect(dom.querySelectorAll('th').length).toBe(2)
+    expect(dom.querySelectorAll('td').length).toBe(2)
+  })
+
+  it('keeps cell text + alignment and unwraps the cell <p>', () => {
+    const dom = normalizedDom(tableBlock)
+    const ths = dom.querySelectorAll('th')
+    expect(ths[0].textContent?.trim()).toBe('Feature')
+    expect(ths[1].textContent?.trim()).toBe('Status')
+    expect((ths[0] as HTMLElement).style.textAlign).toBe('left')
+    expect((ths[1] as HTMLElement).style.textAlign).toBe('right')
+    // 셀 안 <p>는 풀려 셀 직속 텍스트가 된다.
+    expect(ths[0].querySelector('p')).toBeNull()
+    const tds = dom.querySelectorAll('td')
+    expect(tds[0].textContent?.trim()).toBe('Headings')
+    expect(tds[0].querySelector('p')).toBeNull()
+  })
+
+  it('strips all table editing chrome (handles, buttons, svg, wrappers, content-dom)', () => {
+    const dom = normalizedDom(tableBlock)
+    const html = dom.innerHTML
+    expect(dom.querySelector('.milkdown-table-block')).toBeNull()
+    expect(dom.querySelector('.handle')).toBeNull()
+    expect(dom.querySelector('button')).toBeNull()
+    expect(dom.querySelector('svg')).toBeNull()
+    expect(dom.querySelector('.drag-preview')).toBeNull()
+    expect(dom.querySelector('.content-dom')).toBeNull()
+    expect(html).not.toContain('add-button')
+    expect(html).not.toContain('data-role')
+  })
+
+  it('preserves a cell with a paragraph AND a nested list (no content loss, regression)', () => {
+    // 셀이 단순 <p>가 아니라 <p> + 중첩 리스트를 가질 때, 예전엔 하위 content-dom만 남기고
+    // 나머지(셀의 <p>와 리스트 wrapper)를 버렸다. 둘 다 보존돼야 한다.
+    const cellWithList = `
+      <div class="milkdown-table-block">
+        <div class="table-wrapper">
+          <table class="children"><tbody data-content-dom="true" class="content-dom">
+            <tr><td style="text-align: left;">
+              <p>real cell text</p>
+              <ul data-spread="false"><div class="milkdown-list-item-block"><li class="list-item">
+                <div class="label-wrapper"><span class="milkdown-icon label bullet"><svg></svg></span></div>
+                <div class="children"><div class="content-dom" data-content-dom="true"><p>nested</p></div></div>
+              </li></div></ul>
+            </td></tr>
+          </tbody></table>
+        </div>
+      </div>`
+    const dom = normalizedDom(cellWithList)
+    const td = dom.querySelector('td')!
+    expect(td.textContent).toContain('real cell text') // 셀의 본문 단락이 보존됨
+    const li = td.querySelector('ul li') // 중첩 리스트가 정규화돼 보존됨
+    expect(li?.textContent?.trim()).toBe('nested')
+  })
+})
+
+describe('normalizeExportHtml — nested lists (regression)', () => {
+  // 부모 아이템의 content-dom 안에 중첩 <ul>이 들어 있는 구조. 예전엔 재귀 querySelectorAll로
+  // 중첩 아이템의 content-dom까지 부모로 끌어올려, 중첩 <li>가 비고 텍스트가 부모로 새어 나갔다.
+  const nested = `
+    <ul data-spread="false">
+      <div class="milkdown-list-item-block"><li class="list-item">
+        <div class="label-wrapper"><span class="milkdown-icon label bullet"><svg></svg></span></div>
+        <div class="children"><div class="content-dom" data-content-dom="true">
+          <p>Parent</p>
+          <ul data-spread="false">
+            <div class="milkdown-list-item-block"><li class="list-item">
+              <div class="label-wrapper"><span class="milkdown-icon label bullet"><svg></svg></span></div>
+              <div class="children"><div class="content-dom" data-content-dom="true"><p>Child</p></div></div>
+            </li></div>
+          </ul>
+        </div></div>
+      </li></div>
+    </ul>`
+
+  it('keeps nested item text inside a nested <ul><li>, not hoisted/emptied', () => {
+    const dom = normalizedDom(nested)
+    const items = dom.querySelectorAll('li')
+    expect(items.length).toBe(2)
+    // 빈 <li>가 없어야 한다(회귀 버그의 증상).
+    items.forEach((li) => expect(li.textContent?.trim()).not.toBe(''))
+    // 중첩 <ul>은 부모 <li> 안에 있고, 그 안의 <li>가 "Child"를 담는다.
+    const parent = Array.from(items).find((li) => li.textContent?.includes('Parent'))!
+    const nestedUl = parent.querySelector('ul')
+    expect(nestedUl).not.toBeNull()
+    expect(nestedUl!.querySelector('li')?.textContent?.trim()).toBe('Child')
+  })
+})
+
+describe('normalizeExportHtml — math', () => {
+  it('replaces inline KaTeX with the LaTeX source in <code>', () => {
+    const dom = normalizedDom(
+      '<p>x <span data-type="math_inline" data-value="E = mc^2"><span class="katex"><span class="katex-mathml">Emc2</span><span class="katex-html">Emc2</span></span></span> y</p>',
+    )
+    const code = dom.querySelector('code')
+    expect(code?.textContent).toBe('E = mc^2')
+    expect(dom.querySelector('.katex')).toBeNull()
+    expect(dom.querySelector('[data-type="math_inline"]')).toBeNull()
+  })
+
+  it('replaces block math with <pre><code> LaTeX source', () => {
+    const dom = normalizedDom('<div data-type="math_block" data-value="\\int_0^1 x"></div>')
+    const pre = dom.querySelector('pre')
+    expect(pre?.querySelector('code')?.textContent).toBe('\\int_0^1 x')
+    expect(dom.querySelector('[data-type="math_block"]')).toBeNull()
+  })
+})
+
+describe('normalizeExportHtml — editor scaffolding', () => {
+  it('removes empty ProseMirror widgets and converts hardbreak to <br>', () => {
+    const dom = normalizedDom(
+      '<div class="ProseMirror-widget"></div><p>Hello<span data-type="hardbreak" data-is-inline="true"> </span>World</p>',
+    )
+    expect(dom.querySelector('.ProseMirror-widget')).toBeNull()
+    expect(dom.querySelector('[data-type="hardbreak"]')).toBeNull()
+    expect(dom.querySelector('p br')).not.toBeNull()
+  })
+
+  it('strips the editor-only data-spread attribute from lists', () => {
+    const dom = normalizedDom(
+      '<ul data-spread="false"><div class="milkdown-list-item-block"><li class="list-item"><div class="label-wrapper"><span class="milkdown-icon label bullet"><svg></svg></span></div><div class="children"><div class="content-dom" data-content-dom="true"><p>x</p></div></div></li></div></ul>',
+    )
+    expect(dom.querySelector('ul[data-spread]')).toBeNull()
+  })
+})
