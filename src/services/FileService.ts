@@ -6,6 +6,15 @@ import { EditorController } from '../editor/EditorController'
 import { RecentFilesStore } from './RecentFilesStore'
 import { t } from '../i18n'
 
+/** rename 실패 사유. 호출부(main.ts)가 code로 사유별 지역화 토스트를 고른다. */
+export type RenameErrorCode = 'invalid' | 'exists'
+export class RenameError extends Error {
+  constructor(readonly code: RenameErrorCode) {
+    super(code)
+    this.name = 'RenameError'
+  }
+}
+
 /**
  * 파일 IO(열기 다이얼로그·경로 열기·저장·외부 변경 동기화)를 조립하는 application service.
  * Document·Editor·RecentFilesStore를 함께 mutate한다.
@@ -51,7 +60,8 @@ export class FileService {
    */
   async applyRename(name: string): Promise<void> {
     const newName = Document.normalizeFilename(name)
-    if (!newName) return
+    // 빈 이름이나 경로 분리자 포함(폴더 탈출 시도) → 무효. 호출부가 안내 토스트를 띄운다.
+    if (!newName) throw new RenameError('invalid')
 
     const oldPath = this.doc.filePath
     if (!oldPath) {
@@ -62,7 +72,16 @@ export class FileService {
 
     const slash = oldPath.lastIndexOf('/')
     const newPath = oldPath.slice(0, slash + 1) + newName
-    await invoke('rename_file', { oldPath, newPath })
+    // Rust rename_file이 (1) 같은 폴더 내인지 (2) 대상이 이미 있는지 검사해 거부할 수 있다.
+    // 거부 코드를 RenameError로 변환해 호출부가 사유별 토스트를 띄우게 한다.
+    try {
+      await invoke('rename_file', { oldPath, newPath })
+    } catch (e) {
+      const code = String(e)
+      if (code === 'exists') throw new RenameError('exists')
+      if (code === 'invalid') throw new RenameError('invalid')
+      throw e // 그 밖의 OS 오류는 그대로(상위가 일반 rename 오류 토스트)
+    }
     await this.recent.remove(oldPath)
     this.doc.setPath(newPath) // filename + path 갱신
     await this.recent.add(newPath)

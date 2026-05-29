@@ -13,7 +13,7 @@ import { RecentFilesStore } from './services/RecentFilesStore'
 import { WindowTitleSync } from './services/WindowTitleSync'
 import { PdfExporter } from './services/PdfExporter'
 import { HtmlExporter } from './services/HtmlExporter'
-import { FileService } from './services/FileService'
+import { FileService, RenameError } from './services/FileService'
 import { MenuBridge } from './services/MenuBridge'
 import { TitleBarView } from './ui/TitleBarView'
 import { FilenamePopover } from './ui/FilenamePopover'
@@ -82,6 +82,8 @@ async function bootstrap(): Promise<void> {
   labelButton('btn-style', t('titlebar.styleTip'))
   labelButton('btn-pdf', t('titlebar.exportPdfTip'))
   labelButton('btn-info', t('titlebar.infoTip'))
+  // 이름 변경 입력란은 보이는 라벨이 없으므로 접근 이름을 지역화해 부여한다.
+  document.getElementById('filename-input')?.setAttribute('aria-label', t('titlebar.renameTip'))
 
   // ── State (single sources of truth) ─────────────────────
   const doc = new Document()
@@ -132,8 +134,14 @@ async function bootstrap(): Promise<void> {
   // ── Views (stateless, 상태는 doc/ui에서만 read) ──────────
   new TitleBarView(doc, ui)
   // 파일명 확정: 저장된 문서면 디스크 파일까지 rename, 새 문서면 표시명만 (FileService.applyRename).
+  // rename 실패는 사유별로 안내한다: 잘못된 이름 / 같은 이름의 파일이 이미 있음 / 기타 오류.
   new FilenamePopover(doc, ui, (name) =>
-    fileService.applyRename(name).catch(reportError(t('error.rename'))),
+    fileService.applyRename(name).catch((e) => {
+      const code = e instanceof RenameError ? e.code : null
+      if (code === 'exists') toast.error(t('error.renameExists'))
+      else if (code === 'invalid') toast.error(t('error.renameInvalid'))
+      else reportError(t('error.rename'))(e)
+    }),
   )
   new InfoPopover(doc, ui, editor, stats, toc)
   new StylePopover(ui, editor)
