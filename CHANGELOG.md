@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.16.0] - 2026-05-29
+
+### Added
+- **Session restore**: Mallow reopens where you left off — the main window returns to its last size and position (kept on-screen even if you'd moved it to a display that's now disconnected), and your most recently edited document reopens on launch. Opening a file from Finder, or your first-ever launch (which shows the welcome guide), still take precedence.
+
+### Fixed
+- **No more dark flash on launch in Light Mode**: the window now matches your macOS appearance from the very first frame. (Dark Mode launch is unchanged.)
+
 ## [0.15.0] - 2026-05-29
 
 ### Added
@@ -150,6 +158,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.16.0]: https://github.com/gurumdeva/mallow/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/gurumdeva/mallow/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/gurumdeva/mallow/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/gurumdeva/mallow/compare/v0.12.0...v0.13.0

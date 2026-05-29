@@ -28,6 +28,7 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 - **Autosave** — once a document has been saved to a file, edits are written to disk automatically a moment after you stop typing
 - **External-change reload** — edit a file in another app and Mallow refreshes from disk when you return (it asks first if you have unsaved edits)
 - **Recent files** — File → Open Recent (persisted across sessions)
+- **Session restore** — reopens your last document and remembers the window's size and position across launches
 - **Statistics & Table of Contents** — word/character/paragraph count, read time, and a collapsible TOC (⌘⇧I) with click-to-jump, plus a live word-count badge that also counts the current selection
 - **PDF export** — quick export to a clean light-theme PDF
 - **Export as HTML** (⇧⌘E) — save a self-contained, styled HTML file you can open in any browser
