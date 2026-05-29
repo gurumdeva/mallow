@@ -3,10 +3,16 @@ import html2pdf from 'html2pdf.js'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { Document } from '../domain/Document'
+import { normalizeExportHtml, renderExportFragment } from './HtmlExporter'
 import { t } from '../i18n'
 
 /**
- * 본문(.ProseMirror)을 클론해 라이트 톤으로 강제한 후 A4 PDF로 내보낸다.
+ * 본문을 A4 PDF로 내보낸다.
+ *
+ * 본문은 HTML 내보내기와 "동일한" 정규화 파이프라인(normalizeExportHtml)으로 깨끗한 의미론적
+ * HTML로 만든 뒤, 같은 스타일 조각(renderExportFragment, 라이트 톤)으로 감싸 렌더한다.
+ * (예전엔 살아있는 .ProseMirror를 그대로 클론해, 표 드래그 핸들/행·열 추가 버튼/코드 편집기/리스트
+ *  SVG 같은 편집 전용 chrome이 PDF에 통째로 새어 나갔다. 이제 HTML 내보내기와 결과가 일치한다.)
  *
  * Tauri WKWebView는 브라우저식 download(a.click) 트리거를 차단하므로
  * html2pdf의 `.save()` 대신 `.outputPdf('blob')`로 바이너리 버퍼를 받아
@@ -50,19 +56,20 @@ export class PdfExporter {
 
   /** 실제 PDF 렌더링/저장 — export()에서 user path가 확정된 뒤 호출. */
   private async renderAndSave(source: HTMLElement, selected: string): Promise<void> {
+    // 1) HTML 내보내기와 동일하게 편집 chrome을 벗긴 의미론적 본문을 만든다.
+    const body = normalizeExportHtml(source)
 
-    // 2) 라이트 톤으로 강제 변환할 클론을 화면 밖 holder에 부착.
-    const clone = source.cloneNode(true) as HTMLElement
-    clone.classList.add('pdf-export')
-
+    // 2) 같은 스타일 조각(라이트 톤)으로 감싸 화면 밖 holder에 부착한다. html2canvas는 이
+    //    `.mallow-export` article을 그대로 렌더하므로, 결과 PDF가 HTML 내보내기와 일치한다.
     const holder = document.createElement('div')
     holder.style.position = 'fixed'
     holder.style.left = '-10000px'
     holder.style.top = '0'
-    holder.style.width = '794px'
-    holder.style.background = 'white'
-    holder.appendChild(clone)
+    holder.style.width = '794px' // A4 폭(96dpi) ≈ 210mm
+    holder.style.background = '#ffffff'
+    holder.innerHTML = renderExportFragment(body, false)
     document.body.appendChild(holder)
+    const target = (holder.querySelector('.mallow-export') as HTMLElement) ?? holder
 
     try {
       // 3) PDF를 Blob으로 받음 (save()가 막혀 있으므로 outputPdf 사용).
@@ -75,7 +82,7 @@ export class PdfExporter {
           // 코드블록·이미지·표·인용은 페이지 경계에서 잘리지 않도록 통째로 다음 페이지로 넘긴다.
           pagebreak: { mode: ['css', 'legacy'], avoid: ['pre', 'img', 'table', 'blockquote'] },
         } as any)
-        .from(clone)
+        .from(target)
         .outputPdf('blob')
 
       // 4) Blob → Uint8Array → 디스크에 저장.

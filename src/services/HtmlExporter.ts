@@ -76,13 +76,22 @@ export function normalizeExportHtml(sourceEl: HTMLElement): string {
   // 1) 코드블록을 먼저 정규화한다. CodeMirror 스캐폴딩 안에는 .search-match류
   //    클래스나 다른 chrome이 끼어들 여지가 있어 통째로 교체하는 편이 안전하다.
   normalizeCodeBlocks(root)
-  // 2) 이미지 블록 → <img>
+  // 2) 표 블록 → 의미론적 <table>. crepe 표는 드래그 핸들/행·열 추가 버튼/SVG 아이콘이
+  //    잔뜩 달린 .milkdown-table-block로 렌더되어, 손대지 않으면 그 chrome이 통째로 새어 나간다.
+  //    (리스트 정규화보다 먼저 — 셀 안 리스트는 추출 후 normalizeListItems가 처리한다.)
+  normalizeTableBlocks(root)
+  // 3) 이미지 블록 → <img>
   normalizeImageBlocks(root)
-  // 3) 리스트 wrapper chrome 제거 → 의미론적 <li>
+  // 4) 리스트 wrapper chrome 제거 → 의미론적 <li>
   normalizeListItems(root)
-  // 4) 남아있는 Find 하이라이트 span 언랩(텍스트는 보존).
+  // 5) 수식: 편집용 KaTeX 렌더(CSS 없이는 깨져 보이고 MathML+HTML이 중복 노출됨)를
+  //    data-value의 LaTeX 원문으로 치환해 의존성 없이 깔끔하게 남긴다.
+  normalizeMath(root)
+  // 6) 편집 전용 위젯/장식(빈 .ProseMirror-widget, gap cursor, hardbreak 등) 정리.
+  stripEditorScaffolding(root)
+  // 7) 남아있는 Find 하이라이트 span 언랩(텍스트는 보존).
   unwrapSearchMatches(root)
-  // 5) XSS 방어: 내보낸 .html은 브라우저에서 열리거나 공유될 수 있으므로,
+  // 8) XSS 방어: 내보낸 .html은 브라우저에서 열리거나 공유될 수 있으므로,
   //    신뢰할 수 없는 문서에서 온 링크 href와 이미지 src의 스킴을 화이트리스트로 검사한다.
   //    (이미지 블록 정규화 뒤에 돌려서 거기서 만든 <img>의 src까지 함께 검사한다.)
   sanitizeLinkHrefs(root)
@@ -132,8 +141,12 @@ function normalizeListItems(root: HTMLElement): void {
       // 불릿/체크박스 chrome 제거.
       innerLi.querySelectorAll('.label-wrapper').forEach((el) => el.remove())
 
-      // 내용을 옮긴다: .children > .content-dom 안의 자식들을 <li>로 끌어올린다.
-      const contentHosts = innerLi.querySelectorAll('.content-dom')
+      // 내용을 옮긴다: 이 아이템의 "직속" .children > .content-dom 안의 자식들만 <li>로
+      // 끌어올린다. querySelectorAll('.content-dom')는 재귀라 중첩 리스트 아이템의 content-dom까지
+      // 끌어올려, 중첩 아이템이 빈 <li>가 되고 그 텍스트가 부모로 올라붙는 버그가 있었다.
+      // :scope > .children > .content-dom 으로 자기 것만 고른다(중첩 <ul>은 이 content-dom 안에
+      // 그대로 남아, 다음 루프에서 자기 차례에 정규화된다).
+      const contentHosts = innerLi.querySelectorAll(':scope > .children > .content-dom')
       if (contentHosts.length > 0) {
         contentHosts.forEach((host) => {
           while (host.firstChild) li.appendChild(host.firstChild)
@@ -305,6 +318,131 @@ function normalizeImageBlocks(root: HTMLElement): void {
 }
 
 /**
+ * crepe 표 블록 정규화.
+ *
+ * 실제 클론 구조(node-view):
+ *   <div class="milkdown-table-block">
+ *     <div>  ← 핸들 컨테이너
+ *       <div data-role="col-drag-handle" class="handle cell-handle">…SVG + button-group(행/열 추가·삭제)…</div>
+ *       <div data-role="row-drag-handle" class="handle cell-handle">…</div>
+ *       <div class="table-wrapper">
+ *         <div class="drag-preview"><table><tbody></tbody></table></div>   ← 빈 미리보기 표(버려야 함)
+ *         <div data-role="x-line-drag-handle" class="handle line-handle"><button class="add-button">+…</button></div>
+ *         <div data-role="y-line-drag-handle" …>+…</div>
+ *         <table class="children">
+ *           <tbody data-content-dom="true" class="content-dom">  ← 진짜 표 내용
+ *             <tr data-is-header="true"><th style="text-align:left"><p>…</p></th>…</tr>
+ *             <tr><td style="text-align:left"><p>…</p></td>…</tr>
+ *           </tbody>
+ *         </table>
+ *       </div>
+ *     </div>
+ *   </div>
+ *
+ * 목표: 진짜 내용 tbody(data-content-dom)만 꺼내, 셀 정렬(text-align)을 보존하면서
+ * 깔끔한 <table><tbody><tr><th|td>…</tr></tbody></table>로 재구성한다. 핸들/버튼/미리보기/SVG는
+ * 전부 버린다. (drag-preview의 빈 표를 잘못 고르지 않도록 content-dom tbody를 기준으로 찾는다.)
+ */
+function normalizeTableBlocks(root: HTMLElement): void {
+  const blocks = Array.from(root.querySelectorAll('.milkdown-table-block'))
+  for (const block of blocks) {
+    const docu = block.ownerDocument
+    // 진짜 내용 tbody: data-content-dom 표식이 있는 것(빈 drag-preview 표가 아니라).
+    const contentTbody = block.querySelector('tbody[data-content-dom], tbody.content-dom')
+    if (!contentTbody) {
+      block.remove() // 내용을 못 찾으면(이론상) 블록 통째로 버린다.
+      continue
+    }
+    const table = docu.createElement('table')
+    const tbody = docu.createElement('tbody')
+    contentTbody.querySelectorAll(':scope > tr').forEach((tr) => {
+      const newTr = docu.createElement('tr')
+      tr.querySelectorAll(':scope > th, :scope > td').forEach((cell) => {
+        const tag = cell.tagName.toLowerCase() === 'th' ? 'th' : 'td'
+        const newCell = docu.createElement(tag)
+        const align = (cell as HTMLElement).style?.textAlign
+        if (align) newCell.style.textAlign = align
+        // 병합 셀 속성 보존(GFM 표엔 없지만, 붙여넣기 등으로 들어오면 격자가 어긋나지 않게).
+        const colspan = cell.getAttribute('colspan')
+        const rowspan = cell.getAttribute('rowspan')
+        if (colspan) newCell.setAttribute('colspan', colspan)
+        if (rowspan) newCell.setAttribute('rowspan', rowspan)
+        // 셀 내용을 "그대로" 옮긴다. crepe 표 셀은 자기 content-dom 없이 블록(<p> 등)을 직속으로
+        // 가진다. cell.querySelector('.content-dom')는 "하위" content-dom(셀 안 중첩 리스트/표의 것)까지
+        // 잡아, 그 안쪽만 남기고 나머지 셀 내용을 통째로 버리는 데이터 손실 버그가 있었다. 셀 자체를
+        // host로 쓰면, 중첩 리스트는 뒤의 normalizeListItems가, 중첩 표는 같은 루프의 다음 차례가
+        // (querySelectorAll가 문서 순서로 잡아둔다) 각각 정규화한다.
+        while (cell.firstChild) newCell.appendChild(cell.firstChild)
+        newTr.appendChild(newCell)
+      })
+      tbody.appendChild(newTr)
+    })
+    table.appendChild(tbody)
+    block.replaceWith(table)
+  }
+  // 셀 안 단독 <p>는 풀어 <th|td> 직속 텍스트로(리스트 아이템과 동일한 처리).
+  unwrapSoleParagraphInCells(root)
+}
+
+/** <td>/<th>가 단 하나의 <p>만 가지면 그 <p>를 풀어 셀 직속 텍스트로 만든다. */
+function unwrapSoleParagraphInCells(root: HTMLElement): void {
+  root.querySelectorAll('td, th').forEach((cell) => {
+    const elementChildren = Array.from(cell.children)
+    const hasMeaningfulText = Array.from(cell.childNodes).some(
+      (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '',
+    )
+    if (elementChildren.length === 1 && elementChildren[0].tagName === 'P' && !hasMeaningfulText) {
+      const p = elementChildren[0]
+      while (p.firstChild) cell.insertBefore(p.firstChild, p)
+      p.remove()
+    }
+  })
+}
+
+/**
+ * 수식 정규화. crepe Latex 기능은 수식을 편집용 KaTeX로 렌더한다:
+ *   인라인: <span data-type="math_inline" data-value="E = mc^2"><span class="katex">…MathML+HTML…</span></span>
+ *   블록:   <div data-type="math_block" data-value="…">…</div>
+ * 내보낸 .html에는 KaTeX CSS가 없어, 그대로 두면 MathML과 HTML이 둘 다 보이며 깨져 나온다.
+ * 그래서 data-value의 LaTeX 원문만 남긴다(인라인 → <code>, 블록 → <pre><code>). 의존성 없이 깔끔하고
+ * 의미가 보존된다. (KaTeX를 그대로 렌더하려면 CSS+폰트 임베드가 필요 — 추후 옵션.)
+ */
+function normalizeMath(root: HTMLElement): void {
+  root.querySelectorAll('[data-type="math_inline"]').forEach((el) => {
+    const latex = el.getAttribute('data-value') ?? el.textContent ?? ''
+    const code = el.ownerDocument.createElement('code')
+    code.textContent = latex
+    el.replaceWith(code)
+  })
+  root.querySelectorAll('[data-type="math_block"]').forEach((el) => {
+    const latex = el.getAttribute('data-value') ?? el.textContent ?? ''
+    const pre = el.ownerDocument.createElement('pre')
+    const code = el.ownerDocument.createElement('code')
+    code.textContent = latex
+    pre.appendChild(code)
+    el.replaceWith(pre)
+  })
+}
+
+/**
+ * 편집 전용 스캐폴딩 정리:
+ *  - ProseMirror가 넣는 빈 위젯/장식(.ProseMirror-widget, gap cursor, separator)을 제거.
+ *  - hardbreak 노드(<span data-type="hardbreak">)를 의미론적 <br>로 치환.
+ *  - 리스트의 data-spread 같은 편집용 속성 제거.
+ */
+function stripEditorScaffolding(root: HTMLElement): void {
+  root
+    .querySelectorAll('.ProseMirror-widget, .ProseMirror-gapcursor, .ProseMirror-separator')
+    .forEach((el) => el.remove())
+  root.querySelectorAll('[data-type="hardbreak"]').forEach((el) => {
+    el.replaceWith(el.ownerDocument.createElement('br'))
+  })
+  root.querySelectorAll('ul[data-spread], ol[data-spread]').forEach((el) => {
+    el.removeAttribute('data-spread')
+  })
+}
+
+/**
  * Find 기능이 남긴 .search-match / .search-match-current 데코레이션 span을 언랩한다.
  * 안쪽 텍스트(자식 노드)는 보존하고 span 껍데기만 제거해, 검색 하이라이트가
  * 내보낸 파일에 남지 않게 한다.
@@ -401,18 +539,15 @@ function sanitizeImageSrcs(root: HTMLElement): void {
 }
 
 /**
- * 본문 HTML을 읽기 좋은 완결된 HTML5 문서로 감싼다.
- *
- * @param dark true면 다크 색 구성(어두운 배경/밝은 텍스트), false면 라이트.
- *   외부 에셋 없이 단일 <style> 안에 색을 모두 담고 color-scheme도 일치시킨다.
+ * 내보내기 본문 스타일(라이트/다크). `.mallow-export` 컨테이너에 스코프해, HTML 내보내기(<body>
+ * 안의 article)와 PDF 내보내기(화면 밖 holder 안의 article) 양쪽에서 동일하게 적용된다.
+ * 모든 규칙을 `.mallow-export` 하위로 한정해, PDF holder 같은 외부 컨텍스트의 다른 요소를 건드리지 않는다.
  */
-export function buildHtmlDocument(title: string, bodyHtml: string, dark: boolean): string {
-  // 라이트/다크 각각의 팔레트. (앱 본문 톤과 비슷하게 맞춤)
+export function exportStyles(dark: boolean): string {
   const c = dark
     ? {
-        scheme: 'dark',
-        bg: '#1c1c1e',
         text: '#e6e6ea',
+        bg: '#1c1c1e',
         link: '#4a9eff',
         codeText: '#e6e6ea',
         inlineCodeBg: '#2c2c2e',
@@ -423,9 +558,8 @@ export function buildHtmlDocument(title: string, bodyHtml: string, dark: boolean
         tableBorder: '#48484c',
       }
     : {
-        scheme: 'light',
-        bg: '#ffffff',
         text: '#1c1c1e',
+        bg: '#ffffff',
         link: '#0a6cff',
         codeText: '#1c1c1e',
         inlineCodeBg: '#f0f0f2',
@@ -435,7 +569,86 @@ export function buildHtmlDocument(title: string, bodyHtml: string, dark: boolean
         border: '#e0e0e5',
         tableBorder: '#d8d8dd',
       }
+  return `
+  .mallow-export {
+    box-sizing: border-box;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    color: ${c.text};
+    background: ${c.bg};
+  }
+  .mallow-export h1, .mallow-export h2, .mallow-export h3,
+  .mallow-export h4, .mallow-export h5, .mallow-export h6 { line-height: 1.3; margin: 1.6em 0 0.6em; }
+  .mallow-export h1 { font-size: 2em; }
+  .mallow-export h2 { font-size: 1.5em; }
+  .mallow-export h3 { font-size: 1.25em; }
+  .mallow-export :first-child { margin-top: 0; }
+  .mallow-export p, .mallow-export ul, .mallow-export ol,
+  .mallow-export blockquote, .mallow-export pre, .mallow-export table { margin: 0 0 1em; }
+  .mallow-export ul, .mallow-export ol { padding-left: 1.6em; }
+  .mallow-export li { margin: 0.2em 0; }
+  .mallow-export li[data-checked] { list-style: none; }
+  .mallow-export li[data-checked]::before {
+    content: "☐";
+    display: inline-block;
+    width: 1.2em;
+    margin-left: -1.4em;
+    text-align: left;
+  }
+  .mallow-export li[data-checked="true"]::before { content: "☑"; }
+  .mallow-export a { color: ${c.link}; }
+  .mallow-export code {
+    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 0.9em;
+    color: ${c.codeText};
+    background: ${c.inlineCodeBg};
+    padding: 0.12em 0.36em;
+    border-radius: 4px;
+  }
+  .mallow-export pre {
+    background: ${c.preBg};
+    padding: 14px 16px;
+    border-radius: 8px;
+    overflow: auto;
+    /* 긴 코드 줄을 감싼다. PDF는 고정폭 캔버스 스냅샷이라 overflow:auto가 스크롤되지 않아,
+       감싸지 않으면 오른쪽 여백에서 잘린다. HTML에서도 가로 넘침을 줄여 더 읽기 좋다. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .mallow-export pre code { background: none; padding: 0; color: ${c.codeText}; }
+  .mallow-export blockquote {
+    margin-left: 0;
+    padding-left: 16px;
+    border-left: 3px solid ${c.quoteBorder};
+    color: ${c.quoteText};
+  }
+  .mallow-export img { max-width: 100%; }
+  .mallow-export hr { border: none; border-top: 1px solid ${c.border}; margin: 2em 0; }
+  .mallow-export table { border-collapse: collapse; width: 100%; }
+  .mallow-export th, .mallow-export td { border: 1px solid ${c.tableBorder}; padding: 6px 10px; }`
+}
 
+/**
+ * 정규화된 본문 HTML을 `.mallow-export` article + 스타일 조각으로 감싼다.
+ * HTML 문서(buildHtmlDocument)와 PDF holder가 같은 조각을 공유해 결과가 시각적으로 일치한다.
+ */
+export function renderExportFragment(bodyHtml: string, dark: boolean): string {
+  return `<style>${exportStyles(dark)}</style><article class="mallow-export">${bodyHtml}</article>`
+}
+
+/**
+ * 본문 HTML을 읽기 좋은 완결된 HTML5 문서로 감싼다.
+ *
+ * @param dark true면 다크 색 구성(어두운 배경/밝은 텍스트), false면 라이트.
+ *   외부 에셋 없이 단일 <style> 안에 색을 모두 담고 color-scheme도 일치시킨다.
+ */
+export function buildHtmlDocument(title: string, bodyHtml: string, dark: boolean): string {
+  const pageBg = dark ? '#1c1c1e' : '#ffffff'
+  const scheme = dark ? 'dark' : 'light'
   // 심층 방어(FIX #3): 내보낸 파일은 브라우저에서 열리거나 공유될 수 있으므로,
   // 스킴 검사를 빠져나간 무언가가 있어도 안전하도록 제한적인 CSP meta를 <head>에 박는다.
   //   - default-src 'none' : 스크립트 포함 모든 리소스를 기본 차단(이 문서엔 스크립트가 없다).
@@ -452,68 +665,19 @@ export function buildHtmlDocument(title: string, bodyHtml: string, dark: boolean
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="${c.scheme}" />
+<meta name="color-scheme" content="${scheme}" />
 <title>${escapeHtml(title)}</title>
 <style>
-  :root { color-scheme: ${c.scheme}; }
-  body {
-    max-width: 720px;
-    margin: 48px auto;
-    padding: 0 24px;
-    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
-    font-size: 16px;
-    line-height: 1.7;
-    color: ${c.text};
-    background: ${c.bg};
-  }
-  h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin: 1.6em 0 0.6em; }
-  h1 { font-size: 2em; }
-  h2 { font-size: 1.5em; }
-  h3 { font-size: 1.25em; }
-  p, ul, ol, blockquote, pre, table { margin: 0 0 1em; }
-  /* 리스트 마커는 CSS가 그린다(인라인 SVG는 정규화에서 제거됨). */
-  ul, ol { padding-left: 1.6em; }
-  li { margin: 0.2em 0; }
-  /* 체크리스트: data-checked 표식으로 박스를 그린다. */
-  li[data-checked] { list-style: none; }
-  li[data-checked]::before {
-    content: "☐";
-    display: inline-block;
-    width: 1.2em;
-    margin-left: -1.4em;
-    text-align: left;
-  }
-  li[data-checked="true"]::before { content: "☑"; }
-  a { color: ${c.link}; }
-  code {
-    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
-    font-size: 0.9em;
-    color: ${c.codeText};
-    background: ${c.inlineCodeBg};
-    padding: 0.12em 0.36em;
-    border-radius: 4px;
-  }
-  pre {
-    background: ${c.preBg};
-    padding: 14px 16px;
-    border-radius: 8px;
-    overflow: auto;
-  }
-  pre code { background: none; padding: 0; color: ${c.codeText}; }
-  blockquote {
-    margin-left: 0;
-    padding-left: 16px;
-    border-left: 3px solid ${c.quoteBorder};
-    color: ${c.quoteText};
-  }
-  img { max-width: 100%; }
-  hr { border: none; border-top: 1px solid ${c.border}; margin: 2em 0; }
-  table { border-collapse: collapse; }
-  th, td { border: 1px solid ${c.tableBorder}; padding: 6px 10px; }
+  :root { color-scheme: ${scheme}; }
+  html, body { margin: 0; }
+  body { background: ${pageBg}; }
+${exportStyles(dark)}
 </style>
 </head>
 <body>
+<article class="mallow-export">
 ${bodyHtml}
+</article>
 </body>
 </html>
 `
