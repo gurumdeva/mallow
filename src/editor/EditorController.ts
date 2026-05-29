@@ -352,6 +352,24 @@ export class EditorController extends EventEmitter {
     return this.crepe?.getMarkdown() ?? ''
   }
 
+  /**
+   * 현재 IME 조합(한글/일본어 등) 입력 중인지 여부. 조합 중에는 getMarkdown()이 아직 확정되지
+   * 않은 조합 글자를 포함하지 않으므로, 외부 변경 silent reload가 "로컬 편집 없음"으로 오판해
+   * 조합 입력을 날릴 수 있다. FileService가 reload 전에 이를 확인해 조합 중이면 미룬다.
+   */
+  isComposing(): boolean {
+    if (!this.crepe) return false
+    let composing = false
+    try {
+      this.crepe.editor.action((ctx) => {
+        composing = ctx.get(editorViewCtx).composing
+      })
+    } catch {
+      return false
+    }
+    return composing
+  }
+
   // ─── Inline marks ───────────────────────────────────────────────
   // toggleBold/toggleItalic은 raw ProseMirror toggleMark가 가장 안정적.
   // schema.marks 이름은 commonmark preset의 strong / emphasis.
@@ -559,9 +577,12 @@ export class EditorController extends EventEmitter {
       const m = s.matches[s.current]
       const tr = view.state.tr
       if (replacement) {
-        // 매치 시작 위치의 마크를 그대로 물려준다 → 굵게/기울임 등 안의 단어를
-        // 치환해도 서식이 유지된다(plain text로 끼워 넣어 서식이 풀리는 일 방지).
-        const marks = view.state.doc.resolve(m.from).marks()
+        // 매치 "안쪽"(from+1) 위치의 마크를 물려준다 → 굵게/기울임 등 안의 단어를 치환해도 서식 유지.
+        // 주의: m.from은 텍스트 노드 경계일 수 있고, 그 경계에서 ResolvedPos.marks()는 "앞 노드"의
+        // 마크를 돌려준다. 그래서 굵게 런의 첫 글자부터 매치되면(예: foo**bar** 에서 bar) 앞의 plain
+        // 마크가 와서 서식이 풀렸다. 매치 안쪽(from+1, 단 to를 넘지 않게)은 매치된 텍스트 노드 내부라
+        // 그 런의 마크를 정확히 돌려준다. (검색어는 항상 1자 이상이라 to > from 보장.)
+        const marks = view.state.doc.resolve(Math.min(m.from + 1, m.to)).marks()
         tr.replaceWith(m.from, m.to, view.state.schema.text(replacement, marks))
       } else tr.delete(m.from, m.to)
       view.dispatch(tr) // docChanged → 매치 자동 재계산 (view.state 갱신됨)
@@ -596,7 +617,8 @@ export class EditorController extends EventEmitter {
       for (let i = s.matches.length - 1; i >= 0; i--) {
         const m = s.matches[i]
         if (replacement) {
-          const marks = view.state.doc.resolve(m.from).marks()
+          // 매치 안쪽(from+1)의 마크 — searchReplace와 동일 이유(노드 경계에서 앞 노드 마크 오반환 방지).
+          const marks = view.state.doc.resolve(Math.min(m.from + 1, m.to)).marks()
           tr.replaceWith(m.from, m.to, view.state.schema.text(replacement, marks))
         } else tr.delete(m.from, m.to)
       }
