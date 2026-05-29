@@ -17,6 +17,7 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 ## Features
 
 - **Live preview editing** — type and edit markdown right inside the rendered view
+- **Tables, math, code & task lists** — GFM tables, LaTeX math, fenced code blocks with syntax highlighting, and ☑ task checkboxes, all edited inline
 - **Distraction-free writing** — Focus Mode (⇧⌘F) dims everything but the current paragraph; Typewriter Scrolling (⌃⌘T) keeps the active line centered. Both reliable in Korean/Japanese.
 - **Smart typography & spell check** — curly quotes, en/em dashes, and ellipsis as you type (kept out of code), plus the macOS system spell checker
 - **Find & Replace** (⌘F) — live match highlighting, a match counter, jump between matches, replace one or all, and an optional case-sensitive mode
@@ -31,7 +32,8 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 - **Session restore** — reopens your last document and remembers the window's size and position across launches
 - **Statistics & Table of Contents** — word/character/paragraph count, read time, and a collapsible TOC (⌘⇧I) with click-to-jump, plus a live word-count badge that also counts the current selection
 - **PDF export** — quick export to a clean light-theme PDF
-- **Export as HTML** (⇧⌘E) — save a self-contained, styled HTML file you can open in any browser
+- **Export as HTML** (⇧⌘E) — save a self-contained, styled HTML file you can open in any browser (math renders as native MathML; tables and lists come out clean)
+- **Copy as Rich Text** (⌥⌘C) — copy the document as formatted rich text, so pasting into Slack, email, Google Docs, or Notion keeps your headings, bold, lists, tables, and code; plain-text targets receive the markdown source
 - **Automatic light & dark theme** — follows your macOS appearance and switches live when you change it, with system fonts (SF Pro + Apple SD Gothic Neo)
 
 ## Download & first launch
