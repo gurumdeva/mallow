@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.13.0] - 2026-05-29
+
+### Added
+- **Focus Mode** (View → Focus Mode, ⇧⌘F): dims everything except the paragraph you're writing, and quietly tucks away the corner buttons and word-count badge for a clean surface. Works at the paragraph level, so it's reliable in Korean and Japanese too.
+- **Typewriter Scrolling** (View → Typewriter Scrolling, ⌃⌘T): keeps the line you're typing centered on screen, like paper advancing in a typewriter. Stays out of the way during Korean/Japanese input composition.
+
 ## [0.12.0] - 2026-05-29
 
 ### Changed
@@ -132,6 +138,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.13.0]: https://github.com/gurumdeva/mallow/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/gurumdeva/mallow/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/gurumdeva/mallow/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/gurumdeva/mallow/compare/v0.9.0...v0.10.0

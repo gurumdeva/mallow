@@ -9,6 +9,7 @@ Mallow loads as a native macOS app, edits markdown directly in preview mode (no 
 ## Features
 
 - **Live preview editing** — type and edit markdown right inside the rendered view
+- **Distraction-free writing** — Focus Mode (⇧⌘F) dims everything but the current paragraph; Typewriter Scrolling (⌃⌘T) keeps the active line centered. Both reliable in Korean/Japanese.
 - **Find & Replace** (⌘F) — live match highlighting, a match counter, jump between matches, replace one or all, and an optional case-sensitive mode
 - **Paste & drop images** — paste an image from the clipboard or drag an image file into the editor; it's embedded inline so the document stays self-contained
 - **Localized UI (Korean / English / Japanese)** — the whole interface (menu, dialogs, tooltips, panels, dates) follows the device language and shows a single consistent language; any other language falls back to English

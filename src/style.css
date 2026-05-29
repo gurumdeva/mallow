@@ -927,6 +927,53 @@ button.titlebar-center:hover {
   display: none;
 }
 
+/* ─── Focus Mode (현재 블록만 강조) ────────────────────────────
+ * focus-mode가 켜지면 ProseMirror의 모든 최상위 블록을 흐리게 낮추고, 캐럿이 있는 블록
+ * (focus-active, node decoration)만 전체 불투명으로 되돌린다. 블록/단락 단위라 한국어·일본어
+ * (문장 띄어쓰기 없음)에서도 안정적이다. 전환은 부드럽고 은은하게(opacity transition). */
+:root.focus-mode #editor .ProseMirror > * {
+  opacity: 0.32;
+  transition: opacity 0.28s ease;
+}
+:root.focus-mode #editor .ProseMirror > .focus-active {
+  opacity: 1;
+}
+
+/* Focus Mode 중에는 앱 크롬(라이브 단어 수 상태바 + 타이틀바 코너 버튼)을 페이드아웃해
+ * 글쓰기 표면을 비운다. 타이틀바 자체는 남겨 창 드래그를 유지한다(코너 버튼만 사라짐).
+ * 코너 버튼은 숨길 때 클릭도 막아(pointer-events) 보이지 않는 버튼이 눌리지 않게 한다. */
+:root.focus-mode #status-bar {
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+:root.focus-mode #titlebar .corner-btn {
+  opacity: 0;
+  pointer-events: none;
+  /* visibility:hidden은 클릭뿐 아니라 키보드 Tab 포커스·접근성 트리에서도 제거한다
+     (opacity:0만으로는 보이지 않는 버튼에 Tab으로 도달 가능). 페이드(0.28s)가 끝난 뒤
+     visibility를 hidden으로 바꿔 사라지는 모션은 유지하면서 포커스 가능성만 없앤다. */
+  visibility: hidden;
+  transition: opacity 0.28s ease, visibility 0s linear 0.28s;
+}
+
+/* ─── Typewriter Scrolling (캐럿 줄을 세로 중앙에 유지) ──────────
+ * 켜지면 #editor에 위·아래로 큰 패딩(45vh)을 줘서 첫 줄과 마지막 줄도 화면 중앙까지
+ * 올라올 수 있게 한다. 실제 중앙 정렬 스크롤은 EditorController의 typewriter 플러그인이 한다.
+ * 패딩 전환에 transition을 주면 토글 순간 스크롤 위치가 튀므로 transition은 두지 않는다. */
+:root.typewriter-mode #editor {
+  padding-top: 45vh;
+  padding-bottom: 45vh;
+}
+
+/* 모션 최소화 선호 시 디밍 전환(opacity)을 즉시로 바꾼다(상태바 토스트와 동일 원칙). */
+@media (prefers-reduced-motion: reduce) {
+  :root.focus-mode #editor .ProseMirror > *,
+  :root.focus-mode #status-bar,
+  :root.focus-mode #titlebar .corner-btn {
+    transition: none;
+  }
+}
+
 /* ─── Light 테마 마이크로 보정 ──────────────────────────────
  * 다크 기준으로 맞춘 값 중 흰 배경에서 어색한 것만 라이트에서 덮어쓴다(다크 무손상). */
 :root[data-theme="light"] #filename-popover,

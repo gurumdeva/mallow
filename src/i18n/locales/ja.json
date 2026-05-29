@@ -14,6 +14,8 @@
     "exportPdf": "PDFで書き出す…",
     "exportHtml": "HTMLで書き出す…",
     "showStats": "統計を表示",
+    "focusMode": "フォーカスモード",
+    "typewriter": "タイプライタースクロール",
     "quit": "Mallowを終了",
     "about": "Mallowについて",
     "hide": "Mallowを隠す",

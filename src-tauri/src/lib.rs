@@ -4,7 +4,7 @@ use std::sync::{
     Mutex,
 };
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{CheckMenuItemBuilder, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu},
     Emitter, Manager,
 };
 
@@ -35,6 +35,17 @@ struct RecentFiles(Mutex<Vec<String>>);
 #[derive(Default)]
 struct DirtyWindows(Mutex<HashSet<String>>);
 
+/// 보기 메뉴의 두 토글(Focus Mode / Typewriter)의 체크마크 상태.
+/// macOS 메뉴 막대는 모든 창이 공유하는 단일 객체이고, 메뉴는 최근 파일이 바뀔 때마다
+/// build_app_menu로 재생성된다. 이 atomic은 재생성 후에도 체크마크가 유지되도록(빌드 시
+/// .checked로 반영) 하고, set_menu_check 명령이 포커스된 창의 실제 상태로 동기화한다.
+/// 모드 자체는 창(웹뷰)별이므로 프런트엔드가 진실의 소유자다. (멀티 창 트레이드오프는 README/보고서 참고)
+#[derive(Default)]
+struct MenuToggles {
+    focus_mode: AtomicBool,
+    typewriter: AtomicBool,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -44,6 +55,7 @@ pub fn run() {
         .manage(AppReady::default())
         .manage(RecentFiles::default())
         .manage(DirtyWindows::default())
+        .manage(MenuToggles::default())
         .invoke_handler(tauri::generate_handler![
             recent_get,
             recent_add,
@@ -56,6 +68,7 @@ pub fn run() {
             apply_dark_webview,
             webview_ready,
             app_locale,
+            set_menu_check,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -70,7 +83,8 @@ pub fn run() {
             // 영속된 최근 파일을 읽어 상태와 메뉴에 반영한다.
             let recents = load_recents(handle);
             *app.state::<RecentFiles>().0.lock().unwrap() = recents.clone();
-            let menu = build_app_menu(handle, &recents)?;
+            // 토글은 실행마다 OFF로 시작한다(영속 없음 — no-settings 철학). 따라서 (false, false).
+            let menu = build_app_menu(handle, &recents, (false, false))?;
             app.set_menu(menu)?;
 
             app.on_menu_event(move |app, event| {
@@ -101,6 +115,34 @@ pub fn run() {
                     "new_file" | "open" | "save" | "save_as" | "export_pdf" | "export_html"
                     | "show_stats" | "find" | "quit" => {
                         send(format!("menu:{}", id));
+                    }
+                    // Focus Mode / Typewriter 토글: 공유 메뉴의 체크마크를 뒤집고(+ atomic에 보존),
+                    // 새 boolean 상태를 포커스된 창에만 전달한다. 프런트엔드는 받은 boolean을
+                    // 권위값으로 그대로 적용한다(로컬에서 추측 토글하지 않음). 단일 메뉴 막대를
+                    // 모든 창이 공유하므로, 체크마크는 "마지막으로 토글/포커스된 창" 기준이다.
+                    "focus_mode" | "typewriter" => {
+                        let toggles = app.state::<MenuToggles>();
+                        let flag = if id == "focus_mode" {
+                            &toggles.focus_mode
+                        } else {
+                            &toggles.typewriter
+                        };
+                        // 현재 상태를 반전해 보존하고, 같은 값으로 라이브 메뉴 항목도 갱신한다.
+                        let next = !flag.load(Ordering::SeqCst);
+                        flag.store(next, Ordering::SeqCst);
+                        set_view_check(app, &id, next);
+                        match &target {
+                            Some(label) => {
+                                let _ = app.emit_to(
+                                    tauri::EventTarget::webview_window(label.clone()),
+                                    &format!("menu:{}", id),
+                                    next,
+                                );
+                            }
+                            None => {
+                                let _ = app.emit(&format!("menu:{}", id), next);
+                            }
+                        }
                     }
                     // 최근 파일 목록 비우기. 권위 있는 Rust 목록을 비우고 영속·메뉴 재생성.
                     "recent_clear" => {
@@ -261,6 +303,9 @@ struct MenuStrings {
     export_html: String,
     #[serde(rename = "showStats")]
     show_stats: String,
+    #[serde(rename = "focusMode")]
+    focus_mode: String,
+    typewriter: String,
     quit: String,
     // predefined 항목 — muda가 영문 하드코딩한 제목을 명시 텍스트로 덮어쓴다.
     about: String,
@@ -323,6 +368,32 @@ fn app_locale() -> &'static str {
     detect_lang()
 }
 
+/// View 메뉴 안의 CheckMenuItem(focus_mode/typewriter) 체크마크를 갱신한다.
+/// Menu::get은 최상위만 훑으므로, stable id "view_menu" 서브메뉴로 내려가 항목을 찾는다.
+/// (메뉴가 없거나 항목/종류가 다르면 조용히 무시 — 체크마크는 장식이라 fail-soft)
+fn set_view_check<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str, checked: bool) {
+    let Some(menu) = app.menu() else { return };
+    let Some(MenuItemKind::Submenu(view)) = menu.get("view_menu") else {
+        return;
+    };
+    if let Some(MenuItemKind::Check(item)) = view.get(id) {
+        let _ = item.set_checked(checked);
+    }
+}
+
+/// 프런트엔드가 포커스된 창의 실제 모드 상태로 공유 메뉴 체크마크를 동기화한다.
+/// 단일 메뉴 막대를 모든 창이 공유하므로, 창 포커스가 바뀌면 그 창이 이 명령을 호출해
+/// 체크마크를 자기 상태에 맞춘다. 보존 atomic도 함께 갱신해 메뉴 재생성 후에도 유지된다.
+#[tauri::command]
+fn set_menu_check(app: tauri::AppHandle, toggles: tauri::State<MenuToggles>, id: String, checked: bool) {
+    match id.as_str() {
+        "focus_mode" => toggles.focus_mode.store(checked, Ordering::SeqCst),
+        "typewriter" => toggles.typewriter.store(checked, Ordering::SeqCst),
+        _ => return, // 알 수 없는 id는 무시
+    }
+    set_view_check(&app, &id, checked);
+}
+
 fn recent_label(recent: &[String], i: usize, empty: &str) -> String {
     recent
         .get(i)
@@ -339,6 +410,8 @@ fn recent_label(recent: &[String], i: usize, empty: &str) -> String {
 fn build_app_menu<R: tauri::Runtime>(
     handle: &tauri::AppHandle<R>,
     recent_files: &[String],
+    // (focus_mode, typewriter) 체크마크 초기 상태. 메뉴 재생성 시 보존된 값을 그대로 반영한다.
+    checks: (bool, bool),
 ) -> tauri::Result<Menu<R>> {
     // 기기 언어의 메뉴 문자열. muda는 predefined 항목 제목을 영문으로 하드코딩하므로
     // (macOS가 자동 현지화해 주지 않는다) About/Hide/Cut/Copy/Close Window 등에도
@@ -458,8 +531,22 @@ fn build_app_menu<R: tauri::Runtime>(
     )?;
 
     // ── View 메뉴 ────────────────────────────────────────
-    let view_menu = Submenu::with_items(
+    // Focus Mode / Typewriter는 체크마크가 붙는 CheckMenuItem이다. 초기 체크 상태는
+    // 보존된 토글 상태(checks)에서 읽어 메뉴 재생성(최근 파일 변경) 후에도 유지한다.
+    // 서브메뉴에 stable id("view_menu")를 줘서 클릭/동기화 시 항목을 안정적으로 찾는다.
+    // ⇧⌘F 사용: ⌃⌘F는 macOS 표준 "전체 화면 전환"(이 View 메뉴의 PredefinedMenuItem::fullscreen
+    // 기본 단축키와 동일)과 충돌해 그 시스템 단축키를 가로채므로 피한다. ⌘F=찾기와도 구분된다.
+    let focus_item = CheckMenuItemBuilder::with_id("focus_mode", m.focus_mode.as_str())
+        .checked(checks.0)
+        .accelerator("CmdOrCtrl+Shift+F")
+        .build(handle)?;
+    let typewriter_item = CheckMenuItemBuilder::with_id("typewriter", m.typewriter.as_str())
+        .checked(checks.1)
+        .accelerator("CmdOrCtrl+Ctrl+T")
+        .build(handle)?;
+    let view_menu = Submenu::with_id_and_items(
         handle,
+        "view_menu",
         m.view.as_str(),
         true,
         &[
@@ -470,6 +557,9 @@ fn build_app_menu<R: tauri::Runtime>(
                 true,
                 Some("CmdOrCtrl+Shift+I"),
             )?,
+            &PredefinedMenuItem::separator(handle)?,
+            &focus_item,
+            &typewriter_item,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::fullscreen(handle, Some(m.fullscreen.as_str()))?,
         ],
@@ -524,9 +614,16 @@ fn save_recents(app: &tauri::AppHandle, list: &[String]) {
 }
 
 /// 최근 파일 변경을 디스크에 저장하고 앱 메뉴를 다시 만든다(단일 소스).
+/// 메뉴를 재생성하면 체크마크가 초기화되므로, 보존된 토글 상태(MenuToggles)를 읽어
+/// 새 메뉴에도 그대로 반영한다(Focus/Typewriter 체크가 최근 파일 변경으로 풀리지 않게).
 fn persist_and_sync_recents(app: &tauri::AppHandle, list: &[String]) {
     save_recents(app, list);
-    if let Ok(menu) = build_app_menu(app, list) {
+    let toggles = app.state::<MenuToggles>();
+    let checks = (
+        toggles.focus_mode.load(Ordering::SeqCst),
+        toggles.typewriter.load(Ordering::SeqCst),
+    );
+    if let Ok(menu) = build_app_menu(app, list, checks) {
         let _ = app.set_menu(menu);
     }
 }
