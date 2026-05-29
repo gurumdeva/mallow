@@ -370,6 +370,20 @@ export class EditorController extends EventEmitter {
     return composing
   }
 
+  /**
+   * 평문을 현재 위치에 "그대로"(마크다운 파싱 없이) 삽입한다 — Paste & Match Style(⇧⌘V)용.
+   * tr.insertText는 현재 selection이 있으면 치환하고 평문을 끼워 넣는다. 일반 ⌘V(crepe가
+   * 마크다운/HTML을 노드로 변환)와 달리, 여기선 클립보드 내용을 글자 그대로 넣는다.
+   */
+  insertPlainText(text: string): void {
+    if (!this.crepe || !text) return
+    this.crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.insertText(text).scrollIntoView())
+      view.focus()
+    })
+  }
+
   // ─── Inline marks ───────────────────────────────────────────────
   // toggleBold/toggleItalic은 raw ProseMirror toggleMark가 가장 안정적.
   // schema.marks 이름은 commonmark preset의 strong / emphasis.

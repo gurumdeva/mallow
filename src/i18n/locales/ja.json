@@ -32,7 +32,8 @@
     "fullscreen": "フルスクリーンの切り替え",
     "closeWindow": "ウインドウを閉じる",
     "find": "検索…",
-    "copyRichText": "リッチテキストとしてコピー"
+    "copyRichText": "リッチテキストとしてコピー",
+    "pasteMatchStyle": "書式なしでペースト"
   },
   "titlebar": {
     "styleTip": "テキストスタイル",
