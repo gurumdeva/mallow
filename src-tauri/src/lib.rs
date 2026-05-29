@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex,
 };
 use tauri::{
     menu::{CheckMenuItemBuilder, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu},
-    Emitter, Manager,
+    Emitter, LogicalPosition, LogicalSize, Manager,
 };
 
 /// 최근 파일 최대 개수 (Open Recent 메뉴 슬롯 수와 일치).
@@ -46,6 +46,32 @@ struct MenuToggles {
     typewriter: AtomicBool,
 }
 
+/// 메인 창의 크기·위치(논리 좌표, logical px). 다음 실행에서 같은 자리·크기로 복원해
+/// "그냥 기억한다"는 느낌을 준다. recent.json과 동일한 방식(수동 JSON 영속)으로 다루며
+/// 새 크레이트/플러그인을 도입하지 않는다. 메인 창에만 적용한다(doc-* 창은 cascade 배치).
+///
+/// 좌표/크기를 logical px로 저장하는 이유: 모니터마다 scaleFactor가 다르므로 physical px를
+/// 그대로 쓰면 다른 배율 디스플레이로 복원할 때 크기가 어긋난다. Tauri의 set_position/
+/// set_size에 LogicalPosition/LogicalSize로 넘기면 현재 모니터 배율로 알아서 환산된다.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug)]
+struct WindowState {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+/// 메인 창 지오메트리의 인메모리 최신값 + 디스크 flush 디바운스용 세대 번호.
+/// resize/move는 드래그 중 초당 수십 번 발생하므로 매번 디스크에 쓰지 않는다.
+/// 이벤트마다 latest를 갱신 + generation을 증가시키고, 짧게 sleep한 뒤 generation이
+/// 그대로면(=그 사이 추가 이동이 없으면) 그때 한 번만 기록한다(트레일링 디바운스).
+/// 종료(Destroyed/Exit) 시에는 디바운스를 기다리지 않고 latest를 즉시 flush한다.
+#[derive(Default)]
+struct WindowGeometry {
+    latest: Mutex<Option<WindowState>>,
+    generation: AtomicU64,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -56,6 +82,7 @@ pub fn run() {
         .manage(RecentFiles::default())
         .manage(DirtyWindows::default())
         .manage(MenuToggles::default())
+        .manage(WindowGeometry::default())
         .invoke_handler(tauri::generate_handler![
             recent_get,
             recent_add,
@@ -189,13 +216,32 @@ pub fn run() {
                 }
             });
 
-            // macOS cold-start 흰색 flash 차단:
+            // ── 세션 복원: 메인 창 크기·위치 ───────────────────────────
+            // 지난 실행에서 저장한 지오메트리를 읽어, 첫 페인트 전에 메인 창에 적용한다.
+            // 화면 밖(연결 해제된 모니터 등)으로 저장된 창은 보이는 화면 안으로 clamp한다.
+            // doc-* 창은 대상이 아니다(main만 복원, 새 창은 cascade 배치).
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(saved) = load_window_state(handle) {
+                    let geom = clamp_to_visible(&window, saved);
+                    // 크기를 먼저, 위치를 나중에 적용한다(일부 플랫폼에서 크기 변경이
+                    // 위치를 살짝 움직일 수 있어, 위치를 마지막으로 확정한다).
+                    let _ = window.set_size(LogicalSize::new(geom.width, geom.height));
+                    let _ = window.set_position(LogicalPosition::new(geom.x, geom.y));
+                }
+            }
+
+            // macOS cold-start flash 차단:
             // WKWebView의 기본 배경은 흰색이라, NSWindow의 backgroundColor(#1C1C1E)를
             // 설정해도 WKWebView가 그 위를 덮어 1프레임이 흰색으로 그려진다.
             // drawsBackground=NO를 KVC로 걸면 WKWebView가 투명해져
-            // NSWindow의 배경색이 그대로 비치므로 첫 페인트부터 일관된 다크 톤이 유지된다.
+            // NSWindow의 배경색이 그대로 비치므로 첫 페인트부터 일관된 톤이 유지된다.
+            // 단, NSWindow backgroundColor는 tauri.conf.json에서 다크(#1C1C1E)로 고정돼 있어
+            // 라이트 외관에서는 그 다크색이 1프레임 비쳐 "다크 플래시"가 된다. 그래서 OS 외관을
+            // 읽어 라이트면 흰색, 다크면 기존 다크색으로 NSWindow 배경을 첫 페인트 전에 맞춘다.
+            // (다크 경로는 #1C1C1E 그대로라 기존 동작과 바이트 동일.)
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
+                apply_macos_window_background(&window);
                 apply_macos_dark_webview(&window);
             }
 
@@ -235,24 +281,44 @@ pub fn run() {
                         }
                     }
                 }
-                // 마지막 창이 닫히면 앱 종료. "모든 창 닫힘 = 종료" 판단을 Rust에서
-                // 단일하게 처리해, JS가 창 수를 세다 생기는 동시-닫기 race를 제거한다.
-                // (창 닫기 자체는 각 창이 close_document_window로 destroy → 여기서 빈지 확인)
-                tauri::RunEvent::WindowEvent {
-                    label,
-                    event: tauri::WindowEvent::Destroyed,
-                    ..
-                } => {
-                    // 닫힌 창의 dirty 표시를 정리(누수 방지).
-                    app_handle
-                        .state::<DirtyWindows>()
-                        .0
-                        .lock()
-                        .unwrap()
-                        .remove(&label);
-                    if app_handle.webview_windows().is_empty() {
-                        app_handle.exit(0);
+                tauri::RunEvent::WindowEvent { label, event, .. } => {
+                    match event {
+                        // 메인 창의 이동/크기 변경 → 인메모리 latest 갱신 + 디바운스 디스크 기록.
+                        // (doc-* 창은 세션 복원 대상이 아니므로 무시한다.)
+                        tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_)
+                            if label == "main" =>
+                        {
+                            capture_main_geometry(app_handle);
+                        }
+                        // 마지막 창이 닫히면 앱 종료. "모든 창 닫힘 = 종료" 판단을 Rust에서
+                        // 단일하게 처리해, JS가 창 수를 세다 생기는 동시-닫기 race를 제거한다.
+                        // (창 닫기 자체는 각 창이 close_document_window로 destroy → 여기서 빈지 확인)
+                        tauri::WindowEvent::Destroyed => {
+                            // 메인 창이 닫히는 중이면 마지막 지오메트리를 즉시 디스크에 flush한다
+                            // (디바운스를 기다리면 종료가 먼저 일어나 유실될 수 있다). Destroyed
+                            // 시점엔 창 핸들이 이미 사라졌을 수 있어, 이벤트 직전까지 갱신된
+                            // 인메모리 latest를 그대로 기록한다.
+                            if label == "main" {
+                                flush_main_geometry(app_handle);
+                            }
+                            // 닫힌 창의 dirty 표시를 정리(누수 방지).
+                            app_handle
+                                .state::<DirtyWindows>()
+                                .0
+                                .lock()
+                                .unwrap()
+                                .remove(&label);
+                            if app_handle.webview_windows().is_empty() {
+                                app_handle.exit(0);
+                            }
+                        }
+                        _ => {}
                     }
+                }
+                // ⌘Q 등으로 종료되는 경로(창 Destroyed가 선행하지 않을 수 있음)에서도
+                // 마지막 지오메트리를 확실히 남긴다. 인메모리 latest가 있으면 즉시 기록.
+                tauri::RunEvent::Exit => {
+                    flush_main_geometry(app_handle);
                 }
                 _ => {}
             }
@@ -613,6 +679,171 @@ fn save_recents(app: &tauri::AppHandle, list: &[String]) {
     }
 }
 
+// ── 세션 복원: 메인 창 지오메트리 영속 (recent.json과 동일 방식) ──────────────
+fn window_state_file(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("window.json"))
+}
+
+/// 저장된 메인 창 지오메트리를 읽는다. 파일이 없거나 파싱 실패면 None(=기본 크기/배치 유지).
+fn load_window_state(app: &tauri::AppHandle) -> Option<WindowState> {
+    let p = window_state_file(app)?;
+    let text = std::fs::read_to_string(&p).ok()?;
+    serde_json::from_str::<WindowState>(&text).ok()
+}
+
+/// 메인 창 지오메트리를 디스크에 기록한다(영속 실패는 치명적이지 않으므로 조용히 무시).
+fn save_window_state(app: &tauri::AppHandle, state: &WindowState) {
+    let Some(p) = window_state_file(app) else {
+        return;
+    };
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(text) = serde_json::to_string(state) {
+        // 원자적 저장: 임시 파일에 쓴 뒤 rename 한다. 지오메트리 flush는 디바운스
+        // 백그라운드 스레드에서 일어나는데, 그 스레드가 write 도중 ⌘Q(process::exit)로
+        // 강제 종료되면 std::fs::write는 truncate 후 쓰므로 파일이 반쪽으로 남을 수 있다.
+        // 같은 디렉터리 임시 파일 → rename은 원자적이라 절대 찢긴 파일을 남기지 않는다.
+        let tmp = p.with_extension("json.tmp");
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, &p);
+        }
+    }
+}
+
+/// 저장된 지오메트리를 "현재 보이는 화면" 안으로 보정한다. 저장 당시 연결돼 있던
+/// 모니터가 지금은 빠졌거나(노트북 외부 모니터 분리 등) 해상도가 바뀌어 창이 화면 밖으로
+/// 나가는 경우, 사용자가 창을 못 보고 잃어버리는 것을 막는다.
+///
+/// 전략:
+///  1) 창 크기를 가용 모니터들의 최대 표시 영역보다 크지 않게 줄인다(완전히 화면을 덮지 않게).
+///  2) 저장된 창의 어느 한 모서리라도 어떤 모니터 영역과 겹치면 그대로 둔다(멀티모니터에서
+///     일부만 걸친 정상 배치를 존중). 어떤 모니터와도 겹치지 않으면(=완전히 화면 밖) 1순위
+///     모니터 영역 안으로 위치를 끌어와 좌상단이 보이도록 clamp한다.
+///
+/// 모니터 메트릭은 physical px라, scaleFactor로 logical px로 환산해 저장값(logical)과 맞춘다.
+/// (이 버전 Tauri Monitor는 메뉴바/Dock을 제외한 work area를 직접 노출하지 않으므로 전체 모니터
+///  사각형을 쓴다. 화면 밖 복구 시 좌상단이 메뉴바에 살짝 걸릴 수 있으나, 오버레이 타이틀바라
+///  창을 다시 드래그할 수 있어 수용 가능하다.)
+/// 모니터 정보를 못 얻으면(예외) 저장값을 그대로 반환한다(fail-open: 최악의 경우에도 기존 동작).
+fn clamp_to_visible<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    mut state: WindowState,
+) -> WindowState {
+    // 비정상(0/음수/NaN) 크기는 무시하고 기본값으로 — 이후 set_size가 무의미해지지 않게.
+    if !(state.width.is_finite() && state.height.is_finite()) || state.width < 1.0 || state.height < 1.0
+    {
+        return state;
+    }
+    if !(state.x.is_finite() && state.y.is_finite()) {
+        return state;
+    }
+
+    let Ok(monitors) = window.available_monitors() else {
+        return state;
+    };
+    if monitors.is_empty() {
+        return state;
+    }
+
+    // 각 모니터의 작업영역을 logical 좌표 사각형으로 변환한다.
+    // (Monitor::position/size는 physical px → scale_factor로 나눈다.)
+    let rects: Vec<(f64, f64, f64, f64)> = monitors
+        .iter()
+        .map(|m| {
+            let sf = m.scale_factor();
+            let pos = m.position();
+            let size = m.size();
+            let lx = pos.x as f64 / sf;
+            let ly = pos.y as f64 / sf;
+            let lw = size.width as f64 / sf;
+            let lh = size.height as f64 / sf;
+            (lx, ly, lw, lh)
+        })
+        .collect();
+
+    // (1) 크기 clamp: 가장 큰 모니터 작업영역을 넘지 않게 한다.
+    let max_w = rects.iter().map(|r| r.2).fold(0.0_f64, f64::max);
+    let max_h = rects.iter().map(|r| r.3).fold(0.0_f64, f64::max);
+    if max_w > 0.0 {
+        state.width = state.width.min(max_w);
+    }
+    if max_h > 0.0 {
+        state.height = state.height.min(max_h);
+    }
+
+    // (2) 위치가 어떤 모니터와도 겹치지 않으면 1순위 모니터 안으로 끌어온다.
+    let overlaps_any = rects.iter().any(|&(mx, my, mw, mh)| {
+        let (wx, wy, ww, wh) = (state.x, state.y, state.width, state.height);
+        wx < mx + mw && wx + ww > mx && wy < my + mh && wy + wh > my
+    });
+    if !overlaps_any {
+        let (mx, my, mw, mh) = rects[0];
+        // 좌상단이 작업영역 안에 오도록, 그리고 창이 영역을 넘으면 우/하단에 맞춰 당긴다.
+        state.x = mx.max((mx + mw - state.width).min(state.x));
+        state.y = my.max((my + mh - state.height).min(state.y));
+    }
+
+    state
+}
+
+/// 메인 창의 현재 지오메트리를 인메모리 latest에 담고, 디바운스 디스크 기록을 예약한다.
+/// resize/move 버스트(드래그) 중 매번 디스크에 쓰지 않도록 generation 기반 트레일링
+/// 디바운스를 쓴다: 마지막 이벤트로부터 일정 시간 추가 변화가 없을 때 한 번만 기록한다.
+fn capture_main_geometry(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    // 최소화/풀스크린 상태의 지오메트리는 복원 기준으로 부적절하므로 저장하지 않는다
+    // (다음 실행에서 0 크기/엉뚱한 위치로 복원되는 것을 막는다).
+    if window.is_minimized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false) {
+        return;
+    }
+    let Ok(scale) = window.scale_factor() else {
+        return;
+    };
+    let Ok(pos) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.inner_size() else {
+        return;
+    };
+    let state = WindowState {
+        x: pos.x as f64 / scale,
+        y: pos.y as f64 / scale,
+        width: size.width as f64 / scale,
+        height: size.height as f64 / scale,
+    };
+
+    let geom = app.state::<WindowGeometry>();
+    *geom.latest.lock().unwrap() = Some(state);
+    // 이 이벤트의 세대 번호를 찍고, sleep 후 그대로면 기록한다(그 사이 추가 이동 없음).
+    let my_gen = geom.generation.fetch_add(1, Ordering::SeqCst) + 1;
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let geom = app.state::<WindowGeometry>();
+        // 더 최신 이벤트가 들어왔으면(generation이 바뀜) 그 이벤트의 타이머에 양보한다.
+        if geom.generation.load(Ordering::SeqCst) != my_gen {
+            return;
+        }
+        let snapshot = *geom.latest.lock().unwrap();
+        if let Some(state) = snapshot {
+            save_window_state(&app, &state);
+        }
+    });
+}
+
+/// 종료 경로에서 인메모리 latest를 즉시 디스크에 기록한다(디바운스 대기 없이).
+/// latest가 아직 없으면(이번 실행 중 이동/리사이즈가 한 번도 없었으면) no-op.
+fn flush_main_geometry(app: &tauri::AppHandle) {
+    let snapshot = *app.state::<WindowGeometry>().latest.lock().unwrap();
+    if let Some(state) = snapshot {
+        save_window_state(app, &state);
+    }
+}
+
 /// 최근 파일 변경을 디스크에 저장하고 앱 메뉴를 다시 만든다(단일 소스).
 /// 메뉴를 재생성하면 체크마크가 초기화되므로, 보존된 토글 상태(MenuToggles)를 읽어
 /// 새 메뉴에도 그대로 반영한다(Focus/Typewriter 체크가 최근 파일 변경으로 풀리지 않게).
@@ -739,7 +970,13 @@ fn close_document_window(window: tauri::WebviewWindow) {
 #[tauri::command]
 fn apply_dark_webview(window: tauri::WebviewWindow) {
     #[cfg(target_os = "macos")]
-    apply_macos_dark_webview(&window);
+    {
+        // main 창과 동일하게 OS 외관에 맞춰 NSWindow 배경을 먼저 맞춘다(라이트에서 흰색).
+        // 이게 없으면 문서 창은 #1C1C1E 고정 배경이라 라이트 OS에서 한 프레임 다크 flash가 보인다.
+        // (다크 외관에선 no-op이라 무손상.) 그 다음 webview를 투명화한다.
+        apply_macos_window_background(&window);
+        apply_macos_dark_webview(&window);
+    }
     #[cfg(not(target_os = "macos"))]
     let _ = window;
 }
@@ -755,6 +992,80 @@ fn webview_ready(
     ready.0.store(true, Ordering::SeqCst);
     let mut p = pending.0.lock().unwrap();
     std::mem::take(&mut *p)
+}
+
+/// 라이트 외관 cold-start의 "다크 플래시"를 막기 위해, OS 외관을 읽어 NSWindow의
+/// backgroundColor를 첫 페인트 전에 외관에 맞춘다.
+///
+/// 배경(문제):
+///   tauri.conf.json의 window backgroundColor는 #1C1C1E(다크)로 고정돼 있고,
+///   apply_macos_dark_webview가 WKWebView를 투명하게 만들어 그 색이 비치게 한다.
+///   다크 외관에서는 이게 정확히 의도한 동작(첫 프레임부터 다크)이지만, 라이트
+///   외관에서는 흰 webview가 그려지기 직전 1프레임 동안 #1C1C1E(다크)가 보여
+///   "다크 플래시"가 된다.
+///
+/// 해결(보수적·다크 안전):
+///   - 다크 외관: 아무것도 하지 않는다 → NSWindow 배경은 conf의 #1C1C1E 그대로.
+///     따라서 기존 다크 cold-start 동작과 바이트 동일하다(회귀 없음).
+///   - 라이트 외관: NSWindow backgroundColor를 흰색으로 덮는다 → 투명 webview 너머로
+///     흰 배경이 비쳐, 첫 프레임부터 흰색이 유지된다(index.html 인라인 스크립트가
+///     라이트에서 html 배경을 흰색으로 두는 것과 일관). 다크 플래시가 사라진다.
+///   - 외관 판정 실패: 라이트로 단정하지 않고 그대로 둔다(기존 다크 배경 유지) → fail-safe.
+///
+/// 외관 판정:
+///   NSApp.effectiveAppearance의 name이 "Dark"를 포함하는지로 다크/라이트를 가른다.
+///   (Apple 권장 방식은 bestMatchFromAppearancesWithNames:지만, name 문자열 검사도
+///    동일 결과를 주며 의존성 없이 간결하다. NSAppearanceNameDarkAqua는
+///    "NSAppearanceNameDarkAqua"로 끝나 항상 "Dark"를 포함한다.)
+///
+/// 호출 시점:
+///   setup()에서 메인 창 생성 직후, 첫 페인트 전. apply_macos_dark_webview보다 먼저
+///   호출해 NSWindow 배경을 먼저 확정한다.
+#[cfg(target_os = "macos")]
+fn apply_macos_window_background<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send, msg_send_id};
+    use objc2::rc::Retained;
+    use objc2_foundation::NSString;
+
+    // with_webview closure는 macOS에서 메인(UI) 스레드에서 실행되므로 AppKit 호출이 안전하다
+    // (apply_macos_dark_webview와 동일 패턴). 실패해도 무시(fail-safe: 기존 배경 유지).
+    let _ = window.with_webview(|webview| {
+        let ns_window: *mut AnyObject = webview.ns_window() as *mut _;
+        if ns_window.is_null() {
+            return;
+        }
+
+        unsafe {
+            // 1) OS 외관 판정: NSApp.effectiveAppearance.name 에 "Dark"가 들어있으면 다크.
+            let app_cls = class!(NSApplication);
+            let ns_app: *mut AnyObject = msg_send![app_cls, sharedApplication];
+            if ns_app.is_null() {
+                return; // 앱 객체를 못 얻으면 그대로 둔다(기존 다크 배경 유지).
+            }
+            let appearance: *mut AnyObject = msg_send![ns_app, effectiveAppearance];
+            if appearance.is_null() {
+                return;
+            }
+            let name: Retained<NSString> = msg_send_id![appearance, name];
+            let is_dark = name.to_string().contains("Dark");
+
+            // 2) 다크면 손대지 않는다(기존 #1C1C1E 그대로 → 바이트 동일, 회귀 없음).
+            if is_dark {
+                return;
+            }
+
+            // 3) 라이트면 NSWindow 배경을 흰색으로 덮어 다크 플래시를 제거한다.
+            //    +[NSColor whiteColor]는 autoreleased 인스턴스 → 약한 보유로 충분하다
+            //    (setBackgroundColor:가 내부에서 retain한다).
+            let color_cls = class!(NSColor);
+            let white: *mut AnyObject = msg_send![color_cls, whiteColor];
+            if white.is_null() {
+                return;
+            }
+            let _: () = msg_send![ns_window, setBackgroundColor: white];
+        }
+    });
 }
 
 /// WKWebView를 투명하게 만들어 NSWindow backgroundColor가 비치게 한다.

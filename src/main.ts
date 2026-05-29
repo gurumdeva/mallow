@@ -15,6 +15,7 @@ import { PdfExporter } from './services/PdfExporter'
 import { HtmlExporter } from './services/HtmlExporter'
 import { FileService, RenameError, OpenError } from './services/FileService'
 import { MenuBridge } from './services/MenuBridge'
+import { planStartup } from './services/StartupPlanner'
 import { TitleBarView } from './ui/TitleBarView'
 import { FilenamePopover } from './ui/FilenamePopover'
 import { InfoPopover } from './ui/InfoPopover'
@@ -344,32 +345,71 @@ async function bootstrap(): Promise<void> {
   })
   await menu.start()
 
-  // ── 이 창이 열 파일 결정 ─────────────────────────────────
-  // (1) 새 창(New/Open/Finder warm)이면 URL 해시에 경로가 담겨 있다 → 로드.
-  // (2) 해시가 없고 main(최초) 창이면, cold-start로 Finder가 넘긴 pending을 가져온다.
-  //     RunEvent::Opened가 WebView mount 전에 fire되어 손실되는 경로를 Rust가 stash
-  //     해뒀다가 webview_ready로 한 번에 넘겨준다. 여러 개면 첫 파일은 이 창에,
-  //     나머지는 각각 새 창으로 연다. (호출 후부터 warm open은 open:file로 직접 전달)
-  // (3) 둘 다 아니면 빈 새 문서.
+  // ── 이 창이 열 파일 결정 (우선순위는 planStartup에 집약) ──────────────
+  // 우선순위: 명시적 파일(해시 또는 Finder pending) > 마지막 문서 복원 > 최초 실행 환영 > 빈 문서.
+  // (결정은 순수 함수 planStartup이 내리고, 여기서는 그 plan을 실행만 한다.)
+  //
+  //  - 해시(#path): New/Open/Finder warm-start 창이 자신이 열 경로를 해시로 받는다.
+  //  - pending: Finder cold-start로 RunEvent::Opened가 WebView mount 전에 fire돼 손실되는
+  //    경로를 Rust가 stash해뒀다가 webview_ready로 한 번에 넘긴다(main 창에서만 가져옴).
+  //    여러 개면 첫 파일은 이 창에, 나머지는 새 창으로. 호출 후부터 warm open은 open:file로 직접 전달.
+  //  - 마지막 문서 복원: 환영을 본 적 있고(welcomed) 최근 파일이 있으면 recent[0]을 다시 연다.
+  //    명시적으로 연 파일이 없을 때만 동작하므로 Finder 열기/해시를 절대 덮지 않는다.
   const hashRaw = location.hash.slice(1)
   const hashFile = hashRaw ? decodeURIComponent(hashRaw) : null
-  if (hashFile) {
-    await fileService.openPath(hashFile).catch(reportOpenError)
-  } else if (win.label === 'main') {
+
+  // webview_ready는 main 창에서만 호출한다(AppReady 플래그를 켜고 cold-start pending을 비우는
+  // 부수효과가 있어, doc-* 창이 호출하면 안 된다). 그 외(해시 창 등)는 pending이 없다.
+  let pending: string[] = []
+  if (win.label === 'main') {
     try {
-      const pending: string[] = await invoke('webview_ready')
-      if (pending.length > 0) {
-        await fileService.openPath(pending[0]).catch(reportOpenError)
-        for (const p of pending.slice(1)) openDocumentWindow(p).catch(reportError(t('error.openWindow')))
-      } else if (!localStorage.getItem('mallow.welcomed')) {
-        // 첫 실행 + 열 파일 없음 → 환영 문서 1회 표시. load()가 change 이벤트를 억제하므로
-        // 문서는 미수정(pristine) 상태로 남아, 닫을 때 저장 확인이 뜨지 않고 파일 열기 시 재사용된다.
-        localStorage.setItem('mallow.welcomed', '1')
-        await editor.load(welcomeDoc(lang)).catch(() => {})
-      }
+      pending = await invoke<string[]>('webview_ready')
     } catch (e) {
       console.error('webview_ready failed:', e)
     }
+  }
+
+  // 마지막 문서 복원 후보(recent[0])는 main + 해시 없음 + pending 없을 때만 조회한다
+  // (불필요한 IPC를 피함). 그 외 경우엔 planStartup이 recentTop을 쓰지 않는다.
+  let recentTop: string | null = null
+  if (win.label === 'main' && !hashFile && pending.length === 0) {
+    recentTop = (await recent.list().catch(() => []))[0] ?? null
+  }
+
+  const plan = planStartup({
+    windowLabel: win.label,
+    hashFile,
+    pending,
+    welcomed: localStorage.getItem('mallow.welcomed') !== null,
+    recentTop,
+  })
+
+  switch (plan.kind) {
+    case 'explicit':
+      // 명시적으로 지정된 파일을 연다. 읽기 실패는 reportOpenError가 "최근 목록에서 제거됨"을 안내.
+      await fileService.openPath(plan.path).catch(reportOpenError)
+      for (const p of plan.openInNewWindows) {
+        openDocumentWindow(p).catch(reportError(t('error.openWindow')))
+      }
+      break
+    case 'restore-last':
+      // 지난 세션의 마지막 문서를 조용히 복원한다. 자동 복원이므로 파일이 사라졌어도
+      // 토스트를 띄우지 않고(사용자가 클릭한 게 아니므로) 빈 문서로 둔다. openPath의 실패 경로가
+      // 이미 그 경로를 최근 목록에서 제거하므로 다음 실행에선 그 다음 항목이 후보가 된다.
+      await fileService.openPath(plan.path).catch((e) => {
+        console.error('session restore: last document unavailable, starting blank:', e)
+      })
+      break
+    case 'welcome':
+      // 최초 실행 + 열 파일 없음 → 환영 문서 1회. load()가 change를 억제하므로 문서는 pristine으로
+      // 남아, 닫을 때 저장 확인이 뜨지 않고 파일 열기 시 이 창이 재사용된다. 플래그를 세워
+      // 다음 실행부터는 "마지막 문서 복원" 경로로 전환된다.
+      localStorage.setItem('mallow.welcomed', '1')
+      await editor.load(welcomeDoc(lang)).catch(() => {})
+      break
+    case 'blank':
+      // 빈 새 문서(이미 editor.initialize(DEFAULT_MARKDOWN)로 비어 있음) — 아무 동작 없음.
+      break
   }
 
   // ── 외부 변경 감지: 다른 앱에서 파일을 수정하고 Mallow로 돌아오면 동기화 ──
