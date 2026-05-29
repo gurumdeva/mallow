@@ -55,8 +55,10 @@ export function getLocale(): Lang {
  */
 function interpolate(template: string, params?: Record<string, string | number>): string {
   if (!params) return template
+  // 값이 null/undefined면 문자열 "undefined"/"null"로 렌더되지 않게 원형 placeholder를 남긴다
+  // (타입상으론 string|number지만, 런타임에 undefined가 흘러드는 호출을 방어).
   return template.replace(/\{(\w+)\}/g, (whole, key: string) =>
-    key in params ? String(params[key]) : whole,
+    key in params && params[key] != null ? String(params[key]) : whole,
   )
 }
 
