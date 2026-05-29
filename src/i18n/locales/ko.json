@@ -86,7 +86,9 @@
     },
     "unsavedQuit": {
       "title": "종료",
-      "body": "저장하지 않은 문서가 {count}개 있습니다.\n변경 사항을 잃고 종료하시겠습니까?"
+      "body": "저장하지 않은 문서가 {count}개 있습니다.\n변경 사항을 잃고 종료하시겠습니까?",
+      "bodyOne": "저장하지 않은 문서가 {count}개 있습니다.\n변경 사항을 잃고 종료하시겠습니까?",
+      "bodyMany": "저장하지 않은 문서가 {count}개 있습니다.\n변경 사항을 잃고 종료하시겠습니까?"
     },
     "externalChange": {
       "title": "외부 변경 감지",
@@ -119,7 +121,9 @@
     "matchCase": "대소문자 구분",
     "previous": "이전 (⇧⏎)",
     "next": "다음 (⏎)",
-    "close": "닫기 (Esc)"
+    "close": "닫기 (Esc)",
+    "noResults": "결과 없음",
+    "replacedCount": "{n}개 바꿈"
   },
   "image": {
     "upload": "업로드",

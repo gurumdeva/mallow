@@ -73,9 +73,15 @@ async function bootstrap(): Promise<void> {
   setLocale(lang)
   document.documentElement.lang = lang
   // index.html의 정적 버튼 tooltip을 기기 언어로 채운다(HTML엔 텍스트를 두지 않음).
-  document.getElementById('btn-style')?.setAttribute('title', t('titlebar.styleTip'))
-  document.getElementById('btn-pdf')?.setAttribute('title', t('titlebar.exportPdfTip'))
-  document.getElementById('btn-info')?.setAttribute('title', t('titlebar.infoTip'))
+  // title(마우스 툴팁)과 aria-label(보조기술용 접근 이름)을 같은 문구로 함께 설정한다(item 13).
+  const labelButton = (id: string, text: string): void => {
+    const el = document.getElementById(id)
+    el?.setAttribute('title', text)
+    el?.setAttribute('aria-label', text)
+  }
+  labelButton('btn-style', t('titlebar.styleTip'))
+  labelButton('btn-pdf', t('titlebar.exportPdfTip'))
+  labelButton('btn-info', t('titlebar.infoTip'))
 
   // ── State (single sources of truth) ─────────────────────
   const doc = new Document()
@@ -286,8 +292,11 @@ async function bootstrap(): Promise<void> {
       void (async () => {
         const n = await invoke<number>('dirty_window_count').catch(() => 0)
         if (n > 0) {
+          // 영어 단/복수 구분(item 14): 1건이면 단수("1 document has…"), 그 외 복수형.
+          // 한국어/일본어는 복수 굴절이 없어 두 키가 같은 단일 문구를 가리킨다.
+          const bodyKey = n === 1 ? 'dialog.unsavedQuit.bodyOne' : 'dialog.unsavedQuit.bodyMany'
           const ok = await ask(
-            t('dialog.unsavedQuit.body', { count: n }),
+            t(bodyKey, { count: n }),
             { title: t('dialog.unsavedQuit.title'), kind: 'warning' },
           )
           if (!ok) {

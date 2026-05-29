@@ -86,7 +86,9 @@
     },
     "unsavedQuit": {
       "title": "終了",
-      "body": "保存されていないドキュメントが{count}個あります。\n変更を破棄して終了しますか？"
+      "body": "保存されていないドキュメントが{count}個あります。\n変更を破棄して終了しますか？",
+      "bodyOne": "保存されていないドキュメントが{count}個あります。\n変更を破棄して終了しますか？",
+      "bodyMany": "保存されていないドキュメントが{count}個あります。\n変更を破棄して終了しますか？"
     },
     "externalChange": {
       "title": "外部での変更を検出",
@@ -119,7 +121,9 @@
     "matchCase": "大文字と小文字を区別",
     "previous": "前へ (⇧⏎)",
     "next": "次へ (⏎)",
-    "close": "閉じる (Esc)"
+    "close": "閉じる (Esc)",
+    "noResults": "結果なし",
+    "replacedCount": "{n}件置換"
   },
   "image": {
     "upload": "アップロード",

@@ -41,6 +41,13 @@ export class InfoPopover {
       if (this.popover.contains(t) || this.btn.contains(t)) return
       this.uiState.closeInfoPopover()
     })
+    // Esc로 닫기 — Find/Filename/Style과 동작을 맞춘다(item 7). 열려 있을 때만 처리.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.uiState.infoPopoverOpen) {
+        e.preventDefault()
+        this.uiState.closeInfoPopover()
+      }
+    })
   }
 
   private render(): void {

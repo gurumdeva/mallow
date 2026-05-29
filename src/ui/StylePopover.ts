@@ -31,6 +31,11 @@ export class StylePopover {
   }
 
   private bindDom(): void {
+    // 트리거 버튼의 팝오버 관계를 보조기술에 알린다(item 8). aria-expanded는 render에서 토글.
+    this.btn.setAttribute('aria-haspopup', 'true')
+    this.btn.setAttribute('aria-expanded', 'false')
+    // #filename-popover와 동일하게 dialog로 노출(item 8).
+    this.popover.setAttribute('role', 'dialog')
     this.btn.addEventListener('click', (e) => {
       e.stopPropagation()
       this.uiState.toggleStylePopover()
@@ -42,10 +47,19 @@ export class StylePopover {
       if (this.popover.contains(t) || this.btn.contains(t)) return
       this.uiState.closeStylePopover()
     })
+    // Esc로 닫기 — Find/Filename과 동작을 맞춘다(item 7). 열려 있을 때만 처리.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.uiState.stylePopoverOpen) {
+        e.preventDefault()
+        this.uiState.closeStylePopover()
+      }
+    })
   }
 
   private render(): void {
-    if (!this.uiState.stylePopoverOpen) {
+    const open = this.uiState.stylePopoverOpen
+    this.btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+    if (!open) {
       this.popover.classList.add('hidden')
       return
     }
@@ -119,25 +133,25 @@ export class StylePopover {
       <div class="stats-title">${t('style.title')}</div>
       <div class="style-section-label">${t('style.headingSection')}</div>
       <div class="style-grid style-grid-4">
-        <button class="style-btn" data-action="h1" title="${t('style.tip.h1')}"><span class="style-btn-h1">H1</span></button>
-        <button class="style-btn" data-action="h2" title="${t('style.tip.h2')}"><span class="style-btn-h2">H2</span></button>
-        <button class="style-btn" data-action="h3" title="${t('style.tip.h3')}"><span class="style-btn-h3">H3</span></button>
-        <button class="style-btn" data-action="p" title="${t('style.tip.body')}"><span class="style-btn-body">${t('style.body')}</span></button>
+        <button class="style-btn" data-action="h1" title="${t('style.tip.h1')}" aria-label="${t('style.tip.h1')}"><span class="style-btn-h1">H1</span></button>
+        <button class="style-btn" data-action="h2" title="${t('style.tip.h2')}" aria-label="${t('style.tip.h2')}"><span class="style-btn-h2">H2</span></button>
+        <button class="style-btn" data-action="h3" title="${t('style.tip.h3')}" aria-label="${t('style.tip.h3')}"><span class="style-btn-h3">H3</span></button>
+        <button class="style-btn" data-action="p" title="${t('style.tip.body')}" aria-label="${t('style.tip.body')}"><span class="style-btn-body">${t('style.body')}</span></button>
       </div>
       <div class="style-section-label">${t('style.blockSection')}</div>
       <div class="style-grid style-grid-5">
-        <button class="style-btn" data-action="quote" title="${t('style.tip.quote')}">${this.icon('quote')}</button>
-        <button class="style-btn" data-action="bullet" title="${t('style.tip.bullet')}">${this.icon('bullet')}</button>
-        <button class="style-btn" data-action="numbered" title="${t('style.tip.numbered')}">${this.icon('numbered')}</button>
-        <button class="style-btn" data-action="code" title="${t('style.tip.code')}">${this.icon('code')}</button>
-        <button class="style-btn" data-action="hr" title="${t('style.tip.hr')}">${this.icon('hr')}</button>
+        <button class="style-btn" data-action="quote" title="${t('style.tip.quote')}" aria-label="${t('style.tip.quote')}">${this.icon('quote')}</button>
+        <button class="style-btn" data-action="bullet" title="${t('style.tip.bullet')}" aria-label="${t('style.tip.bullet')}">${this.icon('bullet')}</button>
+        <button class="style-btn" data-action="numbered" title="${t('style.tip.numbered')}" aria-label="${t('style.tip.numbered')}">${this.icon('numbered')}</button>
+        <button class="style-btn" data-action="code" title="${t('style.tip.code')}" aria-label="${t('style.tip.code')}">${this.icon('code')}</button>
+        <button class="style-btn" data-action="hr" title="${t('style.tip.hr')}" aria-label="${t('style.tip.hr')}">${this.icon('hr')}</button>
       </div>
       <div class="style-section-label">${t('style.inlineSection')}</div>
       <div class="style-grid style-grid-4">
-        <button class="style-btn" data-action="bold" title="${t('style.tip.bold')}"><b>B</b></button>
-        <button class="style-btn" data-action="italic" title="${t('style.tip.italic')}"><i>I</i></button>
-        <button class="style-btn" data-action="strike" title="${t('style.tip.strike')}"><span class="style-btn-strike">S</span></button>
-        <button class="style-btn" data-action="inlinecode" title="${t('style.tip.inlineCode')}">${this.icon('inlinecode')}</button>
+        <button class="style-btn" data-action="bold" title="${t('style.tip.bold')}" aria-label="${t('style.tip.bold')}"><b>B</b></button>
+        <button class="style-btn" data-action="italic" title="${t('style.tip.italic')}" aria-label="${t('style.tip.italic')}"><i>I</i></button>
+        <button class="style-btn" data-action="strike" title="${t('style.tip.strike')}" aria-label="${t('style.tip.strike')}"><span class="style-btn-strike">S</span></button>
+        <button class="style-btn" data-action="inlinecode" title="${t('style.tip.inlineCode')}" aria-label="${t('style.tip.inlineCode')}">${this.icon('inlinecode')}</button>
       </div>
     `
   }

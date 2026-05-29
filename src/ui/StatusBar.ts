@@ -25,6 +25,10 @@ export class StatusBar {
       this.el.className = 'hidden'
       document.body.appendChild(this.el)
     }
+    // 라이브 단어 수를 보조기술이 읽을 수 있게 live region으로 노출(item 12).
+    // 시각적으로는 그대로 장식 요소(pointer-events:none, CSS)다.
+    this.el.setAttribute('role', 'status')
+    this.el.setAttribute('aria-live', 'polite')
     this.doc.on('changed', () => this.render())
     this.render()
   }
