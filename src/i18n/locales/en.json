@@ -116,7 +116,8 @@
     "saveAs": "Save As",
     "syncFile": "File Sync",
     "copyRichText": "Couldn’t copy as rich text",
-    "keepOnTop": "Couldn’t change “Keep on Top”"
+    "keepOnTop": "Couldn’t change “Keep on Top”",
+    "saveConflict": "Can’t save over “{name}” — it’s open in another window. Use a different name."
   },
   "toast": {
     "unknownError": "Unknown error",

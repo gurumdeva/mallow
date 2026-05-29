@@ -116,7 +116,8 @@
     "saveAs": "다른 이름으로 저장",
     "syncFile": "파일 동기화",
     "copyRichText": "서식 있는 텍스트 복사에 실패했습니다",
-    "keepOnTop": "항상 위에 고정 설정을 변경하지 못했습니다"
+    "keepOnTop": "항상 위에 고정 설정을 변경하지 못했습니다",
+    "saveConflict": "다른 창에서 열려 있는 ‘{name}’ 파일은 덮어쓸 수 없습니다. 다른 이름으로 저장하세요."
   },
   "toast": {
     "unknownError": "알 수 없는 오류",

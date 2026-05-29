@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.27.0] - 2026-05-30
+
+### Fixed
+- **Prevented a rare cross-window save conflict.** If you used Save As — or saved an untitled document — onto a file that was already open in another Mallow window, both windows could autosave to it and silently overwrite each other's edits. Mallow now detects this and declines, asking you to pick a different name.
+
+### Changed
+- **Document saves are now atomic.** Each save writes to a temporary file and then atomically replaces the original, so a crash, force-quit, or power loss in the middle of a save can no longer leave a half-written or truncated file — your previously saved content is never put at risk. Symbolic links are followed, so a symlinked note still updates its real target.
+
 ## [0.26.0] - 2026-05-30
 
 ### Added
@@ -223,6 +231,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.27.0]: https://github.com/gurumdeva/mallow/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/gurumdeva/mallow/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/gurumdeva/mallow/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/gurumdeva/mallow/compare/v0.23.0...v0.24.0
