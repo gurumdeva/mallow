@@ -14,6 +14,8 @@
     "exportPdf": "PDF로 내보내기…",
     "exportHtml": "HTML로 내보내기…",
     "showStats": "통계 보기",
+    "focusMode": "포커스 모드",
+    "typewriter": "타자기 스크롤",
     "quit": "Mallow 종료",
     "about": "Mallow에 관하여",
     "hide": "Mallow 가리기",

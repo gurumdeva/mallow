@@ -10,6 +10,10 @@ export type MenuActions = {
   onExportHtml: () => void
   onShowStats: () => void
   onFind: () => void
+  // Focus Mode / Typewriter 토글: Rust가 체크마크를 뒤집고 "새 상태(boolean)"를 보내므로
+  // 콜백은 그 값을 그대로 받아 적용한다(프런트가 로컬에서 토글을 추측하지 않음).
+  onToggleFocusMode: (on: boolean) => void
+  onToggleTypewriter: (on: boolean) => void
   onOpenFromOs: (path: string) => void
   onQuit: () => void
 }
@@ -41,6 +45,13 @@ export class MenuBridge {
     u.push(await listen('menu:export_html', () => this.actions.onExportHtml(), opts))
     u.push(await listen('menu:show_stats', () => this.actions.onShowStats(), opts))
     u.push(await listen('menu:find', () => this.actions.onFind(), opts))
+    // 토글 이벤트는 payload로 새 boolean 상태를 싣고 온다(Rust가 체크마크와 함께 결정).
+    u.push(
+      await listen<boolean>('menu:focus_mode', (e) => this.actions.onToggleFocusMode(e.payload), opts),
+    )
+    u.push(
+      await listen<boolean>('menu:typewriter', (e) => this.actions.onToggleTypewriter(e.payload), opts),
+    )
     // Open Recent 클릭은 인덱스 이벤트로 받지 않는다. 메뉴 빌드/클릭 사이 목록 변경으로
     // 엉뚱한 파일이 열리는 race를 막기 위해, Rust가 클릭 순간 권위 있는 목록에서 실제 경로를
     // 해석해 OS 파일 열기와 동일한 "open:file"로 보낸다 → onOpenFromOs로 일원화 처리.

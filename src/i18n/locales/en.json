@@ -14,6 +14,8 @@
     "exportPdf": "Export as PDF…",
     "exportHtml": "Export as HTML…",
     "showStats": "Show Statistics",
+    "focusMode": "Focus Mode",
+    "typewriter": "Typewriter Scrolling",
     "quit": "Quit Mallow",
     "about": "About Mallow",
     "hide": "Hide Mallow",

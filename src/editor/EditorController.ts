@@ -52,6 +52,118 @@ function computeSearchMatches(doc: ProseNode, query: string, caseSensitive: bool
   return out
 }
 
+// ─── Focus Mode: 캐럿이 있는 블록만 강조하는 플러그인 ────────────────
+// 선택(selection)의 head가 속한 "최상위 블록"(doc의 직속 자식, depth 1)에 node decoration으로
+// focus-active 클래스를 붙인다. 문장이 아니라 블록/단락 단위인 이유: 한국어·일본어는 문장 사이
+// 띄어쓰기가 없어 문장 경계 추출이 불안정하므로 블록 단위가 옳다.
+// 활성화 플래그는 plugin state에 두고 setMeta(focusKey, {enabled})로 토글한다. OFF면 decoration 없음.
+type FocusState = { enabled: boolean }
+const focusKey = new PluginKey<FocusState>('mallow-focus')
+
+/** selection.head가 속한 최상위 블록의 [start, end) 위치. 없으면 null. */
+function topBlockRange(state: import('@milkdown/prose/state').EditorState): { from: number; to: number } | null {
+  const $head = state.selection.$head
+  // depth 0은 doc 자신 — 감쌀 최상위 블록이 없으므로 제외한다.
+  if ($head.depth === 0) return null
+  // depth 1 = doc의 직속 자식(문단/제목/리스트/코드블록 등). before/after(1)로 그 노드 범위를 얻는다.
+  return { from: $head.before(1), to: $head.after(1) }
+}
+
+/** Focus Mode decoration(현재 블록에 focus-active)을 관리하는 ProseMirror 플러그인. */
+const focusPlugin = $prose(
+  () =>
+    new Plugin<FocusState>({
+      key: focusKey,
+      state: {
+        init: () => ({ enabled: false }),
+        apply(tr, prev) {
+          const meta = tr.getMeta(focusKey) as Partial<FocusState> | undefined
+          if (meta && meta.enabled !== undefined) return { enabled: meta.enabled }
+          return prev
+        },
+      },
+      props: {
+        decorations(state) {
+          const s = focusKey.getState(state)
+          if (!s || !s.enabled) return DecorationSet.empty
+          const range = topBlockRange(state)
+          if (!range) return DecorationSet.empty
+          // node decoration: 해당 블록 노드에 클래스를 부여 → CSS가 이 블록만 전체 불투명으로 복원.
+          return DecorationSet.create(state.doc, [
+            Decoration.node(range.from, range.to, { class: 'focus-active' }),
+          ])
+        },
+      },
+    }),
+)
+
+// ─── Typewriter Scrolling: 캐럿 줄을 화면 세로 중앙에 유지 ────────────
+// ON이면 selection/doc 변경마다 coordsAtPos(head)로 캐럿 화면 좌표를 구해, 스크롤 컨테이너
+// (#editor)를 그 줄이 뷰포트 50%에 오도록 스크롤한다. rAF로 한 프레임에 한 번만 반영(throttle).
+// CJK(한국어/일본어) IME 조합 중에는 스크롤이 입력을 방해하므로 건너뛰고(view.composing),
+// 조합이 끝나면(compositionend) 그때 한 번 보정한다.
+// 활성화 여부는 컨트롤러가 소유한 holder를 통해 읽어, 에디터 재생성 없이 토글한다.
+type TypewriterHolder = { enabled: boolean }
+
+const typewriterPlugin = (holder: TypewriterHolder) =>
+  $prose(
+    () =>
+      new Plugin({
+        view: (view) => {
+          let raf = 0
+          // 스크롤 컨테이너: #editor(absolute + overflow-y:auto). ProseMirror DOM의 가장 가까운 조상.
+          const scroller = (): HTMLElement | null =>
+            (view.dom.closest('#editor') as HTMLElement | null) ?? null
+
+          const center = (): void => {
+            raf = 0
+            if (!holder.enabled) return
+            // 조합 중이면 보정하지 않는다(IME 후보창/커서 점프 방지). compositionend에서 처리.
+            if (view.composing) return
+            const el = scroller()
+            if (!el) return
+            let coords: { top: number; bottom: number }
+            try {
+              coords = view.coordsAtPos(view.state.selection.head)
+            } catch {
+              return // 위치가 일시적으로 무효(직후 doc 교체 등)면 조용히 건너뛴다
+            }
+            const rect = el.getBoundingClientRect()
+            // 캐럿 줄의 화면상 중앙 y와 컨테이너 중앙의 차이만큼 스크롤을 이동시킨다.
+            const caretMid = (coords.top + coords.bottom) / 2
+            const targetMid = rect.top + rect.height / 2
+            const delta = caretMid - targetMid
+            if (Math.abs(delta) < 1) return // 이미 거의 중앙이면 흔들지 않는다
+            el.scrollTop += delta
+          }
+
+          const schedule = (): void => {
+            if (!holder.enabled) return
+            if (raf) cancelAnimationFrame(raf)
+            raf = requestAnimationFrame(center)
+          }
+
+          // 조합 종료 직후 한 번 중앙 보정(조합 중에는 건너뛰었으므로).
+          const onCompositionEnd = (): void => schedule()
+          view.dom.addEventListener('compositionend', onCompositionEnd)
+
+          return {
+            update: (_view, prevState) => {
+              if (!holder.enabled) return
+              // selection 또는 doc이 바뀐 경우에만 보정(decoration-only 변경엔 반응하지 않음).
+              const moved =
+                !prevState.selection.eq(view.state.selection) || !prevState.doc.eq(view.state.doc)
+              if (moved) schedule()
+            },
+            destroy: () => {
+              if (raf) cancelAnimationFrame(raf)
+              view.dom.removeEventListener('compositionend', onCompositionEnd)
+            },
+          }
+        },
+      }),
+  )
+
 /** 검색 상태 + 하이라이트 decoration을 관리하는 ProseMirror 플러그인. */
 const searchPlugin = $prose(
   () =>
@@ -126,6 +238,16 @@ export class EditorController extends EventEmitter {
   private suppressChange = false
   private suppressTimer: ReturnType<typeof setTimeout> | null = null
 
+  // Typewriter 플러그인이 참조하는 활성화 holder. 에디터 재생성 없이 토글하기 위해
+  // 객체로 들고 있다(플러그인은 같은 참조를 캡처). 매 실행 OFF로 시작(영속 없음).
+  private readonly typewriterHolder: TypewriterHolder = { enabled: false }
+
+  // Focus Mode 활성화 미러. load(flush=true)는 plugin state를 새로 init하므로 focus 플러그인의
+  // enabled가 false로 풀린다 → 같은 창에서 파일을 in-place로 열면 디밍만 남고 강조 블록이 사라진다.
+  // 이 미러로 load 직후 enabled를 다시 실어 그 회귀를 막는다. (typewriterHolder는 plugin state가
+  // 아니라 컨트롤러 소유 객체라 flush의 영향을 받지 않으므로 별도 미러가 필요 없다.)
+  private focusEnabled = false
+
   constructor(private readonly rootSelector: string) {
     super()
   }
@@ -160,6 +282,10 @@ export class EditorController extends EventEmitter {
     }
     this.armSuppress()
     this.crepe.editor.action(replaceAll(markdown, true))
+    // flush=true는 EditorState를 새로 만들어 focus 플러그인의 enabled를 init값(false)으로
+    // 되돌린다. Focus Mode가 켜진 채 in-place로 다른 파일을 열면 디밍만 남고 강조가 사라지므로,
+    // 미러 상태가 ON이면 새 state에 enabled=true를 다시 실어준다.
+    if (this.focusEnabled) this.setFocusMode(true)
   }
 
   /** load 직후 도착할 markdownUpdated 1회를 억제 예약. */
@@ -412,6 +538,52 @@ export class EditorController extends EventEmitter {
     return count
   }
 
+  // ─── Focus Mode / Typewriter Scrolling ──────────────────────────
+  // 둘 다 메뉴 토글로 켜고 끄는 독립 모드다. 상태는 영속하지 않으며(매 실행 OFF) 호출자가
+  // 루트 클래스(focus-mode / typewriter-mode)도 함께 토글해 CSS(디밍·패딩·크롬 페이드)를 건다.
+
+  /**
+   * Focus Mode 토글. ON이면 focus 플러그인이 캐럿이 속한 최상위 블록에 focus-active
+   * decoration을 붙인다(CSS가 그 블록만 불투명 복원). selection 보존을 위해 view.focus()는
+   * 호출하지 않는다 — meta만 실어 가벼운 트랜잭션 1회 dispatch한다.
+   */
+  setFocusMode(on: boolean): void {
+    this.focusEnabled = on
+    this.crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setMeta(focusKey, { enabled: on }))
+    })
+  }
+
+  /**
+   * Typewriter Scrolling 토글. holder 플래그만 바꾸면 플러그인이 다음 selection/doc
+   * 변경부터 캐럿 줄을 중앙에 맞춘다. 켤 때는 즉시 한 번 중앙 정렬해 "지금 줄"이 바로
+   * 가운데로 오게 한다(다음 입력을 기다리지 않음).
+   */
+  setTypewriter(on: boolean): void {
+    this.typewriterHolder.enabled = on
+    if (on) this.centerCaretNow()
+  }
+
+  /** 현재 캐럿 줄을 즉시 #editor 뷰포트 중앙으로 스크롤(typewriter ON 전환 시 1회). */
+  private centerCaretNow(): void {
+    this.crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      if (view.composing) return // 조합 중이면 건드리지 않는다(IME 보호)
+      const el = view.dom.closest('#editor') as HTMLElement | null
+      if (!el) return
+      let coords: { top: number; bottom: number }
+      try {
+        coords = view.coordsAtPos(view.state.selection.head)
+      } catch {
+        return
+      }
+      const rect = el.getBoundingClientRect()
+      const delta = (coords.top + coords.bottom) / 2 - (rect.top + rect.height / 2)
+      if (Math.abs(delta) >= 1) el.scrollTop += delta
+    })
+  }
+
   /** 검색 종료 — 하이라이트 제거. */
   clearSearch(): void {
     this.crepe?.editor.action((ctx) => {
@@ -575,6 +747,10 @@ export class EditorController extends EventEmitter {
     })
     // 찾기/바꾸기 검색 하이라이트 플러그인 등록(create() 전 — 기능 로드와 동일 경로).
     crepe.editor.use(searchPlugin)
+    // Focus Mode(현재 블록 강조) + Typewriter(캐럿 줄 중앙 유지) 플러그인 등록.
+    // 둘 다 기본 OFF이며 setFocusMode/setTypewriter로 켜진다(검색 플러그인과 독립적으로 공존).
+    crepe.editor.use(focusPlugin)
+    crepe.editor.use(typewriterPlugin(this.typewriterHolder))
     // 이미지 paste/드래그-드롭 플러그인 등록.
     crepe.editor.use(this.imageDropPastePlugin())
     return crepe

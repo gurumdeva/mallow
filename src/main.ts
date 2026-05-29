@@ -166,6 +166,24 @@ async function bootstrap(): Promise<void> {
   // ── 하단 상태바: 단어 수 / 읽기 시간 (빈 문서면 숨김) ──────
   new StatusBar(doc, editor, stats)
 
+  // ── 집중 글쓰기 모드 (Focus Mode / Typewriter Scrolling) ──
+  // 둘 다 메뉴 토글로 켜는 독립 모드다. 상태는 이 창(웹뷰) 한정이며 영속하지 않는다(매 실행 OFF).
+  // Rust는 토글 시 "새 상태(boolean)"를 보내므로 그 값을 그대로 적용한다(로컬 추측 토글 없음).
+  // 루트 클래스(focus-mode / typewriter-mode)로 CSS(블록 디밍·크롬 페이드·중앙 패딩)를 켠다.
+  let focusModeOn = false
+  let typewriterOn = false
+  const root = document.documentElement
+  const applyFocusMode = (on: boolean): void => {
+    focusModeOn = on
+    root.classList.toggle('focus-mode', on)
+    editor.setFocusMode(on)
+  }
+  const applyTypewriter = (on: boolean): void => {
+    typewriterOn = on
+    root.classList.toggle('typewriter-mode', on)
+    editor.setTypewriter(on)
+  }
+
   // ── Title bar의 PDF 아이콘 클릭 → export ─────────────────
   // 키보드 ⌘E는 MenuBridge가 처리하지만 버튼 클릭은 별도 wiring 필요.
   const btnPdf = document.getElementById('btn-pdf')
@@ -294,6 +312,9 @@ async function bootstrap(): Promise<void> {
     onExportHtml: () => runExport(htmlExporter, t('error.exportHtml')),
     onShowStats: () => ui.toggleInfoPopover(),
     onFind: () => findReplace.toggle(),
+    // Rust가 보낸 새 상태(boolean)를 그대로 적용한다(체크마크는 Rust가 이미 갱신).
+    onToggleFocusMode: (on) => applyFocusMode(on),
+    onToggleTypewriter: (on) => applyTypewriter(on),
     // Open Recent 클릭은 Rust가 클릭 순간 실제 경로를 해석해 open:file로 보낸다
     // (인덱스 race 방지). OS 파일 열기와 동일 경로(onOpenFromOs)로 처리된다.
     onOpenFromOs: (p) => handleOpenPath(p),
@@ -356,7 +377,13 @@ async function bootstrap(): Promise<void> {
   //  (1) 사용자가 "돌아왔을 때" 갱신되길 기대하는 시나리오에 정확히 부합
   //  (2) 외부 앱이 저장 중인 partial write 상태를 잡을 위험이 없음
   win.onFocusChanged(({ payload: focused }) => {
-    if (focused) fileService.syncFromDiskIfChanged().catch(reportError(t('error.syncFile')))
+    if (focused) {
+      fileService.syncFromDiskIfChanged().catch(reportError(t('error.syncFile')))
+      // 단일 메뉴 막대를 모든 창이 공유하므로, 이 창이 포커스를 얻으면 공유 체크마크를
+      // 이 창의 실제 모드 상태로 맞춘다(다른 창에서 토글돼 어긋난 체크마크를 교정).
+      invoke('set_menu_check', { id: 'focus_mode', checked: focusModeOn }).catch(() => {})
+      invoke('set_menu_check', { id: 'typewriter', checked: typewriterOn }).catch(() => {})
+    }
   })
 
   // ── 윈도우 닫기 (멀티 창) ────────────────────────────────
