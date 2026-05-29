@@ -544,6 +544,29 @@ fn quit_app(app: tauri::AppHandle) {
 /// 바꿀 때 디스크 파일도 실제로 옮긴다. (Rust std::fs라 fs 스코프 영향 없음)
 #[tauri::command]
 fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    use std::path::Path;
+    let op = Path::new(&old_path);
+    let np = Path::new(&new_path);
+    // (1) 같은 폴더 안에서의 rename만 허용 — 경로 분리자/상위 경로(..)로 폴더 밖으로
+    //     나가는 이동을 차단한다(프런트의 normalizeFilename 가드에 대한 2차 방어선).
+    if np.parent() != op.parent() {
+        return Err("invalid".into());
+    }
+    // (2) 대상이 이미 존재하면 덮어쓰지 않는다(데이터 손실 방지). 단, 대상이 사실은 원본과
+    //     "같은 파일"인 경우(대소문자 비구분 볼륨에서 foo.md → Foo.md 같은 recase)는 허용한다.
+    //     canonicalize로 실제 경로를 비교하므로 대소문자 구분/비구분 볼륨 모두에서 정확하다
+    //     (단순 lowercase 비교는 대소문자 구분 볼륨에서 "다른 파일"을 같다고 오판할 수 있다).
+    //     주: exists 검사와 rename 사이에는 본질적 TOCTOU가 있으나, 단일 사용자 데스크톱
+    //     앱에서는 수용 가능한 수준이다.
+    if np.exists() {
+        let same_file = match (std::fs::canonicalize(op), std::fs::canonicalize(np)) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        };
+        if !same_file {
+            return Err("exists".into());
+        }
+    }
     std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string())
 }
 

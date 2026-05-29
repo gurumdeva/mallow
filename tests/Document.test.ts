@@ -51,6 +51,23 @@ describe('Document.normalizeFilename', () => {
     expect(Document.normalizeFilename('a.b.md')).toBe('a.b.md')
     expect(Document.normalizeFilename('release.notes')).toBe('release.notes.md')
   })
+
+  it('rejects names containing path separators (no folder escape)', () => {
+    // 디스크 rename 경로가 "폴더 + 이름"으로 조립되므로 분리자/상위경로는 폴더 밖으로
+    // 나가거나 다른 파일을 덮어쓸 수 있어 무효 처리한다.
+    expect(Document.normalizeFilename('../evil')).toBeNull()
+    expect(Document.normalizeFilename('../../etc/passwd')).toBeNull()
+    expect(Document.normalizeFilename('sub/dir/note')).toBeNull()
+    expect(Document.normalizeFilename('a\\b')).toBeNull()
+    expect(Document.normalizeFilename('..')).toBeNull()
+    expect(Document.normalizeFilename('.')).toBeNull()
+    expect(Document.normalizeFilename('/abs/path')).toBeNull()
+  })
+
+  it('still allows ordinary names with dots and spaces', () => {
+    expect(Document.normalizeFilename('my notes v2')).toBe('my notes v2.md')
+    expect(Document.normalizeFilename('2026-05-29 회고')).toBe('2026-05-29 회고.md')
+  })
 })
 
 describe('Document defaults', () => {

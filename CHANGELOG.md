@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.11.0] - 2026-05-29
+
+### Changed
+- **Safer file renaming**: renaming a document from the title bar can no longer overwrite another file or move it out of its folder. If the name is already taken you'll be told, and invalid names (containing slashes, etc.) are rejected with a clear message instead of failing silently.
+- **Steadier title bar**: the "unsaved" dot (●) no longer nudges the filename sideways when it appears or disappears.
+
+### Fixed
+- The rename field and the title-bar file name are now labeled for screen readers.
+
 ## [0.10.0] - 2026-05-29
 
 ### Added
@@ -115,6 +124,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 - Fixed an issue where a document failed to load when launching the app by double-clicking a .md file in Finder.
 - Removed the white screen flash on the first launch in dark mode.
 
+[0.11.0]: https://github.com/gurumdeva/mallow/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/gurumdeva/mallow/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/gurumdeva/mallow/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/gurumdeva/mallow/compare/v0.7.0...v0.8.0

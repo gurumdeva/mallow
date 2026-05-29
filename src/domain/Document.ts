@@ -40,11 +40,16 @@ export class Document extends EventEmitter {
   /**
    * 파일명 정규화: 앞뒤 공백 제거 + base 이름이 있으면 '.md' 보장. base가 비면 null.
    * (".md"·공백만 입력 → null. rename과 디스크 rename 경로 계산에서 공용으로 쓴다.)
+   *
+   * 보안: 디스크 rename 경로는 `같은 폴더 + 이 이름`으로 조립되므로, 경로 분리자(/ \)나
+   * 상위 경로(.., .)를 포함하면 폴더를 벗어나거나 다른 파일을 덮어쓸 수 있다. 그런 입력은
+   * 무효(null)로 처리해 폴더 밖으로 나가는 rename을 원천 차단한다.
    */
   static normalizeFilename(name: string): string | null {
     let base = name.trim()
     if (base.toLowerCase().endsWith('.md')) base = base.slice(0, -3).trim()
     if (!base) return null
+    if (/[/\\]/.test(base) || base === '.' || base === '..') return null
     return `${base}.md`
   }
 

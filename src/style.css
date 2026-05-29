@@ -154,6 +154,18 @@ button.titlebar-center:hover {
   color: var(--text);
 }
 
+/* 수정(●) 표시 슬롯: 너비를 항상 차지하고 보임/숨김만 토글해 파일명이 흔들리지 않게 한다.
+   (visibility:hidden은 레이아웃 공간을 유지하므로 토글 시 reflow가 없다.) */
+.title-dot {
+  visibility: hidden;
+  margin-right: 6px;
+  font-size: 0.7em;
+  vertical-align: middle;
+}
+.title-dot.on {
+  visibility: visible;
+}
+
 #filename-popover {
   position: fixed;
   top: 52px;

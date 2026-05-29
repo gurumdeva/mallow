@@ -33,7 +33,8 @@
   "titlebar": {
     "styleTip": "Text Style",
     "exportPdfTip": "Export as PDF (⌘E)",
-    "infoTip": "Document Info (⌘⇧I)"
+    "infoTip": "Document Info (⌘⇧I)",
+    "renameTip": "Rename file"
   },
   "doc": {
     "untitled": "Untitled.md",
@@ -97,6 +98,8 @@
   },
   "error": {
     "rename": "Rename",
+    "renameExists": "A file with that name already exists",
+    "renameInvalid": "That file name isn't allowed",
     "exportPdf": "PDF Export",
     "exportHtml": "HTML Export",
     "openFile": "Open File",

@@ -33,7 +33,8 @@
   "titlebar": {
     "styleTip": "テキストスタイル",
     "exportPdfTip": "PDFで書き出す (⌘E)",
-    "infoTip": "ドキュメント情報 (⌘⇧I)"
+    "infoTip": "ドキュメント情報 (⌘⇧I)",
+    "renameTip": "ファイル名を変更"
   },
   "doc": {
     "untitled": "無題.md",
@@ -97,6 +98,8 @@
   },
   "error": {
     "rename": "名前の変更",
+    "renameExists": "同じ名前のファイルがすでに存在します",
+    "renameInvalid": "使用できないファイル名です",
     "exportPdf": "PDF書き出し",
     "exportHtml": "HTML書き出し",
     "openFile": "ファイルを開く",
