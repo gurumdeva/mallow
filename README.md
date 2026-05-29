@@ -20,7 +20,7 @@ Mallow loads as a native macOS app, edits markdown directly in preview mode (no 
 - **Autosave** — once a document has been saved to a file, edits are written to disk automatically a moment after you stop typing
 - **External-change reload** — edit a file in another app and Mallow refreshes from disk when you return (it asks first if you have unsaved edits)
 - **Recent files** — File → Open Recent (persisted across sessions)
-- **Statistics & Table of Contents** — word/character/paragraph count, read time, and a collapsible TOC (⌘⇧I), plus a live word-count badge in the corner while you write
+- **Statistics & Table of Contents** — word/character/paragraph count, read time, and a collapsible TOC (⌘⇧I) with click-to-jump, plus a live word-count badge that also counts the current selection
 - **PDF export** — quick export to a clean light-theme PDF
 - **Export as HTML** (⇧⌘E) — save a self-contained, styled HTML file you can open in any browser
 - **Automatic light & dark theme** — follows your macOS appearance and switches live when you change it, with system fonts (SF Pro + Apple SD Gothic Neo)

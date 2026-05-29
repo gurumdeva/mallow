@@ -59,7 +59,9 @@
   "toc": {
     "title": "目次",
     "tabTip": "目次",
-    "empty": "表示する見出しがありません。"
+    "empty": "表示する見出しがありません。",
+    "jump": "見出しへ移動",
+    "toggle": "小見出しの開閉"
   },
   "style": {
     "title": "スタイル",
@@ -139,6 +141,7 @@
     "caption": "画像のキャプションを入力"
   },
   "status": {
-    "summary": "{words}語 · {min}分"
+    "summary": "{words}語 · {min}分",
+    "selection": "選択 {words}語 · {chars}字"
   }
 }

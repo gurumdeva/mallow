@@ -73,7 +73,7 @@ export class InfoPopover {
       })
     })
 
-    this.popover.querySelectorAll<HTMLElement>('.toc-arrow').forEach((arrow) => {
+    this.popover.querySelectorAll<HTMLButtonElement>('.toc-arrow').forEach((arrow) => {
       arrow.addEventListener('click', (e) => {
         e.stopPropagation()
         const groupEl = arrow.closest('.toc-group') as HTMLElement | null
@@ -82,13 +82,20 @@ export class InfoPopover {
       })
     })
 
-    this.popover.querySelectorAll<HTMLDivElement>('.toc-item').forEach((item) => {
+    // 목차 항목 클릭/키보드 활성화 → 해당 헤딩으로 점프. <button>이라 Enter/Space는 click으로
+    // 들어온다(별도 keydown 불필요). 점프 대상은 "클릭 시점"에 .ProseMirror를 다시 조회해
+    // 문서 순서대로 해석한다 — 렌더 때 캐시한 위치/요소가 그새 편집으로 어긋나도 올바르게 점프한다.
+    this.popover.querySelectorAll<HTMLButtonElement>('.toc-item').forEach((item) => {
       item.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('.toc-arrow')) return
         e.stopPropagation()
         const idx = parseInt(item.dataset.tocIdx ?? '0', 10)
-        const items = this.toc.extract()
-        items[idx]?.element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        const items = this.toc.extract() // 클릭 시점 재추출(스테일 방지)
+        const target = items[idx]?.element
+        if (!target) return
+        // 캐럿까지 함께 옮긴다(posAtDOM 실패 시 내부에서 DOM scrollIntoView로 폴백).
+        this.editor.scrollToHeading(target)
+        // 미니멀 UI: 점프 후 popover는 닫아 에디터에 집중하게 한다.
+        this.uiState.closeInfoPopover()
       })
     })
   }
@@ -160,6 +167,9 @@ export class InfoPopover {
       return `<div class="toc-empty">${t('toc.empty')}</div>`
     }
     const { groups, minLevel } = this.toc.group(items)
+    // 각 항목은 "클릭 시 해당 헤딩으로 점프"하는 포커스 가능한 버튼이다(키보드 활성화 가능).
+    // 접근성: 점프 버튼은 <button>(.toc-item), 그룹 펼침/접힘 화살표도 별도 <button>으로 분리해
+    // 인터랙티브 요소를 중첩하지 않는다. 화살표는 aria-expanded로 상태를 노출한다.
     return `
       <div class="toc-list">
         ${groups
@@ -168,21 +178,19 @@ export class InfoPopover {
             const hasChildren = group.children.length > 0
             return `
               <div class="toc-group ${collapsed ? 'collapsed' : ''}" data-group-idx="${gi}">
-                <div class="toc-item toc-root" data-toc-idx="${group.rootIdx}">
+                <div class="toc-root-row">
                   ${
                     hasChildren
-                      ? '<span class="toc-arrow"><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M2 3 L5 7 L8 3 Z"/></svg></span>'
+                      ? `<button type="button" class="toc-arrow" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${t('toc.toggle')}"><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M2 3 L5 7 L8 3 Z"/></svg></button>`
                       : '<span class="toc-arrow-spacer"></span>'
                   }
-                  <span class="toc-text">${escapeHtml(group.root.text)}</span>
+                  <button type="button" class="toc-item toc-root toc-text" data-toc-idx="${group.rootIdx}" title="${t('toc.jump')}">${escapeHtml(group.root.text)}</button>
                 </div>
                 <div class="toc-children">
                   ${group.children
                     .map(
                       (c) => `
-                    <div class="toc-item toc-child" data-toc-idx="${c.idx}" style="padding-left: ${(c.item.level - minLevel) * 14 + 28}px">
-                      ${escapeHtml(c.item.text)}
-                    </div>
+                    <button type="button" class="toc-item toc-child" data-toc-idx="${c.idx}" title="${t('toc.jump')}" style="padding-left: ${(c.item.level - minLevel) * 14 + 28}px">${escapeHtml(c.item.text)}</button>
                   `,
                     )
                     .join('')}

@@ -59,7 +59,9 @@
   "toc": {
     "title": "Table of Contents",
     "tabTip": "Table of Contents",
-    "empty": "No headings to display."
+    "empty": "No headings to display.",
+    "jump": "Jump to heading",
+    "toggle": "Toggle subheadings"
   },
   "style": {
     "title": "Style",
@@ -139,6 +141,7 @@
     "caption": "Write Image Caption"
   },
   "status": {
-    "summary": "{words} words · {min} min"
+    "summary": "{words} words · {min} min",
+    "selection": "Selected: {words} words · {chars} chars"
   }
 }
