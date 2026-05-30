@@ -114,6 +114,8 @@ final class MarkdownTextView: NSTextView {}
 
 final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDelegate, NSLayoutManagerDelegate {
     let textView: MarkdownTextView
+    weak var titleLabel: NSTextField?   // custom titlebar filename (Mallow-style chrome)
+    weak var dotView: NSView?           // ● modified-indicator slot (visibility toggled, no reflow)
 
     private var filePath: String?
     private var baseline = ""
@@ -122,9 +124,9 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
     private var hiddenChars = Set<Int>()       // UTF-16 indices of collapsed syntax glyphs
     private var focusMode = false              // dim every block but the caret's
 
-    private let baseSize: CGFloat = 15
+    private let baseSize: CGFloat = 16   // Mallow body size; SANS (mono only for code), like the Tauri app
     private let fm = NSFontManager.shared
-    private lazy var baseFont = NSFont.monospacedSystemFont(ofSize: baseSize, weight: .regular)
+    private lazy var baseFont = NSFont.systemFont(ofSize: baseSize, weight: .regular)
 
     init(textView: MarkdownTextView, window: NSWindow) {
         self.textView = textView
@@ -209,9 +211,8 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
             switch block.kindTag {
             case "Heading":
                 if let level = block.headingLevel, let nr = nsRange(block.range) {
-                    storage.addAttribute(.font,
-                                         value: NSFont.boldSystemFont(ofSize: max(baseSize, 27 - CGFloat(level) * 3)),
-                                         range: nr)
+                    let hz: CGFloat = level == 1 ? 28 : level == 2 ? 22 : level == 3 ? 18 : 16  // Mallow sizes
+                    storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: hz), range: nr)
                 }
                 continue  // heading text is uniform — no inline pass
             case "CodeBlock":
@@ -446,7 +447,36 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
 
     private func updateChrome() {
         window?.isDocumentEdited = isDirty
-        window?.title = (filePath as NSString?)?.lastPathComponent ?? "Untitled"
+        let name = (filePath as NSString?)?.lastPathComponent ?? "Untitled"
+        window?.title = name                  // still set (used by Window menu / Mission Control)
+        titleLabel?.stringValue = name        // the visible centered filename
+        dotView?.isHidden = !isDirty          // ● shown only when there are unsaved edits
+    }
+
+    // Titlebar style button → pop the Format menu under the button (the Mallow ✏️ panel's role).
+    @objc func showStyleMenu(_ sender: NSButton) {
+        if let fmt = NSApp.mainMenu?.item(withTitle: "Format")?.submenu {
+            fmt.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+        }
+    }
+
+    // Titlebar info button → a small popover with the document's word / character counts.
+    @objc func showInfo(_ sender: NSButton) {
+        let s = textView.string
+        let words = s.split { $0 == " " || $0 == "\n" || $0 == "\t" }.count
+        let chars = s.count
+        let pop = NSPopover()
+        pop.behavior = .transient
+        let vc = NSViewController()
+        let label = NSTextField(labelWithString: "Words  \(words)\nCharacters  \(chars)")
+        label.font = NSFont.systemFont(ofSize: 13)
+        label.maximumNumberOfLines = 2
+        let v = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 64))
+        label.frame = NSRect(x: 16, y: 14, width: 148, height: 36)
+        v.addSubview(label)
+        vc.view = v
+        pop.contentViewController = vc
+        pop.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
 
     func textDidChange(_ notification: Notification) { refresh() }
@@ -567,7 +597,86 @@ func configureTextView(_ textView: MarkdownTextView) {
     textView.isContinuousSpellCheckingEnabled = false
     textView.isGrammarCheckingEnabled = false
     textView.usesFindBar = true  // native find/replace bar (⌘F) — mature, IME-aware, free
-    textView.textContainerInset = NSSize(width: 18, height: 18)
+    // Mallow geometry: generous side margins; top inset clears the 52px titlebar overlay (+24 pad).
+    textView.textContainerInset = NSSize(width: 88, height: 76)
+    textView.drawsBackground = true
+    textView.backgroundColor = mallowBG
+    textView.insertionPointColor = mallowText
+}
+
+// MARK: - Mallow titlebar chrome (matches the Tauri app's custom titlebar)
+
+// Dark-theme literals from the Tauri app's style.css.
+let mallowBG = NSColor(srgbRed: 0x1c / 255, green: 0x1c / 255, blue: 0x1e / 255, alpha: 1)   // #1c1c1e
+let mallowDim = NSColor(srgbRed: 0x98 / 255, green: 0x98 / 255, blue: 0x9d / 255, alpha: 1)  // #98989d
+let mallowText = NSColor(srgbRed: 0xf2 / 255, green: 0xf2 / 255, blue: 0xf7 / 255, alpha: 1) // #f2f2f7
+let cornerBtnFill = NSColor(srgbRed: 60 / 255, green: 60 / 255, blue: 62 / 255, alpha: 0.55)
+
+/// A 30×30 rounded titlebar button with an SF-Symbol icon — matches Mallow's `.corner-btn`.
+func cornerButton(_ symbol: String, _ target: AnyObject, _ action: Selector) -> NSButton {
+    let b = NSButton()
+    b.translatesAutoresizingMaskIntoConstraints = false
+    b.isBordered = false
+    b.title = ""
+    b.imagePosition = .imageOnly
+    b.wantsLayer = true
+    b.layer?.backgroundColor = cornerBtnFill.cgColor
+    b.layer?.cornerRadius = 8
+    b.layer?.borderWidth = 1
+    b.layer?.borderColor = NSColor(white: 1, alpha: 0.08).cgColor
+    let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+    b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(cfg)
+    b.contentTintColor = mallowDim
+    b.target = target
+    b.action = action
+    NSLayoutConstraint.activate([
+        b.widthAnchor.constraint(equalToConstant: 30),
+        b.heightAnchor.constraint(equalToConstant: 30),
+    ])
+    return b
+}
+
+/// The 52px titlebar overlay (opaque): centered filename + ● dot, and the style / export / info
+/// corner buttons on the right. Wires the buttons + the filename/dot refs onto `c`.
+func makeChromeBar(_ c: EditorController) -> NSView {
+    let bar = NSView()
+    bar.translatesAutoresizingMaskIntoConstraints = false
+    bar.wantsLayer = true
+    bar.layer?.backgroundColor = mallowBG.cgColor
+
+    let dot = NSTextField(labelWithString: "●")
+    dot.font = NSFont.systemFont(ofSize: 9)
+    dot.textColor = mallowDim
+    dot.isHidden = true
+    let name = NSTextField(labelWithString: "Untitled")
+    name.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+    name.textColor = mallowDim
+    name.lineBreakMode = .byTruncatingTail
+    let center = NSStackView(views: [dot, name])
+    center.spacing = 6
+    center.alignment = .centerY
+    center.translatesAutoresizingMaskIntoConstraints = false
+    bar.addSubview(center)
+
+    let right = NSStackView(views: [
+        cornerButton("textformat", c, #selector(EditorController.showStyleMenu(_:))),
+        cornerButton("arrow.down.doc", c, #selector(EditorController.exportHTML(_:))),
+        cornerButton("info.circle", c, #selector(EditorController.showInfo(_:))),
+    ])
+    right.spacing = 6
+    right.translatesAutoresizingMaskIntoConstraints = false
+    bar.addSubview(right)
+
+    NSLayoutConstraint.activate([
+        center.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
+        center.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+        center.widthAnchor.constraint(lessThanOrEqualTo: bar.widthAnchor, multiplier: 0.55),
+        right.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
+        right.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+    ])
+    c.titleLabel = name
+    c.dotView = dot
+    return bar
 }
 
 /// Every open document is its own window + controller; we retain them here and drop each on close
@@ -579,13 +688,20 @@ var editors: [EditorController] = []
 func makeEditor(_ content: String, _ path: String?) -> EditorController {
     let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
-        styleMask: [.titled, .closable, .resizable, .miniaturizable],
+        styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
         backing: .buffered, defer: false
     )
     window.center()
+    // Mallow chrome: transparent titlebar, hidden native title, dark bg, drag-anywhere.
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
+    window.backgroundColor = mallowBG
+    window.appearance = NSAppearance(named: .darkAqua)   // match the dark reference (light theme: TODO)
+    window.isMovableByWindowBackground = true
     let scroll = NSScrollView(frame: window.contentView!.bounds)
     scroll.autoresizingMask = [.width, .height]
     scroll.hasVerticalScroller = true
+    scroll.drawsBackground = false
     let textView = MarkdownTextView(frame: scroll.bounds)
     configureTextView(textView)
     textView.string = content
@@ -593,7 +709,16 @@ func makeEditor(_ content: String, _ path: String?) -> EditorController {
     scroll.documentView = textView
     window.contentView!.addSubview(scroll)
     let controller = EditorController(textView: textView, window: window)
-    controller.setPath(path)
+    // The Mallow-style titlebar overlay (centered filename + corner buttons), pinned to the top.
+    let chrome = makeChromeBar(controller)
+    window.contentView!.addSubview(chrome)
+    NSLayoutConstraint.activate([
+        chrome.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
+        chrome.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
+        chrome.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
+        chrome.heightAnchor.constraint(equalToConstant: 52),
+    ])
+    controller.setPath(path)   // refresh the chrome label now that it's wired
     editors.append(controller)
     window.makeKeyAndOrderFront(nil)
     return controller
