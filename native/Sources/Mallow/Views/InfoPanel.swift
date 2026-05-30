@@ -429,7 +429,7 @@ extension EditorController {
         pop.contentViewController = InfoPanelViewController(
             stats: stats, outline: outline, modified: modified, popover: pop,
             onJump: { [weak self] item in self?.jumpToOutline(item) })
-        configureDarkTransient(pop)   // .transient + dark appearance (shared with the other popovers)
+        configureTransient(pop)   // .transient; follows system appearance (shared with the other popovers)
 
         // Prefer the info button as the anchor; fall back to the window content's top-trailing.
         if let button = sender as? NSButton {

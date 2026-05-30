@@ -20,6 +20,18 @@ class HoverButton: NSButton {
     /// Override to restyle for the current `hovering` state. Default: nothing.
     func hoverChanged() {}
 
+    /// Re-apply any layer (CGColor) styling when the effective appearance flips (light↔dark). A CGColor
+    /// is a static snapshot of a resolved color — unlike an NSColor on `fillColor`/`textColor`, it does
+    /// NOT re-resolve when the appearance changes — so subclasses that push dynamic tokens onto their
+    /// layer must re-run that here. The re-apply runs inside the new appearance so the tokens resolve
+    /// against it. Default: nothing (subclasses with layer colors override).
+    func appearanceDidChange() {}
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance { self.appearanceDidChange() }
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)

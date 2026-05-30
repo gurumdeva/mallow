@@ -8,23 +8,24 @@
 
 import AppKit
 
-// MARK: - Dark transient popover
+// MARK: - Transient popover
 
-/// Apply Mallow's popover chrome — `.transient` (closes on outside click) + the dark appearance — to
-/// an existing popover. Split out from `darkPopover` for the info popover, whose content view-
+/// Apply Mallow's popover chrome — `.transient` (closes on outside click) — to an existing popover. No
+/// forced appearance: the popover follows the system, and its content uses the dynamic Theme tokens, so
+/// it adapts light/dark to match. Split out from `darkPopover` for the info popover, whose content view-
 /// controller holds a back-reference to the popover and so must be built before this is applied.
-func configureDarkTransient(_ p: NSPopover) {
+func configureTransient(_ p: NSPopover) {
     p.behavior = .transient
-    p.appearance = NSAppearance(named: .darkAqua)   // match Mallow's dark chrome
 }
 
-/// A `.transient`, dark-appearance NSPopover hosting `vc` — the shared shell behind the Text-Style,
-/// document-info, and rename popovers (each previously built these same three lines by hand). Callers
-/// still set `contentSize` and call `show(relativeTo:…)` themselves, since those vary per anchor.
+/// A `.transient` NSPopover hosting `vc` — the shared shell behind the Text-Style, document-info, and
+/// rename popovers (each previously built these same lines by hand). It follows the system appearance;
+/// its content's dynamic tokens do the light/dark work. Callers still set `contentSize` and call
+/// `show(relativeTo:…)` themselves, since those vary per anchor.
 func darkPopover(_ vc: NSViewController) -> NSPopover {
     let p = NSPopover()
     p.contentViewController = vc
-    configureDarkTransient(p)
+    configureTransient(p)
     return p
 }
 
