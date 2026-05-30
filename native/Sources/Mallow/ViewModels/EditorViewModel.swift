@@ -13,6 +13,7 @@ final class EditorViewModel {
     private(set) var baseline = ""
     private var blocks: [PBlock] = []           // cached parse (one parse per text change)
     private(set) var hiddenChars = Set<Int>()   // UTF-16 indices of collapsed syntax glyphs (read by the layout-manager delegate)
+    private(set) var bulletMarks = Set<Int>()   // UTF-16 indices of unordered `- ` dashes to render as `•` (glyph delegate)
     var focusMode = false                        // dim every block but the caret's
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
     var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
@@ -182,6 +183,20 @@ final class EditorViewModel {
         collector.hideThematicBreaks(blocks)   // the --- / *** / ___ source (a rule is drawn instead)
         collector.hideCodeBlockFences(blocks)  // the ``` opening/closing fence lines
 
+        // Unordered-list dashes to render as `•` (kept in the source; substituted as a glyph off the
+        // caret line, where the literal `- ` shows for editing).
+        var bullets = Set<Int>()
+        let grammar = MarkerGrammar(ns: ns)
+        for block in blocks where block.kindTag == "List" {
+            let bLo = byteToUTF16(s, block.range.start)
+            let bHi = min(byteToUTF16(s, block.range.end), total)
+            for d in grammar.bulletDashes(bLo, bHi)
+            where !(d >= caretLine.location && d < caretLine.location + caretLine.length) {
+                bullets.insert(d)
+            }
+        }
+        bulletMarks = bullets
+
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {
             let full = NSRange(location: 0, length: total)
@@ -299,6 +314,35 @@ private struct MarkerGrammar {
             lineStart = line.location + line.length
         }
         return keep
+    }
+
+    /// UTF-16 indices of unordered-bullet chars (`-`/`*`/`+`) in `[bLo, bHi)`, for glyph substitution
+    /// (`- ` kept as source, drawn as `•`). Mirrors markerPrefixEnd's prefix walk but records the bullet
+    /// char itself; ordered (`1.`) and the blockquote `>` are not bullets (the `>` prefix is skipped).
+    func bulletDashes(_ bLo: Int, _ bHi: Int) -> Set<Int> {
+        var dashes = Set<Int>()
+        var lineStart = bLo
+        while lineStart < bHi {
+            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+            let lineHi = min(line.location + line.length, bHi)
+            var i = line.location
+            while i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }   // indent
+            while i < lineHi {
+                let c = ns.character(at: i)
+                if c == 62 /* > */ {   // skip nested blockquote prefix(es)
+                    i += 1
+                    if i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }
+                    continue
+                }
+                if (c == 45 || c == 42 || c == 43), i + 1 < lineHi, isMarkerSpace(ns.character(at: i + 1)) {
+                    dashes.insert(i)
+                }
+                break   // the first non-quote marker char decides the line
+            }
+            if line.length == 0 { break }
+            lineStart = line.location + line.length
+        }
+        return dashes
     }
 }
 
