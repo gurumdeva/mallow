@@ -78,8 +78,8 @@ final class EditorViewModel {
     }
 
     private func font(for marks: [String]) -> NSFont {
-        var f = marks.contains("Code")
-            ? NSFont.monospacedSystemFont(ofSize: baseSize * zoomFactor, weight: .regular) : baseFont
+        var f = marks.contains("Code")   // inline code shrinks to 0.92em (CSS) in mono
+            ? NSFont.monospacedSystemFont(ofSize: baseSize * 0.92 * zoomFactor, weight: .regular) : baseFont
         if marks.contains("Strong") { f = fm.convert(f, toHaveTrait: .boldFontMask) }
         if marks.contains("Emphasis") { f = fm.convert(f, toHaveTrait: .italicFontMask) }
         return f
@@ -97,6 +97,9 @@ final class EditorViewModel {
             return NSRange(location: lo, length: hi - lo)
         }
 
+        var quotes: [NSRange] = []   // blockquote ranges → 3px left bar drawn by the text view
+        var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
+
         storage.beginEditing()
         storage.setAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor,
                                .paragraphStyle: mallowBodyParagraphStyle],
@@ -111,16 +114,17 @@ final class EditorViewModel {
                 continue  // heading text is uniform — no inline pass
             case "CodeBlock":
                 if let nr = nsRange(block.range) {
-                    storage.addAttribute(.backgroundColor, value: NSColor.quaternaryLabelColor, range: nr)
+                    storage.addAttribute(.backgroundColor, value: mallowElevated, range: nr)   // solid #2c2c2e card
+                    storage.addAttribute(.paragraphStyle, value: mallowCodeParagraphStyle, range: nr)
                 }
             case "BlockQuote":
                 if let nr = nsRange(block.range) {
-                    storage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: nr)
+                    storage.addAttribute(.foregroundColor, value: mallowDim, range: nr)         // #98989d, not white-α
+                    storage.addAttribute(.paragraphStyle, value: mallowQuoteParagraphStyle, range: nr)
+                    quotes.append(nr)
                 }
             case "ThematicBreak":
-                if let nr = nsRange(block.range) {
-                    storage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: nr)
-                }
+                if let nr = nsRange(block.range) { rules.append(nr) }   // dashes hidden; a rule is drawn instead
             default:
                 break
             }
@@ -132,7 +136,7 @@ final class EditorViewModel {
                                          value: NSUnderlineStyle.single.rawValue, range: nr)
                 }
                 if inline.marks.contains("Code") {
-                    storage.addAttribute(.backgroundColor, value: NSColor.quaternaryLabelColor, range: nr)
+                    storage.addAttribute(.backgroundColor, value: mallowElevated, range: nr)   // solid #2c2c2e pill
                 }
                 if inline.kindTag == "Link" {
                     storage.addAttribute(.foregroundColor, value: NSColor.linkColor, range: nr)
@@ -141,6 +145,9 @@ final class EditorViewModel {
             }
         }
         storage.endEditing()
+        textView.quoteBars = quotes        // hand the decoration ranges to the view's draw pass
+        textView.ruleLines = rules
+        textView.needsDisplay = true
     }
 
     /// Syntax chars are those inside a hideable block but NOT covered by any inline run (the `**`,
@@ -232,8 +239,8 @@ final class EditorViewModel {
             let covered = block.inlines
                 .map { (byteToUTF16(s, $0.range.start), byteToUTF16(s, $0.range.end)) }
                 .sorted { $0.0 < $1.0 }
-            let keep = (block.kindTag == "List" || block.kindTag == "BlockQuote")
-                ? leadingMarkers(bLo, bHi) : Set<Int>()
+            // Lists keep their leading bullet/number; blockquotes hide the `>` (the drawn bar replaces it).
+            let keep = (block.kindTag == "List") ? leadingMarkers(bLo, bHi) : Set<Int>()
             var cursor = bLo
             for (lo, hi) in covered {
                 if lo > cursor { collapse(cursor, lo, keep: keep) }
@@ -253,6 +260,15 @@ final class EditorViewModel {
                 var j = hi - 1
                 while j >= i && ns.character(at: j) == 96 { hideChar(j); j -= 1 }
             }
+        }
+
+        // Thematic breaks: collapse the --- / *** / ___ source so only the drawn rule shows (revealed
+        // again when the caret is on that line, like every other hidden marker).
+        for block in blocks where block.kindTag == "ThematicBreak" {
+            let lo = byteToUTF16(s, block.range.start)
+            let hi = min(byteToUTF16(s, block.range.end), total)
+            var i = lo
+            while i < hi { hideChar(i); i += 1 }
         }
 
         hiddenChars = hidden

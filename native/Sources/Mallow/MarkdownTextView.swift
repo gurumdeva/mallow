@@ -6,11 +6,44 @@ import AppKit
 import UniformTypeIdentifiers
 
 final class MarkdownTextView: NSTextView {
+    // Decoration ranges the view-model recomputes each refresh (UTF-16). Blockquote ranges get a 3px
+    // left bar; thematic-break ranges get a 1px horizontal rule (their source dashes are hidden), the
+    // two block decorations NSTextView can't express as text attributes. Redraw when they change.
+    var quoteBars: [NSRange] = [] { didSet { needsDisplay = true } }
+    var ruleLines: [NSRange] = [] { didSet { needsDisplay = true } }
+
     // ImageInsert: accept dragged image files / image data so a Finder drag or an app dropping image
     // bytes lands here (NSTextView already accepts plain text). Registered once the view is in a window.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         registerForDraggedTypes([.fileURL, .png, .tiff])
+    }
+
+    // Draw the block decorations under the text: the blockquote bar and the thematic-break rule.
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard let lm = layoutManager, let tc = textContainer else { return }
+        let origin = textContainerOrigin
+
+        mallowFaint.setFill()
+        for r in quoteBars {
+            let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+            guard gr.length > 0 else { continue }
+            let box = lm.boundingRect(forGlyphRange: gr, in: tc)
+            let bar = NSRect(x: origin.x + 6, y: origin.y + box.minY + 2,
+                             width: 3, height: max(1, box.height - 4))
+            NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
+        }
+
+        mallowBorderColor.setFill()
+        let glyphCount = lm.numberOfGlyphs
+        for r in ruleLines where glyphCount > 0 {
+            let gi = min(lm.glyphIndexForCharacter(at: r.location), glyphCount - 1)
+            var eff = NSRange()
+            let line = lm.lineFragmentRect(forGlyphAt: gi, effectiveRange: &eff)
+            let y = (origin.y + line.midY).rounded() + 0.5   // crisp 1px hairline
+            NSRect(x: origin.x, y: y, width: tc.size.width - 8, height: 1).fill()
+        }
     }
 
     // Merged paste override for two features:
