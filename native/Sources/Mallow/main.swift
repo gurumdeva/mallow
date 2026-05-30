@@ -27,7 +27,7 @@ appItem.submenu = appMenu
 
 let fileItem = NSMenuItem()
 mainMenu.addItem(fileItem)
-let fileMenu = NSMenu(title: "File")
+let fileMenu = NSMenu(title: L.t("menu.file"))
 func addFile(_ title: String, _ action: Selector, _ key: String,
              _ mods: NSEvent.ModifierFlags = .command, target: AnyObject? = nil) {
     let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -54,7 +54,7 @@ fileItem.submenu = fileMenu
 // Find (⌘F) opens the native find bar (`usesFindBar`), which includes replace.
 let editItem = NSMenuItem()
 mainMenu.addItem(editItem)
-let editMenu = NSMenu(title: "Edit")
+let editMenu = NSMenu(title: L.t("menu.edit"))
 func addEdit(_ title: String, _ sel: Selector, _ key: String,
             _ mods: NSEvent.ModifierFlags = .command, tag: Int = 0) {
     let item = NSMenuItem(title: title, action: sel, keyEquivalent: key)
@@ -83,7 +83,7 @@ editItem.submenu = editMenu
 
 let formatItem = NSMenuItem()
 mainMenu.addItem(formatItem)
-let formatMenu = NSMenu(title: "Format")
+let formatMenu = NSMenu(title: L.t("menu.format"))
 func addFmt(_ title: String, _ action: Selector, _ key: String = "",
             _ mods: NSEvent.ModifierFlags = .command) {
     let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -111,7 +111,7 @@ formatItem.submenu = formatMenu
 
 let viewItem = NSMenuItem()
 mainMenu.addItem(viewItem)
-let viewMenu = NSMenu(title: "View")   // internal id — keep literal "View"
+let viewMenu = NSMenu(title: L.t("menu.view"))   // top-level title (no longer looked up by literal)
 let focusItem = NSMenuItem(title: L.t("menu.focusMode"),
                           action: #selector(EditorController.toggleFocusMode(_:)), keyEquivalent: "f")
 focusItem.keyEquivalentModifierMask = [.command, .control]

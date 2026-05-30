@@ -326,7 +326,14 @@ final class EditorViewModel {
 
     private func replace(with edit: IEditResult) {
         guard let textView else { return }
-        textView.string = edit.text
+        // Undoable replace — NOT `textView.string = …` (that registers no undo AND wipes the existing
+        // undo stack). Route through the text view's edit path so ⌘Z reverts an engine command (bold,
+        // heading, list, …) like any typing, and prior typing-undo history is preserved.
+        let full = NSRange(location: 0, length: (textView.string as NSString).length)
+        if textView.shouldChangeText(in: full, replacementString: edit.text) {
+            textView.textStorage?.replaceCharacters(in: full, with: edit.text)
+            textView.didChangeText()
+        }
         let a = charToUTF16(edit.text, edit.selection.anchor)
         let h = charToUTF16(edit.text, edit.selection.head)
         textView.setSelectedRange(NSRange(location: min(a, h), length: abs(h - a)))
