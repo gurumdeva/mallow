@@ -5,7 +5,6 @@
 // storage; the EditorController owns the window/views and forwards delegate + menu events here.
 
 import AppKit
-import CInkstone
 
 final class EditorViewModel {
     private weak var textView: MarkdownTextView?
@@ -16,6 +15,7 @@ final class EditorViewModel {
     private(set) var hiddenChars = Set<Int>()   // UTF-16 indices of collapsed syntax glyphs (read by the layout-manager delegate)
     var focusMode = false                        // dim every block but the caret's
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
+    var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
     var zoomFactor: CGFloat = 1                   // text zoom (View ▸ Zoom); per-window, resets each launch
 
     private let baseSize: CGFloat = 16   // Mallow body size; SANS (mono only for code)
@@ -30,7 +30,7 @@ final class EditorViewModel {
 
     // MARK: derived state for the chrome
 
-    var isDirty: Bool { inkstone_is_dirty(textView?.string ?? "", baseline) }
+    var isDirty: Bool { inkIsDirty(textView?.string ?? "", baseline) }
     var displayName: String { (filePath as NSString?)?.lastPathComponent ?? L.t("doc.untitled") }
     /// `displayName` without a trailing `.md` (export filename / document title). Suffix-only — a blind
     /// `.replacingOccurrences(of:".md")` would mangle names like "notes.md.md" or "a.md.txt".
@@ -46,8 +46,7 @@ final class EditorViewModel {
 
     func refresh() {
         guard let textView else { return }
-        blocks = (try? JSONDecoder().decode([PBlock].self,
-                                            from: Data(inkParse(textView.string).utf8))) ?? []
+        blocks = inkParseBlocks(textView.string)
         restyle()
         recomputeHidden()
         applyFocus()
@@ -67,8 +66,8 @@ final class EditorViewModel {
         let s = textView.string
         let nsLen = (s as NSString).length
         let caretChar = utf16ToChar(s, textView.selectedRange().location)
-        let caretByte = inkstone_char_to_byte(s, caretChar)
-        let json = inkTake(inkstone_focus_decoration(s, caretByte))
+        let caretByte = inkCharToByte(s, caretChar)
+        let json = inkFocusDecoration(s, caretByte)
         guard let deco = try? JSONDecoder().decode(PDecoration.self, from: Data(json.utf8)) else {
             return  // "null" — caret between blocks; leave the document fully styled
         }
@@ -161,9 +160,9 @@ final class EditorViewModel {
         textView.needsDisplay = true
     }
 
-    /// Syntax chars are those inside a hideable block but NOT covered by any inline run (the `**`,
-    /// `#`, `- `, `> ` gaps). Collapse them, except newlines and the line the caret is on.
-    private static func hideable(_ tag: String) -> Bool {
+    /// Which block kinds have hideable syntax (the `**`, `#`, `- `, `> ` gaps collapsed by
+    /// `hideBlockGaps`). `fileprivate` so the hide-pass collector below can read it.
+    fileprivate static func hideable(_ tag: String) -> Bool {
         tag == "Paragraph" || tag == "Heading" || tag == "List" || tag == "BlockQuote"
     }
 
@@ -174,134 +173,16 @@ final class EditorViewModel {
         let total = ns.length
         let caretLine = total > 0 ? ns.lineRange(for: textView.selectedRange())
                                   : NSRange(location: 0, length: 0)
-        var hidden = Set<Int>()
 
-        func hideChar(_ i: Int) {
-            guard i >= 0, i < total else { return }
-            let onCaretLine = i >= caretLine.location && i < caretLine.location + caretLine.length
-            if !onCaretLine && ns.character(at: i) != 10 /* not a newline */ { hidden.insert(i) }
-        }
-        func collapse(_ lo: Int, _ hi: Int, keep: Set<Int>) {
-            var i = max(0, lo)
-            let end = min(hi, total)
-            while i < end {
-                if !keep.contains(i) { hideChar(i) }
-                i += 1
-            }
-        }
+        // Build the collector (source + caret context), run the four hide-passes into it, then read the
+        // accumulated set back out. Pass order is irrelevant (each pass only inserts into the same set).
+        var collector = HiddenSyntaxCollector(s: s, ns: ns, total: total, caretLine: caretLine)
+        collector.hideBlockGaps(blocks)        // marker/`#`/`**` gaps in paragraphs/headings/lists/quotes
+        collector.hideInlineCodeFences(blocks) // the ` backtick runs around inline code
+        collector.hideThematicBreaks(blocks)   // the --- / *** / ___ source (a rule is drawn instead)
+        collector.hideCodeBlockFences(blocks)  // the ``` opening/closing fence lines
 
-        // List/BlockQuote: the line-leading marker must STAY visible — keep ONLY the marker itself
-        // (matched by grammar), so a delimiter opening the first inline (e.g. `- **bold**`) still
-        // collapses.
-        func isMarkerSpace(_ c: unichar) -> Bool { c == 32 || c == 9 }
-        func skipTaskBox(_ start: Int, _ lineHi: Int) -> Int {
-            guard start + 3 < lineHi, ns.character(at: start) == 91 /* [ */ else { return start }
-            let inner = ns.character(at: start + 1)
-            guard inner == 32 || inner == 120 || inner == 88 /* space/x/X */,
-                  ns.character(at: start + 2) == 93 /* ] */,
-                  isMarkerSpace(ns.character(at: start + 3)) else { return start }
-            return start + 4
-        }
-        func markerPrefixEnd(_ lineLo: Int, _ lineHi: Int) -> Int {
-            var i = lineLo
-            while i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }  // indent
-            while i < lineHi {
-                let c = ns.character(at: i)
-                if c == 62 /* > */ {  // blockquote (may nest: `> > `, `> - `)
-                    i += 1
-                    if i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }
-                    continue
-                }
-                if c == 45 || c == 42 || c == 43 /* - * + */,
-                   i + 1 < lineHi, isMarkerSpace(ns.character(at: i + 1)) {
-                    return skipTaskBox(i + 2, lineHi)  // bullet ends the marker
-                }
-                if c >= 48 && c <= 57 /* digit */ {  // ordered: N. / N)
-                    var j = i
-                    while j < lineHi && ns.character(at: j) >= 48 && ns.character(at: j) <= 57 { j += 1 }
-                    if j < lineHi, ns.character(at: j) == 46 || ns.character(at: j) == 41 /* . ) */,
-                       j + 1 < lineHi, isMarkerSpace(ns.character(at: j + 1)) {
-                        return skipTaskBox(j + 2, lineHi)
-                    }
-                    return i  // a bare number is content, not a marker
-                }
-                return i
-            }
-            return min(i, lineHi)
-        }
-        func leadingMarkers(_ bLo: Int, _ bHi: Int) -> Set<Int> {
-            var keep = Set<Int>()
-            var lineStart = bLo
-            while lineStart < bHi {
-                let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
-                let lineHi = min(line.location + line.length, bHi)
-                var i = line.location
-                let markerEnd = markerPrefixEnd(line.location, lineHi)
-                while i < markerEnd { keep.insert(i); i += 1 }
-                if line.length == 0 { break }
-                lineStart = line.location + line.length
-            }
-            return keep
-        }
-
-        for block in blocks where Self.hideable(block.kindTag) {
-            let bLo = byteToUTF16(s, block.range.start)
-            let bHi = min(byteToUTF16(s, block.range.end), total)
-            let covered = block.inlines
-                .map { (byteToUTF16(s, $0.range.start), byteToUTF16(s, $0.range.end)) }
-                .sorted { $0.0 < $1.0 }
-            // Lists keep their leading bullet/number; blockquotes hide the `>` (the drawn bar replaces it).
-            let keep = (block.kindTag == "List") ? leadingMarkers(bLo, bHi) : Set<Int>()
-            var cursor = bLo
-            for (lo, hi) in covered {
-                if lo > cursor { collapse(cursor, lo, keep: keep) }
-                cursor = max(cursor, hi)
-            }
-            if cursor < bHi { collapse(cursor, bHi, keep: keep) }
-        }
-
-        // Inline code's source range includes its backtick fences; collapse the leading/trailing
-        // ` runs so only the code text shows (revealed on the caret line like other syntax).
-        for block in blocks {
-            for inline in block.inlines where inline.kindTag == "Code" {
-                let lo = byteToUTF16(s, inline.range.start)
-                let hi = min(byteToUTF16(s, inline.range.end), total)
-                var i = lo
-                while i < hi && ns.character(at: i) == 96 /* ` */ { hideChar(i); i += 1 }
-                var j = hi - 1
-                while j >= i && ns.character(at: j) == 96 { hideChar(j); j -= 1 }
-            }
-        }
-
-        // Thematic breaks: collapse the --- / *** / ___ source so only the drawn rule shows (revealed
-        // again when the caret is on that line, like every other hidden marker).
-        for block in blocks where block.kindTag == "ThematicBreak" {
-            let lo = byteToUTF16(s, block.range.start)
-            let hi = min(byteToUTF16(s, block.range.end), total)
-            var i = lo
-            while i < hi { hideChar(i); i += 1 }
-        }
-
-        // Code-block fences: hide the ``` / ```lang opening + closing lines so only the code shows on
-        // its tint (the fence lines reveal again when the caret is on them). Code content is untouched.
-        for block in blocks where block.kindTag == "CodeBlock" {
-            let bLo = byteToUTF16(s, block.range.start)
-            let bHi = min(byteToUTF16(s, block.range.end), total)
-            var lineStart = bLo
-            while lineStart < bHi {
-                let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
-                let lineHi = min(line.location + line.length, bHi)
-                var i = line.location
-                while i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }   // skip indent
-                let isFence = i + 2 < lineHi
-                    && ns.character(at: i) == 96 && ns.character(at: i + 1) == 96 && ns.character(at: i + 2) == 96
-                if isFence { var j = line.location; while j < lineHi { hideChar(j); j += 1 } }
-                if line.length == 0 { break }
-                lineStart = line.location + line.length
-            }
-        }
-
-        hiddenChars = hidden
+        hiddenChars = collector.hidden
         if let lm = textView.layoutManager {
             let full = NSRange(location: 0, length: total)
             lm.invalidateGlyphs(forCharacterRange: full, changeInLength: 0, actualCharacterRange: nil)
@@ -330,7 +211,7 @@ final class EditorViewModel {
         let anchor = utf16ToChar(s, r.location)
         let head = utf16ToChar(s, r.location + r.length)
         guard let edit = try? JSONDecoder().decode(
-            IEditResult.self, from: Data(inkTake(inkstone_set_heading(s, anchor, head, level)).utf8)
+            IEditResult.self, from: Data(inkSetHeading(s, anchor, head, level).utf8)
         ) else { return }
         replace(with: edit)
     }
@@ -349,5 +230,179 @@ final class EditorViewModel {
         let h = charToUTF16(edit.text, edit.selection.head)
         textView.setSelectedRange(NSRange(location: min(a, h), length: abs(h - a)))
         refresh()
+    }
+}
+
+// MARK: - Hide-syntax grammar + passes (extracted from EditorViewModel.recomputeHidden)
+
+/// The line-leading marker grammar over an NSString: where a list bullet / ordered number / nested
+/// blockquote prefix ends, and (for lists) the exact set of marker chars to KEEP visible. Pure — it
+/// only reads the buffer; it never decides what to hide. The marker must stay visible so a delimiter
+/// opening the first inline (e.g. `- **bold**`) still collapses while the `- ` does not.
+private struct MarkerGrammar {
+    let ns: NSString
+
+    func isMarkerSpace(_ c: unichar) -> Bool { c == 32 || c == 9 }
+
+    /// If `start` opens a task-list checkbox `[ ] ` / `[x] ` / `[X] `, return the index past it (so the
+    /// box stays visible as part of the marker); otherwise return `start` unchanged.
+    func skipTaskBox(_ start: Int, _ lineHi: Int) -> Int {
+        guard start + 3 < lineHi, ns.character(at: start) == 91 /* [ */ else { return start }
+        let inner = ns.character(at: start + 1)
+        guard inner == 32 || inner == 120 || inner == 88 /* space/x/X */,
+              ns.character(at: start + 2) == 93 /* ] */,
+              isMarkerSpace(ns.character(at: start + 3)) else { return start }
+        return start + 4
+    }
+
+    /// The index where the line's leading marker prefix ends (indent + bullet/number/quote markers,
+    /// incl. a task-box). A bare number with no `.`/`)` delimiter is content, not a marker.
+    func markerPrefixEnd(_ lineLo: Int, _ lineHi: Int) -> Int {
+        var i = lineLo
+        while i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }  // indent
+        while i < lineHi {
+            let c = ns.character(at: i)
+            if c == 62 /* > */ {  // blockquote (may nest: `> > `, `> - `)
+                i += 1
+                if i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }
+                continue
+            }
+            if c == 45 || c == 42 || c == 43 /* - * + */,
+               i + 1 < lineHi, isMarkerSpace(ns.character(at: i + 1)) {
+                return skipTaskBox(i + 2, lineHi)  // bullet ends the marker
+            }
+            if c >= 48 && c <= 57 /* digit */ {  // ordered: N. / N)
+                var j = i
+                while j < lineHi && ns.character(at: j) >= 48 && ns.character(at: j) <= 57 { j += 1 }
+                if j < lineHi, ns.character(at: j) == 46 || ns.character(at: j) == 41 /* . ) */,
+                   j + 1 < lineHi, isMarkerSpace(ns.character(at: j + 1)) {
+                    return skipTaskBox(j + 2, lineHi)
+                }
+                return i  // a bare number is content, not a marker
+            }
+            return i
+        }
+        return min(i, lineHi)
+    }
+
+    /// The set of UTF-16 indices in `[bLo, bHi)` that are line-leading marker chars (kept visible).
+    func leadingMarkers(_ bLo: Int, _ bHi: Int) -> Set<Int> {
+        var keep = Set<Int>()
+        var lineStart = bLo
+        while lineStart < bHi {
+            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+            let lineHi = min(line.location + line.length, bHi)
+            var i = line.location
+            let markerEnd = markerPrefixEnd(line.location, lineHi)
+            while i < markerEnd { keep.insert(i); i += 1 }
+            if line.length == 0 { break }
+            lineStart = line.location + line.length
+        }
+        return keep
+    }
+}
+
+/// Accumulates the UTF-16 indices of syntax glyphs to collapse, for one `recomputeHidden` run. Holds
+/// the source + caret context and exposes the four hide-passes; each pass only inserts into `hidden`,
+/// so they may run in any order. A char is collapsed unless it's a newline or on the caret's own line
+/// (which stays fully revealed for editing) — see `hideChar`.
+private struct HiddenSyntaxCollector {
+    let s: String
+    let ns: NSString
+    let total: Int
+    let caretLine: NSRange
+    let grammar: MarkerGrammar
+    var hidden = Set<Int>()
+
+    init(s: String, ns: NSString, total: Int, caretLine: NSRange) {
+        self.s = s
+        self.ns = ns
+        self.total = total
+        self.caretLine = caretLine
+        self.grammar = MarkerGrammar(ns: ns)
+    }
+
+    /// Collapse char `i`, except newlines and any char on the caret's current line.
+    private mutating func hideChar(_ i: Int) {
+        guard i >= 0, i < total else { return }
+        let onCaretLine = i >= caretLine.location && i < caretLine.location + caretLine.length
+        if !onCaretLine && ns.character(at: i) != 10 /* not a newline */ { hidden.insert(i) }
+    }
+
+    /// Collapse every char in `[lo, hi)` not in `keep` (the kept line-leading markers).
+    private mutating func collapse(_ lo: Int, _ hi: Int, keep: Set<Int>) {
+        var i = max(0, lo)
+        let end = min(hi, total)
+        while i < end {
+            if !keep.contains(i) { hideChar(i) }
+            i += 1
+        }
+    }
+
+    /// Syntax chars are those inside a hideable block but NOT covered by any inline run (the `**`, `#`,
+    /// `- `, `> ` gaps). Lists keep their leading bullet/number; blockquotes hide the `>` (the drawn
+    /// bar replaces it).
+    mutating func hideBlockGaps(_ blocks: [PBlock]) {
+        for block in blocks where EditorViewModel.hideable(block.kindTag) {
+            let bLo = byteToUTF16(s, block.range.start)
+            let bHi = min(byteToUTF16(s, block.range.end), total)
+            let covered = block.inlines
+                .map { (byteToUTF16(s, $0.range.start), byteToUTF16(s, $0.range.end)) }
+                .sorted { $0.0 < $1.0 }
+            let keep = (block.kindTag == "List") ? grammar.leadingMarkers(bLo, bHi) : Set<Int>()
+            var cursor = bLo
+            for (lo, hi) in covered {
+                if lo > cursor { collapse(cursor, lo, keep: keep) }
+                cursor = max(cursor, hi)
+            }
+            if cursor < bHi { collapse(cursor, bHi, keep: keep) }
+        }
+    }
+
+    /// Inline code's source range includes its backtick fences; collapse the leading/trailing ` runs so
+    /// only the code text shows (revealed on the caret line like other syntax).
+    mutating func hideInlineCodeFences(_ blocks: [PBlock]) {
+        for block in blocks {
+            for inline in block.inlines where inline.kindTag == "Code" {
+                let lo = byteToUTF16(s, inline.range.start)
+                let hi = min(byteToUTF16(s, inline.range.end), total)
+                var i = lo
+                while i < hi && ns.character(at: i) == 96 /* ` */ { hideChar(i); i += 1 }
+                var j = hi - 1
+                while j >= i && ns.character(at: j) == 96 { hideChar(j); j -= 1 }
+            }
+        }
+    }
+
+    /// Thematic breaks: collapse the --- / *** / ___ source so only the drawn rule shows (revealed
+    /// again when the caret is on that line, like every other hidden marker).
+    mutating func hideThematicBreaks(_ blocks: [PBlock]) {
+        for block in blocks where block.kindTag == "ThematicBreak" {
+            let lo = byteToUTF16(s, block.range.start)
+            let hi = min(byteToUTF16(s, block.range.end), total)
+            var i = lo
+            while i < hi { hideChar(i); i += 1 }
+        }
+    }
+
+    /// Code-block fences: hide the ``` / ```lang opening + closing lines so only the code shows on its
+    /// tint (the fence lines reveal again when the caret is on them). Code content is untouched.
+    mutating func hideCodeBlockFences(_ blocks: [PBlock]) {
+        for block in blocks where block.kindTag == "CodeBlock" {
+            let bLo = byteToUTF16(s, block.range.start)
+            let bHi = min(byteToUTF16(s, block.range.end), total)
+            var lineStart = bLo
+            while lineStart < bHi {
+                let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+                let lineHi = min(line.location + line.length, bHi)
+                var i = line.location
+                while i < lineHi && grammar.isMarkerSpace(ns.character(at: i)) { i += 1 }   // skip indent
+                let isFence = i + 2 < lineHi
+                    && ns.character(at: i) == 96 && ns.character(at: i + 1) == 96 && ns.character(at: i + 2) == 96
+                if isFence { var j = line.location; while j < lineHi { hideChar(j); j += 1 } }
+                if line.length == 0 { break }
+                lineStart = line.location + line.length
+            }
+        }
     }
 }

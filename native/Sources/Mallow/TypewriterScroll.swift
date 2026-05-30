@@ -8,9 +8,9 @@
 // Markdown-as-truth is unaffected — this only scrolls; it never touches the buffer. Like the
 // reference, we skip while an IME has marked (composing) text so we don't fight the candidate window.
 //
-// Wiring lives on EditorController (the responder in the menu chain). The on/off flag is a stored
-// property the integrator adds in WindowFactory/EditorController (see sharedChanges), since an
-// extension can't add stored state; textViewDidChangeSelection calls back in here while on.
+// Wiring lives on EditorController (the responder in the menu chain). The on/off flag is the
+// per-window `vm.typewriterOn` (alongside the other per-window feature flags on the view-model);
+// textViewDidChangeSelection calls back in here while on.
 
 import AppKit
 
@@ -21,9 +21,9 @@ extension EditorController {
     /// enable centres the caret line immediately so "this line" jumps to the middle right away
     /// (matching the reference's setTypewriter → centerCaretNow; it doesn't wait for the next move).
     @objc func toggleTypewriter(_ sender: Any?) {
-        typewriterOn.toggle()
-        (sender as? NSMenuItem)?.state = typewriterOn ? .on : .off
-        if typewriterOn { centerCaretLine() }
+        vm.typewriterOn.toggle()
+        (sender as? NSMenuItem)?.state = vm.typewriterOn ? .on : .off
+        if vm.typewriterOn { centerCaretLine() }
     }
 
     // MARK: centring (called on enable, and from textViewDidChangeSelection while on)
@@ -33,7 +33,7 @@ extension EditorController {
     /// buffer swap) — all mirroring the reference's guards. Only scrolls when the gap is ≥ 1pt so a
     /// caret already near centre doesn't jitter.
     func centerCaretLine() {
-        guard typewriterOn else { return }
+        guard vm.typewriterOn else { return }
         // Skip during IME marked text — scrolling now would jump the candidate window (view.composing).
         guard !textView.hasMarkedText() else { return }
         guard let layoutManager = textView.layoutManager,

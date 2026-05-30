@@ -4,14 +4,21 @@
 
 import AppKit
 
+/// URL of a file named `name` inside Application Support/MallowNative, creating that directory if
+/// needed. Every per-app persisted file (recent.json, window.json, …) sits here, so the dir-resolve +
+/// createDirectory lives in one place. Falls back to the home directory on the (effectively impossible)
+/// chance Application Support can't be located, so callers always get a usable URL.
+func mallowSupportFile(_ name: String) -> URL {
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? FileManager.default.homeDirectoryForCurrentUser
+    let dir = base.appendingPathComponent("MallowNative", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir.appendingPathComponent(name)
+}
+
 enum RecentFiles {
     static let maxCount = 5
-    private static var storeURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MallowNative", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("recent.json")
-    }
+    private static var storeURL: URL { mallowSupportFile("recent.json") }
     /// Most-recent-first, with paths that no longer exist on disk filtered out.
     static func list() -> [String] {
         guard let data = try? Data(contentsOf: storeURL),

@@ -14,13 +14,30 @@ func inkTake(_ p: UnsafeMutablePointer<CChar>?) -> String {
     return String(cString: p)
 }
 func inkParse(_ s: String) -> String { inkTake(inkstone_parse_json(s)) }
+/// Parse `s` and decode the engine's block JSON into the UI model. The decode-or-empty idiom is
+/// shared by everyone who needs the block tree (the view-model's render pipeline, the info-panel
+/// outline), so it lives here behind the seam rather than being duplicated at each call site.
+func inkParseBlocks(_ s: String) -> [PBlock] {
+    (try? JSONDecoder().decode([PBlock].self, from: Data(inkParse(s).utf8))) ?? []
+}
 func inkCommand(_ name: String, _ s: String, _ anchor: Int, _ head: Int) -> String {
     inkTake(inkstone_apply_command(name, s, anchor, head))
 }
+/// Set the heading level of the block(s) covering [anchor, head] (char indices); level 0 = body.
+func inkSetHeading(_ s: String, _ anchor: Int, _ head: Int, _ level: UInt8) -> String {
+    inkTake(inkstone_set_heading(s, anchor, head, level))
+}
 func inkRenderHtml(_ s: String, _ title: String) -> String { inkTake(inkstone_render_html(s, title)) }
 /// Engine content-equality (NOT a debounced flag): true when `current` differs from `baseline`.
-/// Used by external-reload's disk-vs-baseline check (the dirty dot uses inkstone_is_dirty directly).
+/// Used by the dirty dot + external-reload's disk-vs-baseline check.
 func inkIsDirty(_ current: String, _ baseline: String) -> Bool { inkstone_is_dirty(current, baseline) }
+
+// MARK: focus mode + offset queries that the engine answers (kept behind the seam too).
+
+/// Byte offset of char index `ch` in `s` (the engine's source indexing; used to feed byte-based queries).
+func inkCharToByte(_ s: String, _ ch: Int) -> Int { inkstone_char_to_byte(s, ch) }
+/// The focus-mode decoration JSON for the block at source byte `caret` ("null" when between blocks).
+func inkFocusDecoration(_ s: String, _ caret: Int) -> String { inkTake(inkstone_focus_decoration(s, caret)) }
 
 // MARK: Offset bridges — Inkstone uses source BYTE ranges (parse) / CHAR indices (commands);
 // NSTextView uses UTF-16 (NSRange). These convert between the three indexings.
