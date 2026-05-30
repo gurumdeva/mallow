@@ -15,10 +15,13 @@ final class EditorViewModel {
     private var blocks: [PBlock] = []           // cached parse (one parse per text change)
     private(set) var hiddenChars = Set<Int>()   // UTF-16 indices of collapsed syntax glyphs (read by the layout-manager delegate)
     var focusMode = false                        // dim every block but the caret's
+    var keepOnTop = false                         // pin this window above other apps (transient, per-window)
+    var zoomFactor: CGFloat = 1                   // text zoom (View ▸ Zoom); per-window, resets each launch
 
     private let baseSize: CGFloat = 16   // Mallow body size; SANS (mono only for code)
     private let fm = NSFontManager.shared
-    private lazy var baseFont = NSFont.systemFont(ofSize: baseSize, weight: .regular)
+    // Computed (not a stored lazy) so it always reflects the current zoomFactor.
+    private var baseFont: NSFont { NSFont.systemFont(ofSize: baseSize * zoomFactor, weight: .regular) }
 
     init(textView: MarkdownTextView) {
         self.textView = textView
@@ -28,7 +31,7 @@ final class EditorViewModel {
     // MARK: derived state for the chrome
 
     var isDirty: Bool { inkstone_is_dirty(textView?.string ?? "", baseline) }
-    var displayName: String { (filePath as NSString?)?.lastPathComponent ?? "Untitled" }
+    var displayName: String { (filePath as NSString?)?.lastPathComponent ?? L.t("doc.untitled") }
 
     func setPath(_ path: String?) { filePath = path }
     func markSaved(path: String, content: String) { filePath = path; baseline = content }
@@ -76,7 +79,7 @@ final class EditorViewModel {
 
     private func font(for marks: [String]) -> NSFont {
         var f = marks.contains("Code")
-            ? NSFont.monospacedSystemFont(ofSize: baseSize, weight: .regular) : baseFont
+            ? NSFont.monospacedSystemFont(ofSize: baseSize * zoomFactor, weight: .regular) : baseFont
         if marks.contains("Strong") { f = fm.convert(f, toHaveTrait: .boldFontMask) }
         if marks.contains("Emphasis") { f = fm.convert(f, toHaveTrait: .italicFontMask) }
         return f
@@ -101,7 +104,7 @@ final class EditorViewModel {
             switch block.kindTag {
             case "Heading":
                 if let level = block.headingLevel, let nr = nsRange(block.range) {
-                    let hz: CGFloat = level == 1 ? 28 : level == 2 ? 22 : level == 3 ? 18 : 16  // Mallow sizes
+                    let hz: CGFloat = (level == 1 ? 28 : level == 2 ? 22 : level == 3 ? 18 : 16) * zoomFactor  // Mallow sizes × zoom
                     storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: hz), range: nr)
                 }
                 continue  // heading text is uniform — no inline pass

@@ -18,6 +18,9 @@ func inkCommand(_ name: String, _ s: String, _ anchor: Int, _ head: Int) -> Stri
     inkTake(inkstone_apply_command(name, s, anchor, head))
 }
 func inkRenderHtml(_ s: String, _ title: String) -> String { inkTake(inkstone_render_html(s, title)) }
+/// Engine content-equality (NOT a debounced flag): true when `current` differs from `baseline`.
+/// Used by external-reload's disk-vs-baseline check (the dirty dot uses inkstone_is_dirty directly).
+func inkIsDirty(_ current: String, _ baseline: String) -> Bool { inkstone_is_dirty(current, baseline) }
 
 // MARK: Offset bridges — Inkstone uses source BYTE ranges (parse) / CHAR indices (commands);
 // NSTextView uses UTF-16 (NSRange). These convert between the three indexings.

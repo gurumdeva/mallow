@@ -22,7 +22,7 @@ let mainMenu = NSMenu()
 let appItem = NSMenuItem()
 mainMenu.addItem(appItem)
 let appMenu = NSMenu()
-appMenu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+appMenu.addItem(withTitle: L.t("menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 appItem.submenu = appMenu
 
 let fileItem = NSMenuItem()
@@ -35,19 +35,19 @@ func addFile(_ title: String, _ action: Selector, _ key: String,
     item.target = target  // nil → responder chain (the key window's controller)
     fileMenu.addItem(item)
 }
-addFile("New", #selector(AppDelegate.newDocument(_:)), "n", target: appDelegate)
-addFile("Open…", #selector(AppDelegate.openDocument(_:)), "o", target: appDelegate)
-let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+addFile(L.t("menu.new"), #selector(AppDelegate.newDocument(_:)), "n", target: appDelegate)
+addFile(L.t("menu.open"), #selector(AppDelegate.openDocument(_:)), "o", target: appDelegate)
+let recentItem = NSMenuItem(title: L.t("menu.openRecent"), action: nil, keyEquivalent: "")
 recentItem.submenu = recentMenu
 fileMenu.addItem(recentItem)
 rebuildRecentMenu()
-addFile("Save", #selector(EditorController.saveDocument(_:)), "s")
-addFile("Save As…", #selector(EditorController.saveDocumentAs(_:)), "s", [.command, .shift])
+addFile(L.t("menu.save"), #selector(EditorController.saveDocument(_:)), "s")
+addFile(L.t("menu.saveAs"), #selector(EditorController.saveDocumentAs(_:)), "s", [.command, .shift])
 fileMenu.addItem(.separator())
-addFile("Export as PDF…", #selector(EditorController.exportPDF(_:)), "e")
-addFile("Export as HTML…", #selector(EditorController.exportHTML(_:)), "e", [.command, .shift])
+addFile(L.t("menu.exportPdf"), #selector(EditorController.exportPDF(_:)), "e")
+addFile(L.t("menu.exportHtml"), #selector(EditorController.exportHTML(_:)), "e", [.command, .shift])
 fileMenu.addItem(.separator())
-addFile("Close", #selector(NSWindow.performClose(_:)), "w")
+addFile(L.t("menu.close"), #selector(NSWindow.performClose(_:)), "w")
 fileItem.submenu = fileMenu
 
 // Edit menu — standard actions route through the responder chain to the text view (target nil).
@@ -62,18 +62,22 @@ func addEdit(_ title: String, _ sel: Selector, _ key: String,
     item.tag = tag
     editMenu.addItem(item)
 }
-addEdit("Undo", Selector(("undo:")), "z")
-addEdit("Redo", Selector(("redo:")), "z", [.command, .shift])
+addEdit(L.t("menu.undo"), Selector(("undo:")), "z")
+addEdit(L.t("menu.redo"), Selector(("redo:")), "z", [.command, .shift])
 editMenu.addItem(.separator())
-addEdit("Cut", #selector(NSText.cut(_:)), "x")
-addEdit("Copy", #selector(NSText.copy(_:)), "c")
-addEdit("Paste", #selector(NSText.paste(_:)), "v")
-addEdit("Select All", #selector(NSText.selectAll(_:)), "a")
+addEdit(L.t("menu.cut"), #selector(NSText.cut(_:)), "x")
+addEdit(L.t("menu.copy"), #selector(NSText.copy(_:)), "c")
+addEdit(L.t("menu.paste"), #selector(NSText.paste(_:)), "v")
+// ClipboardExtras: Paste and Match Style (⇧⌘V) + Copy as Rich Text (⌥⌘C). target nil → responder
+// chain to the key window's EditorController (same as the other Edit items).
+addEdit(L.t("menu.pasteMatchStyle"), #selector(EditorController.pasteAsPlainText(_:)), "v", [.command, .shift])
+addEdit(L.t("menu.copyRichText"), #selector(EditorController.copyAsRichText(_:)), "c", [.command, .option])
+addEdit(L.t("menu.selectAll"), #selector(NSText.selectAll(_:)), "a")
 editMenu.addItem(.separator())
-addEdit("Find…", #selector(NSTextView.performFindPanelAction(_:)), "f", tag: 1)
-addEdit("Find Next", #selector(NSTextView.performFindPanelAction(_:)), "g", tag: 2)
-addEdit("Find Previous", #selector(NSTextView.performFindPanelAction(_:)), "g", [.command, .shift], tag: 3)
-addEdit("Use Selection for Find", #selector(NSTextView.performFindPanelAction(_:)), "e", tag: 7)
+addEdit(L.t("menu.find"), #selector(NSTextView.performFindPanelAction(_:)), "f", tag: 1)
+addEdit(L.t("menu.findNext"), #selector(NSTextView.performFindPanelAction(_:)), "g", tag: 2)
+addEdit(L.t("menu.findPrevious"), #selector(NSTextView.performFindPanelAction(_:)), "g", [.command, .shift], tag: 3)
+addEdit(L.t("menu.useSelectionForFind"), #selector(NSTextView.performFindPanelAction(_:)), "e", tag: 7)
 editItem.submenu = editMenu
 
 let formatItem = NSMenuItem()
@@ -86,42 +90,74 @@ func addFmt(_ title: String, _ action: Selector, _ key: String = "",
     item.target = nil  // responder chain → key window's controller
     formatMenu.addItem(item)
 }
-addFmt("Bold", #selector(EditorController.cmdBold(_:)), "b")
-addFmt("Italic", #selector(EditorController.cmdItalic(_:)), "i")
-addFmt("Strikethrough", #selector(EditorController.cmdStrike(_:)))
-addFmt("Inline Code", #selector(EditorController.cmdCode(_:)))
+addFmt(L.t("format.bold"), #selector(EditorController.cmdBold(_:)), "b")
+addFmt(L.t("format.italic"), #selector(EditorController.cmdItalic(_:)), "i")
+addFmt(L.t("format.strikethrough"), #selector(EditorController.cmdStrike(_:)))
+addFmt(L.t("format.inlineCode"), #selector(EditorController.cmdCode(_:)))
 formatMenu.addItem(.separator())
-addFmt("Heading 1", #selector(EditorController.cmdH1(_:)), "1")
-addFmt("Heading 2", #selector(EditorController.cmdH2(_:)), "2")
-addFmt("Heading 3", #selector(EditorController.cmdH3(_:)), "3")
-addFmt("Body", #selector(EditorController.cmdBody(_:)), "0")
+addFmt(L.t("format.h1"), #selector(EditorController.cmdH1(_:)), "1")
+addFmt(L.t("format.h2"), #selector(EditorController.cmdH2(_:)), "2")
+addFmt(L.t("format.h3"), #selector(EditorController.cmdH3(_:)), "3")
+// Body uses ⌥⌘0 (not ⌘0) so View ▸ Actual Size (TextZoom) can own ⌘0, the macOS-standard reset key.
+addFmt(L.t("format.body"), #selector(EditorController.cmdBody(_:)), "0", [.command, .option])
 formatMenu.addItem(.separator())
-addFmt("Bullet List", #selector(EditorController.cmdBullet(_:)))
-addFmt("Numbered List", #selector(EditorController.cmdNumbered(_:)))
-addFmt("Quote", #selector(EditorController.cmdQuote(_:)))
-addFmt("Code Block", #selector(EditorController.cmdCodeBlock(_:)))
-addFmt("Divider", #selector(EditorController.cmdDivider(_:)))
+addFmt(L.t("format.bullet"), #selector(EditorController.cmdBullet(_:)))
+addFmt(L.t("format.numbered"), #selector(EditorController.cmdNumbered(_:)))
+addFmt(L.t("format.quote"), #selector(EditorController.cmdQuote(_:)))
+addFmt(L.t("format.codeBlock"), #selector(EditorController.cmdCodeBlock(_:)))
+addFmt(L.t("format.divider"), #selector(EditorController.cmdDivider(_:)))
 formatItem.submenu = formatMenu
 
 let viewItem = NSMenuItem()
 mainMenu.addItem(viewItem)
-let viewMenu = NSMenu(title: "View")
-let focusItem = NSMenuItem(title: "Focus Mode",
+let viewMenu = NSMenu(title: "View")   // internal id — keep literal "View"
+let focusItem = NSMenuItem(title: L.t("menu.focusMode"),
                           action: #selector(EditorController.toggleFocusMode(_:)), keyEquivalent: "f")
 focusItem.keyEquivalentModifierMask = [.command, .control]
 focusItem.target = nil  // responder chain → key window's controller
 viewMenu.addItem(focusItem)
+// KeepOnTop: pin the key window above other apps (no accelerator).
+let keepOnTopItem = NSMenuItem(title: L.t("menu.keepOnTop"),
+                          action: #selector(EditorController.toggleKeepOnTop(_:)), keyEquivalent: "")
+keepOnTopItem.target = nil  // responder chain → key window's controller
+viewMenu.addItem(keepOnTopItem)
+// TypewriterScroll: keep the caret line vertically centered (⌃⌘T).
+let typewriterItem = NSMenuItem(title: L.t("menu.typewriter"),
+                                action: #selector(EditorController.toggleTypewriter(_:)), keyEquivalent: "t")
+typewriterItem.keyEquivalentModifierMask = [.command, .control]
+typewriterItem.target = nil  // responder chain → key window's controller
+viewMenu.addItem(typewriterItem)
+// InfoPanel: the ⇧⌘I document-info popover (also opened by the titlebar info button).
+let infoItem = NSMenuItem(title: L.t("menu.documentInfo"),
+                          action: #selector(EditorController.showDocumentInfo(_:)), keyEquivalent: "i")
+infoItem.keyEquivalentModifierMask = [.command, .shift]
+infoItem.target = nil  // responder chain → key window's controller
+viewMenu.addItem(infoItem)
+// TextZoom: ⌘+ / ⌘− / ⌘0 per-window text zoom. ⌘0 = Actual Size (macOS norm); Format ▸ Body was
+// moved to ⌥⌘0 to free ⌘0 for this (the earlier-installed Format item would otherwise shadow it).
+viewMenu.addItem(.separator())
+func addZoom(_ title: String, _ sel: Selector, _ key: String) {
+    let item = NSMenuItem(title: title, action: sel, keyEquivalent: key)
+    item.keyEquivalentModifierMask = .command
+    item.target = nil  // responder chain → key window's controller
+    viewMenu.addItem(item)
+}
+addZoom(L.t("menu.zoomIn"), #selector(EditorController.zoomIn(_:)), "+")
+addZoom(L.t("menu.zoomOut"), #selector(EditorController.zoomOut(_:)), "-")
+addZoom(L.t("menu.actualSize"), #selector(EditorController.zoomReset(_:)), "0")
 viewItem.submenu = viewMenu
 
 app.mainMenu = mainMenu
 
-// First window: a file passed on the command line (Finder "Open With" / `open -a Mallow file.md`),
-// else the welcome demo. New / Open open further windows.
-if CommandLine.arguments.count > 1,
-   let content = try? String(contentsOfFile: CommandLine.arguments[1], encoding: .utf8) {
-    makeEditor(content, CommandLine.arguments[1])
-} else {
-    makeEditor(demoText, nil)
+// First window: SessionRestore decides — an explicit CLI/Finder file (`open -a Mallow file.md`)
+// wins; else silently reopen last session's document; else the welcome demo on first run; else blank.
+// New / Open open further windows.
+let explicitArg = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : nil
+switch SessionStore.planStartup(explicitPath: explicitArg, demo: demoText) {
+case .explicit(let content, let path): makeEditor(content, path)
+case .restore(let content, let path):  makeEditor(content, path)
+case .welcome:                         makeEditor(demoText, nil)
+case .blank:                           makeEditor("", nil)
 }
 
 app.activate(ignoringOtherApps: true)

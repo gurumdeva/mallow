@@ -44,7 +44,15 @@ func makeEditor(_ content: String, _ path: String?) -> EditorController {
     ])
     controller.setPath(path)   // refresh the chrome label now that it's wired
     if let path = path { RecentFiles.add(path) }   // remember opened files
+    // SessionRestore: the FIRST window inherits last session's saved frame (clamped on-screen);
+    // later windows keep their centered/cascade position. Done before ordering front so it appears
+    // at the restored geometry, not centered-then-jumping.
+    let isFirstWindow = editors.isEmpty
     editors.append(controller)
+    if isFirstWindow, let frame = SessionStore.restoredFrame() {
+        window.setFrame(frame, display: false)
+    }
+    SessionStore.track(window: window, controller: controller)   // persist this window's geometry + last-file
     window.makeKeyAndOrderFront(nil)
     window.makeFirstResponder(textView)   // editor ready to type immediately on open (like Mallow)
     return controller

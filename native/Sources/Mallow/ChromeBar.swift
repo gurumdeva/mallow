@@ -44,6 +44,11 @@ func makeChromeBar(_ c: EditorController) -> NSView {
     name.font = NSFont.systemFont(ofSize: 13, weight: .medium)
     name.textColor = mallowDim
     name.lineBreakMode = .byTruncatingTail
+    // Click the centered filename to rename the file on disk (RenameInTitlebar.swift). A gesture
+    // recognizer keeps `name` a label (so updateChrome's stringValue assignment is unaffected).
+    let renameClick = NSClickGestureRecognizer(
+        target: c, action: #selector(EditorController.renameFromTitlebar(_:)))
+    name.addGestureRecognizer(renameClick)
     let center = NSStackView(views: [dot, name])
     center.spacing = 6
     center.alignment = .centerY
@@ -53,7 +58,7 @@ func makeChromeBar(_ c: EditorController) -> NSView {
     let right = NSStackView(views: [
         cornerButton("textformat", c, #selector(EditorController.showStyleMenu(_:))),
         cornerButton("arrow.down.doc", c, #selector(EditorController.exportPDF(_:))),
-        cornerButton("info.circle", c, #selector(EditorController.showInfo(_:))),
+        cornerButton("info.circle", c, #selector(EditorController.showDocumentInfo(_:))),
     ])
     right.spacing = 6
     right.translatesAutoresizingMaskIntoConstraints = false
