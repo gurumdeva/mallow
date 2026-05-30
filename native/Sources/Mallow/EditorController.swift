@@ -10,8 +10,8 @@ import UniformTypeIdentifiers
 final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDelegate, NSLayoutManagerDelegate, NSMenuItemValidation {
     let textView: MarkdownTextView
     let vm: EditorViewModel
-    weak var titleLabel: NSTextField?   // custom titlebar filename
-    weak var dotView: NSView?           // ● modified-indicator slot
+    weak var titleButton: FilenameButton?   // custom titlebar filename (clickable → rename)
+    weak var dotView: NSView?               // ● modified-indicator slot
     var typewriterOn = false            // View ▸ Typewriter Scrolling (caret line kept centered)
     var autosaveTimer: Timer?           // debounced background save (Autosave.swift); nil when idle
     var sessionObservers: [NSObjectProtocol] = []   // SessionRestore geometry/last-file observers; removed on close
@@ -37,7 +37,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
         window?.isDocumentEdited = vm.isDirty
         let name = vm.displayName
         window?.title = name                  // still set (Window menu / Mission Control)
-        titleLabel?.stringValue = name        // the visible centered filename
+        titleButton?.setName(name)            // the visible centered filename
         dotView?.isHidden = !vm.isDirty       // ● shown only when there are unsaved edits
     }
 

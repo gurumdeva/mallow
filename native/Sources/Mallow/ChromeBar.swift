@@ -60,6 +60,51 @@ func cornerButton(_ symbol: String, _ target: AnyObject, _ action: Selector) -> 
     CornerButton(symbol: symbol, target: target, action: action)
 }
 
+/// The centered filename as a real NSButton (CSS `.titlebar-center`: `radius 7`, hover → elevated bg +
+/// brighter text). An NSButton — not a label — because a control reliably receives the click; a plain
+/// label let `isMovableByWindowBackground` swallow it as a window drag, so rename never fired. Click →
+/// renameFromTitlebar; truncates long names.
+final class FilenameButton: NSButton {
+    private var hovering = false { didSet { refresh() } }
+    private var name = "Untitled"
+
+    convenience init(target: AnyObject, action: Selector) {
+        self.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        isBordered = false
+        bezelStyle = .inline
+        imagePosition = .noImage
+        wantsLayer = true
+        layer?.cornerRadius = 7
+        lineBreakMode = .byTruncatingTail
+        self.target = target
+        self.action = action
+        refresh()
+    }
+
+    /// Set the displayed filename (mirrors the old label's stringValue).
+    func setName(_ s: String) { name = s; refresh() }
+
+    private func refresh() {
+        layer?.backgroundColor = (hovering ? mallowElevated : NSColor.clear).cgColor
+        attributedTitle = NSAttributedString(string: name, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: hovering ? mallowText : mallowDim,
+        ])
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+}
+
 /// The 52px titlebar overlay (opaque): centered filename + ● dot, and the style / export / info
 /// corner buttons on the right. Wires the buttons + the filename/dot refs onto `c`.
 func makeChromeBar(_ c: EditorController) -> NSView {
@@ -72,17 +117,11 @@ func makeChromeBar(_ c: EditorController) -> NSView {
     dot.font = NSFont.systemFont(ofSize: 9)
     dot.textColor = mallowDim
     dot.isHidden = true
-    let name = NSTextField(labelWithString: "Untitled")
-    name.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-    name.textColor = mallowDim
-    name.lineBreakMode = .byTruncatingTail
-    // Click the centered filename to rename the file on disk (RenameInTitlebar.swift). A gesture
-    // recognizer keeps `name` a label (so updateChrome's stringValue assignment is unaffected).
-    let renameClick = NSClickGestureRecognizer(
-        target: c, action: #selector(EditorController.renameFromTitlebar(_:)))
-    name.addGestureRecognizer(renameClick)
-    let center = NSStackView(views: [dot, name])
-    center.spacing = 6
+    // Click the centered filename to rename the file on disk (RenameInTitlebar.swift). A real button
+    // (not a label) so the click isn't swallowed as a window drag.
+    let nameButton = FilenameButton(target: c, action: #selector(EditorController.renameFromTitlebar(_:)))
+    let center = NSStackView(views: [dot, nameButton])
+    center.spacing = 4
     center.alignment = .centerY
     center.translatesAutoresizingMaskIntoConstraints = false
     bar.addSubview(center)
@@ -103,7 +142,7 @@ func makeChromeBar(_ c: EditorController) -> NSView {
         right.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
         right.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
     ])
-    c.titleLabel = name
+    c.titleButton = nameButton
     c.dotView = dot
     return bar
 }
