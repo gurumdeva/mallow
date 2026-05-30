@@ -198,7 +198,15 @@ final class InfoPanelViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("InfoPanelViewController is created in code") }
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 304, height: 292))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 304, height: 314))
+
+        // Centered title above the tabs (CSS `.stats-title`: 13/medium/dim), matching the reference.
+        let titleLabel = NSTextField(labelWithString: L.t("menu.documentInfo"))
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        titleLabel.textColor = mallowDim
+        titleLabel.alignment = .center
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(titleLabel)
 
         tabs.translatesAutoresizingMaskIntoConstraints = false
         tabs.selectedSegment = 0
@@ -211,7 +219,9 @@ final class InfoPanelViewController: NSViewController {
         root.addSubview(bodyContainer)
 
         NSLayoutConstraint.activate([
-            tabs.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
+            titleLabel.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
+            titleLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            tabs.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
             tabs.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             tabs.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
             bodyContainer.topAnchor.constraint(equalTo: tabs.bottomAnchor, constant: 12),
