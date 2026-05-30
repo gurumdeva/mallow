@@ -50,7 +50,7 @@ extension EditorController {
     @objc func copyAsRichText(_ sender: Any?) {
         let md = textView.string
         guard !md.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let title = vm.displayName.replacingOccurrences(of: ".md", with: "")
+        let title = vm.baseName
         let html = inkRenderHtml(md, title)
         let pb = NSPasteboard.general
         pb.clearContents()

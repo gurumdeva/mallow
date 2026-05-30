@@ -32,6 +32,12 @@ final class EditorViewModel {
 
     var isDirty: Bool { inkstone_is_dirty(textView?.string ?? "", baseline) }
     var displayName: String { (filePath as NSString?)?.lastPathComponent ?? L.t("doc.untitled") }
+    /// `displayName` without a trailing `.md` (export filename / document title). Suffix-only — a blind
+    /// `.replacingOccurrences(of:".md")` would mangle names like "notes.md.md" or "a.md.txt".
+    var baseName: String {
+        let n = displayName
+        return n.lowercased().hasSuffix(".md") ? String(n.dropLast(3)) : n
+    }
 
     func setPath(_ path: String?) { filePath = path }
     func markSaved(path: String, content: String) { filePath = path; baseline = content }
@@ -99,6 +105,7 @@ final class EditorViewModel {
 
         var quotes: [NSRange] = []   // blockquote ranges → 3px left bar drawn by the text view
         var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
+        var codeCards: [NSRange] = [] // code-block ranges → rounded elevated card drawn by the text view
 
         storage.beginEditing()
         storage.setAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor,
@@ -114,9 +121,12 @@ final class EditorViewModel {
                 continue  // heading text is uniform — no inline pass
             case "CodeBlock":
                 if let nr = nsRange(block.range) {
-                    storage.addAttribute(.backgroundColor, value: mallowElevated, range: nr)   // solid #2c2c2e card
+                    storage.addAttribute(.font,   // code is uniform monospace
+                        value: NSFont.monospacedSystemFont(ofSize: baseSize * zoomFactor, weight: .regular), range: nr)
                     storage.addAttribute(.paragraphStyle, value: mallowCodeParagraphStyle, range: nr)
+                    codeCards.append(nr)   // drawn as a rounded elevated card (corners + right inset the attribute can't give)
                 }
+                continue  // uniform mono — no inline pass
             case "BlockQuote":
                 if let nr = nsRange(block.range) {
                     storage.addAttribute(.foregroundColor, value: mallowDim, range: nr)         // #98989d, not white-α
@@ -145,7 +155,8 @@ final class EditorViewModel {
             }
         }
         storage.endEditing()
-        textView.quoteBars = quotes        // hand the decoration ranges to the view's draw pass
+        textView.codeCards = codeCards     // hand the decoration ranges to the view's draw pass
+        textView.quoteBars = quotes
         textView.ruleLines = rules
         textView.needsDisplay = true
     }

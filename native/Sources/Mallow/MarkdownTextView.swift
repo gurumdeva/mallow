@@ -9,6 +9,7 @@ final class MarkdownTextView: NSTextView {
     // Decoration ranges the view-model recomputes each refresh (UTF-16). Blockquote ranges get a 3px
     // left bar; thematic-break ranges get a 1px horizontal rule (their source dashes are hidden), the
     // two block decorations NSTextView can't express as text attributes. Redraw when they change.
+    var codeCards: [NSRange] = [] { didSet { needsDisplay = true } }
     var quoteBars: [NSRange] = [] { didSet { needsDisplay = true } }
     var ruleLines: [NSRange] = [] { didSet { needsDisplay = true } }
 
@@ -24,6 +25,18 @@ final class MarkdownTextView: NSTextView {
         super.drawBackground(in: rect)
         guard let lm = layoutManager, let tc = textContainer else { return }
         let origin = textContainerOrigin
+
+        // Code blocks: a rounded elevated card behind the code (corners + a right inset the
+        // text-attribute background can't give). Full content width minus the rule inset.
+        mallowElevated.setFill()
+        for r in codeCards {
+            let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+            guard gr.length > 0 else { continue }
+            let box = lm.boundingRect(forGlyphRange: gr, in: tc)
+            let card = NSRect(x: origin.x, y: origin.y + box.minY - 2,
+                              width: tc.size.width - 8, height: box.height + 4)
+            NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
+        }
 
         mallowFaint.setFill()
         for r in quoteBars {
