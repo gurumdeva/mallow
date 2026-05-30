@@ -112,9 +112,8 @@ func charToUTF16(_ s: String, _ ch: Int) -> Int {
 
 final class MarkdownTextView: NSTextView {}
 
-final class EditorController: NSObject, NSTextViewDelegate, NSWindowDelegate, NSLayoutManagerDelegate {
+final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDelegate, NSLayoutManagerDelegate {
     let textView: MarkdownTextView
-    weak var window: NSWindow?
 
     private var filePath: String?
     private var baseline = ""
@@ -129,8 +128,7 @@ final class EditorController: NSObject, NSTextViewDelegate, NSWindowDelegate, NS
 
     init(textView: MarkdownTextView, window: NSWindow) {
         self.textView = textView
-        self.window = window
-        super.init()
+        super.init(window: window)   // NSWindowController owns the window + sits in its responder chain
         textView.delegate = self
         window.delegate = self
         // Accessing layoutManager forces TextKit 1, where the glyph-generation delegate fires.
@@ -138,6 +136,8 @@ final class EditorController: NSObject, NSTextViewDelegate, NSWindowDelegate, NS
         baseline = textView.string
         refresh()
     }
+
+    required init?(coder: NSCoder) { fatalError("EditorController is created in code, not a nib") }
 
     // MARK: pipeline — parse once, then style + compute hidden syntax + chrome.
 
@@ -460,20 +460,11 @@ final class EditorController: NSObject, NSTextViewDelegate, NSWindowDelegate, NS
 
     // MARK: file I/O
 
-    private func load(_ content: String, path: String?) {
-        textView.string = content
-        textView.setSelectedRange(NSRange(location: 0, length: 0))  // caret to top, not end
+    /// Adopt a backing file path (the factory has already put the content in the text view) and
+    /// refresh the window chrome (title + edited dot).
+    func setPath(_ path: String?) {
         filePath = path
-        baseline = content
-        refresh()
-    }
-
-    /// Open a file by path — the entry point for a path passed on the command line / by Finder
-    /// ("Open With" / `open -a Inkstone file.md`). Honors the unsaved-changes guard.
-    func openFile(_ path: String) {
-        guard confirmDiscardIfDirty(),
-              let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
-        load(content, path: path)
+        updateChrome()
     }
 
     private func confirmDiscardIfDirty() -> Bool {
@@ -486,22 +477,6 @@ final class EditorController: NSObject, NSTextViewDelegate, NSWindowDelegate, NS
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private static let markdownTypes: [UTType] = [UTType(filenameExtension: "md") ?? .plainText, .plainText]
-
-    @objc func newDocument(_ sender: Any?) {
-        guard confirmDiscardIfDirty() else { return }
-        load("", path: nil)
-    }
-    @objc func openDocument(_ sender: Any?) {
-        guard confirmDiscardIfDirty() else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = Self.markdownTypes
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url,
-           let content = try? String(contentsOf: url, encoding: .utf8) {
-            load(content, path: url.path)
-        }
-    }
     @objc func saveDocument(_ sender: Any?) {
         if let path = filePath { write(to: URL(fileURLWithPath: path)) } else { saveDocumentAs(sender) }
     }
@@ -540,43 +515,19 @@ final class EditorController: NSObject, NSTextViewDelegate, NSWindowDelegate, NS
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { confirmDiscardIfDirty() }
+
+    // Drop this window's controller once it closes so it (and its window) deallocate. Deferred so we
+    // never release ourselves from inside our own delegate callback.
+    func windowWillClose(_ notification: Notification) {
+        DispatchQueue.main.async { editors.removeAll { $0 === self } }
+    }
 }
 
 // MARK: - App bootstrap
 
-let app = NSApplication.shared
-app.setActivationPolicy(.regular)
+let markdownTypes: [UTType] = [UTType(filenameExtension: "md") ?? .plainText, .plainText]
 
-let window = NSWindow(
-    contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
-    styleMask: [.titled, .closable, .resizable, .miniaturizable],
-    backing: .buffered, defer: false
-)
-window.center()
-
-let scroll = NSScrollView(frame: window.contentView!.bounds)
-scroll.autoresizingMask = [.width, .height]
-scroll.hasVerticalScroller = true
-
-let textView = MarkdownTextView(frame: scroll.bounds)
-textView.autoresizingMask = [.width]
-textView.isRichText = true
-textView.allowsUndo = true
-// Markdown is the source of truth: every "smart" auto-substitution corrupts it.
-// "--"→"—", "..."→"…", straight→curly quotes, autocorrect, and auto-linking all rewrite
-// the bytes the parser reads, so they are all off. (Spellcheck/grammar squiggles also
-// clash with the glyph-hiding live preview; users can re-enable via Edit ▸ Spelling.)
-textView.isAutomaticQuoteSubstitutionEnabled = false
-textView.isAutomaticDashSubstitutionEnabled = false
-textView.isAutomaticTextReplacementEnabled = false
-textView.isAutomaticSpellingCorrectionEnabled = false
-textView.isAutomaticLinkDetectionEnabled = false
-textView.isAutomaticDataDetectionEnabled = false
-textView.isContinuousSpellCheckingEnabled = false
-textView.isGrammarCheckingEnabled = false
-textView.usesFindBar = true  // native find/replace bar (⌘F) — mature, IME-aware, free
-textView.textContainerInset = NSSize(width: 18, height: 18)
-textView.string = """
+let demoText = """
 # Inkstone
 
 A native macOS editor where **markdown is the source of truth** — parsed and
@@ -595,17 +546,80 @@ styled live by a Rust engine, with the system IME for 한글 / 日本語.
 
 The Format menu and ⌘B / ⌘I run the engine's commands; ⌘N / O / S handle files.
 """
-scroll.documentView = textView
-window.contentView!.addSubview(scroll)
 
-let controller = EditorController(textView: textView, window: window)
-
-// Open a file path passed on the command line (Finder "Open With" / `open -a Inkstone file.md` /
-// terminal). Replaces the demo text above when present.
-if CommandLine.arguments.count > 1 {
-    controller.openFile(CommandLine.arguments[1])
+/// The text-view configuration shared by every window. Markdown-as-truth: all "smart"
+/// auto-substitutions are off ("--"→"—", curly quotes, autocorrect, auto-linking would rewrite the
+/// bytes the parser reads); native find bar; comfortable insets. (Spellcheck also clashes with the
+/// glyph-hiding live preview; users can re-enable via Edit ▸ Spelling.)
+func configureTextView(_ textView: MarkdownTextView) {
+    textView.autoresizingMask = [.width]
+    textView.isRichText = true
+    textView.allowsUndo = true
+    textView.isAutomaticQuoteSubstitutionEnabled = false
+    textView.isAutomaticDashSubstitutionEnabled = false
+    textView.isAutomaticTextReplacementEnabled = false
+    textView.isAutomaticSpellingCorrectionEnabled = false
+    textView.isAutomaticLinkDetectionEnabled = false
+    textView.isAutomaticDataDetectionEnabled = false
+    textView.isContinuousSpellCheckingEnabled = false
+    textView.isGrammarCheckingEnabled = false
+    textView.usesFindBar = true  // native find/replace bar (⌘F) — mature, IME-aware, free
+    textView.textContainerInset = NSSize(width: 18, height: 18)
 }
 
+/// Every open document is its own window + controller; we retain them here and drop each on close
+/// (EditorController.windowWillClose), so documents live independently.
+var editors: [EditorController] = []
+
+/// Build, show, and retain a new editor window holding `content` (backed by `path` if given).
+@discardableResult
+func makeEditor(_ content: String, _ path: String?) -> EditorController {
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+        styleMask: [.titled, .closable, .resizable, .miniaturizable],
+        backing: .buffered, defer: false
+    )
+    window.center()
+    let scroll = NSScrollView(frame: window.contentView!.bounds)
+    scroll.autoresizingMask = [.width, .height]
+    scroll.hasVerticalScroller = true
+    let textView = MarkdownTextView(frame: scroll.bounds)
+    configureTextView(textView)
+    textView.string = content
+    textView.setSelectedRange(NSRange(location: 0, length: 0))  // caret to top
+    scroll.documentView = textView
+    window.contentView!.addSubview(scroll)
+    let controller = EditorController(textView: textView, window: window)
+    controller.setPath(path)
+    editors.append(controller)
+    window.makeKeyAndOrderFront(nil)
+    return controller
+}
+
+/// App-level actions: New / Open each spawn an independent window; the app quits when the last
+/// window closes (one document per window).
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    @objc func newDocument(_ sender: Any?) { makeEditor("", nil) }
+    @objc func openDocument(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = markdownTypes
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url,
+           let content = try? String(contentsOf: url, encoding: .utf8) {
+            makeEditor(content, url.path)
+        }
+    }
+}
+
+let app = NSApplication.shared
+app.setActivationPolicy(.regular)
+let appDelegate = AppDelegate()
+app.delegate = appDelegate
+
+// Menus are app-global. Window-level actions use target nil so the responder chain delivers them to
+// the KEY window's EditorController; New/Open target the app delegate so they work with no window.
 let mainMenu = NSMenu()
 
 let appItem = NSMenuItem()
@@ -617,18 +631,21 @@ appItem.submenu = appMenu
 let fileItem = NSMenuItem()
 mainMenu.addItem(fileItem)
 let fileMenu = NSMenu(title: "File")
-func addFile(_ title: String, _ action: Selector, _ key: String, _ mods: NSEvent.ModifierFlags = .command) {
+func addFile(_ title: String, _ action: Selector, _ key: String,
+             _ mods: NSEvent.ModifierFlags = .command, target: AnyObject? = nil) {
     let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
     item.keyEquivalentModifierMask = mods
-    item.target = controller
+    item.target = target  // nil → responder chain (the key window's controller)
     fileMenu.addItem(item)
 }
-addFile("New", #selector(EditorController.newDocument(_:)), "n")
-addFile("Open…", #selector(EditorController.openDocument(_:)), "o")
+addFile("New", #selector(AppDelegate.newDocument(_:)), "n", target: appDelegate)
+addFile("Open…", #selector(AppDelegate.openDocument(_:)), "o", target: appDelegate)
 addFile("Save", #selector(EditorController.saveDocument(_:)), "s")
 addFile("Save As…", #selector(EditorController.saveDocumentAs(_:)), "s", [.command, .shift])
 fileMenu.addItem(.separator())
 addFile("Export as HTML…", #selector(EditorController.exportHTML(_:)), "e", [.command, .shift])
+fileMenu.addItem(.separator())
+addFile("Close", #selector(NSWindow.performClose(_:)), "w")
 fileItem.submenu = fileMenu
 
 // Edit menu — standard actions route through the responder chain to the text view (target nil).
@@ -664,7 +681,7 @@ func addFmt(_ title: String, _ action: Selector, _ key: String = "",
             _ mods: NSEvent.ModifierFlags = .command) {
     let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
     if !key.isEmpty { item.keyEquivalentModifierMask = mods }
-    item.target = controller
+    item.target = nil  // responder chain → key window's controller
     formatMenu.addItem(item)
 }
 addFmt("Bold", #selector(EditorController.cmdBold(_:)), "b")
@@ -690,12 +707,20 @@ let viewMenu = NSMenu(title: "View")
 let focusItem = NSMenuItem(title: "Focus Mode",
                           action: #selector(EditorController.toggleFocusMode(_:)), keyEquivalent: "f")
 focusItem.keyEquivalentModifierMask = [.command, .control]
-focusItem.target = controller
+focusItem.target = nil  // responder chain → key window's controller
 viewMenu.addItem(focusItem)
 viewItem.submenu = viewMenu
 
 app.mainMenu = mainMenu
 
-window.makeKeyAndOrderFront(nil)
+// First window: a file passed on the command line (Finder "Open With" / `open -a Mallow file.md`),
+// else the welcome demo. New / Open open further windows.
+if CommandLine.arguments.count > 1,
+   let content = try? String(contentsOfFile: CommandLine.arguments[1], encoding: .utf8) {
+    makeEditor(content, CommandLine.arguments[1])
+} else {
+    makeEditor(demoText, nil)
+}
+
 app.activate(ignoringOtherApps: true)
 app.run()
