@@ -271,6 +271,25 @@ final class EditorViewModel {
             while i < hi { hideChar(i); i += 1 }
         }
 
+        // Code-block fences: hide the ``` / ```lang opening + closing lines so only the code shows on
+        // its tint (the fence lines reveal again when the caret is on them). Code content is untouched.
+        for block in blocks where block.kindTag == "CodeBlock" {
+            let bLo = byteToUTF16(s, block.range.start)
+            let bHi = min(byteToUTF16(s, block.range.end), total)
+            var lineStart = bLo
+            while lineStart < bHi {
+                let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+                let lineHi = min(line.location + line.length, bHi)
+                var i = line.location
+                while i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }   // skip indent
+                let isFence = i + 2 < lineHi
+                    && ns.character(at: i) == 96 && ns.character(at: i + 1) == 96 && ns.character(at: i + 2) == 96
+                if isFence { var j = line.location; while j < lineHi { hideChar(j); j += 1 } }
+                if line.length == 0 { break }
+                lineStart = line.location + line.length
+            }
+        }
+
         hiddenChars = hidden
         if let lm = textView.layoutManager {
             let full = NSRange(location: 0, length: total)
