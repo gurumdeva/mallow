@@ -13,6 +13,42 @@ final class MarkdownTextView: NSTextView {
     var quoteBars: [NSRange] = [] { didSet { needsDisplay = true } }
     var ruleLines: [NSRange] = [] { didSet { needsDisplay = true } }
 
+    // Defeat "Add period with double-space" — a global text-input default (NSAutomaticPeriodSubstitution-
+    // Enabled) with no per-view or app-domain override. On the 2nd space the system calls
+    // insertText(". ", replacing the just-typed space at {loc,1}); that inserts a "." the user never
+    // typed, which is wrong for a markdown-as-truth editor. When we see that exact shape, keep the
+    // literal double space instead. (Manually typed "." comes in as "." with no replacement, so this
+    // guard is specific to the substitution and never touches real periods.)
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        if let s = (string as? String) ?? (string as? NSAttributedString)?.string,
+           s == ". ",
+           replacementRange.length == 1, replacementRange.location != NSNotFound,
+           let ts = textStorage, replacementRange.location < ts.length,
+           (ts.string as NSString).character(at: replacementRange.location) == 32 /* space */ {
+            super.insertText(" ", replacementRange: NSRange(location: replacementRange.location + 1, length: 0))
+            return
+        }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    // The airy line-height multiple inflates each line fragment, so the default insertion point spans
+    // that whole height — a too-tall caret. Constrain it to the glyph height at the caret (so it matches
+    // the text, and grows on heading lines), vertically centered in the fragment.
+    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+        var r = rect
+        let len = textStorage?.length ?? 0
+        let loc = selectedRange().location
+        let font = (len == 0 ? nil
+                    : textStorage?.attribute(.font, at: min(loc, len - 1), effectiveRange: nil) as? NSFont)
+            ?? (typingAttributes[.font] as? NSFont) ?? self.font ?? NSFont.systemFont(ofSize: 16)
+        let glyphHeight = font.ascender - font.descender + font.leading
+        if r.height > glyphHeight + 1 {
+            r.origin.y += (r.height - glyphHeight) / 2
+            r.size.height = glyphHeight
+        }
+        super.drawInsertionPoint(in: r, color: color, turnedOn: flag)
+    }
+
     // ImageInsert: accept dragged image files / image data so a Finder drag or an app dropping image
     // bytes lands here (NSTextView already accepts plain text). Registered once the view is in a window.
     override func viewDidMoveToWindow() {
