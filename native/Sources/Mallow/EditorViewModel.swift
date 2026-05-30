@@ -98,7 +98,8 @@ final class EditorViewModel {
         }
 
         storage.beginEditing()
-        storage.setAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor],
+        storage.setAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor,
+                               .paragraphStyle: mallowBodyParagraphStyle],
                               range: NSRange(location: 0, length: nsLen))
         for block in blocks {
             switch block.kindTag {

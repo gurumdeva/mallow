@@ -4,28 +4,60 @@
 
 import AppKit
 
-/// A 30×30 rounded titlebar button with an SF-Symbol icon — matches Mallow's `.corner-btn`.
+/// A 30×30 rounded titlebar button with an SF-Symbol icon — matches Mallow's `.corner-btn`, including
+/// the fill + icon-tint changes on hover/active (style.css `.corner-btn:hover` / `:active`). The bare
+/// NSButton was static; this restores the three interaction states the WebView version has.
+final class CornerButton: NSButton {
+    private var pressed = false { didSet { refreshFill() } }
+    private var hovering = false { didSet { refreshFill() } }
+
+    convenience init(symbol: String, target: AnyObject, action: Selector) {
+        self.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        isBordered = false
+        title = ""
+        imagePosition = .imageOnly
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor(white: 1, alpha: 0.08).cgColor   // --border
+        let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(cfg)
+        self.target = target
+        self.action = action
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 30),
+            heightAnchor.constraint(equalToConstant: 30),
+        ])
+        refreshFill()
+    }
+
+    /// Fill + icon tint for the current state (active beats hover beats rest), matching the CSS rules.
+    private func refreshFill() {
+        let fill = pressed ? cornerBtnFillActive : (hovering ? cornerBtnFillHover : cornerBtnFill)
+        layer?.backgroundColor = fill.cgColor
+        contentTintColor = hovering ? mallowText : mallowDim   // :hover { color: var(--text) }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false; pressed = false }
+    override func mouseDown(with event: NSEvent) {
+        pressed = true
+        super.mouseDown(with: event)   // runs the button's own click-tracking loop, sends the action
+        pressed = false
+    }
+}
+
+/// Factory kept so the chrome-bar call sites stay unchanged; returns the interactive CornerButton.
 func cornerButton(_ symbol: String, _ target: AnyObject, _ action: Selector) -> NSButton {
-    let b = NSButton()
-    b.translatesAutoresizingMaskIntoConstraints = false
-    b.isBordered = false
-    b.title = ""
-    b.imagePosition = .imageOnly
-    b.wantsLayer = true
-    b.layer?.backgroundColor = cornerBtnFill.cgColor
-    b.layer?.cornerRadius = 8
-    b.layer?.borderWidth = 1
-    b.layer?.borderColor = NSColor(white: 1, alpha: 0.08).cgColor
-    let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-    b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(cfg)
-    b.contentTintColor = mallowDim
-    b.target = target
-    b.action = action
-    NSLayoutConstraint.activate([
-        b.widthAnchor.constraint(equalToConstant: 30),
-        b.heightAnchor.constraint(equalToConstant: 30),
-    ])
-    return b
+    CornerButton(symbol: symbol, target: target, action: action)
 }
 
 /// The 52px titlebar overlay (opaque): centered filename + ● dot, and the style / export / info
