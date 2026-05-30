@@ -70,11 +70,10 @@ extension EditorController {
             defer { Self.syncing.remove(id) }
             window?.makeKeyAndOrderFront(nil)   // surface WHICH document is prompting
             let alert = NSAlert()
-            alert.messageText = "This file changed on disk. Reload?"
-            alert.informativeText =
-                "\(vm.displayName) was changed by another app. Reloading discards your unsaved edits."
-            alert.addButton(withTitle: "Reload")
-            alert.addButton(withTitle: "Keep Mine")
+            alert.messageText = L.t("reload.title")
+            alert.informativeText = L.t("reload.body", ["name": vm.displayName])
+            alert.addButton(withTitle: L.t("reload.confirm"))
+            alert.addButton(withTitle: L.t("reload.keepMine"))
             if alert.runModal() == .alertFirstButtonReturn {
                 applyReload(disk, path: path)   // accept the disk version
             } else {

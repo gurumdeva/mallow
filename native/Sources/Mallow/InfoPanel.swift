@@ -181,8 +181,9 @@ final class InfoPanelViewController: NSViewController {
     private let onJump: (OutlineItem) -> Void
     private weak var popover: NSPopover?
 
-    private let tabs = NSSegmentedControl(labels: ["Statistics", "Contents"],
-                                          trackingMode: .selectOne, target: nil, action: nil)
+    private let tabs = NSSegmentedControl(
+        labels: [L.t("info.tab.statistics"), L.t("info.tab.contents")],
+        trackingMode: .selectOne, target: nil, action: nil)
     private let bodyContainer = NSView()
 
     init(stats: DocStats, outline: [OutlineItem], modified: Date?, popover: NSPopover,
@@ -303,10 +304,10 @@ final class InfoPanelViewController: NSViewController {
         }
         // "1m" read-time format matches the reference's `${readMinutes}${minuteUnit}` (unit = "m").
         let grid = NSStackView(views: [
-            hrow(card("\(stats.words)", "Words", "text.alignleft"),
-                 card("\(stats.characters)", "Characters", "character")),
-            hrow(card("\(stats.paragraphs)", "Paragraphs", "paragraphsign"),
-                 card("\(stats.readMinutes)m", "Read Time", "clock")),
+            hrow(card("\(stats.words)", L.t("info.stat.words"), "text.alignleft"),
+                 card("\(stats.characters)", L.t("info.stat.characters"), "character")),
+            hrow(card("\(stats.paragraphs)", L.t("info.stat.paragraphs"), "paragraphsign"),
+                 card("\(stats.readMinutes)\(L.t("info.readMinuteUnit"))", L.t("info.stat.readTime"), "clock")),
         ])
         grid.orientation = .vertical
         grid.spacing = 8
@@ -324,7 +325,7 @@ final class InfoPanelViewController: NSViewController {
             value.font = NSFont.systemFont(ofSize: 14, weight: .medium)
             value.textColor = mallowText
             value.lineBreakMode = .byTruncatingTail
-            let label = NSTextField(labelWithString: "Modified")
+            let label = NSTextField(labelWithString: L.t("info.meta.modified"))
             label.font = NSFont.systemFont(ofSize: 11)
             label.textColor = mallowDim
             let main = NSStackView(views: [value, label])
@@ -348,7 +349,7 @@ final class InfoPanelViewController: NSViewController {
 
     private func tocBody() -> NSView {
         guard !outline.isEmpty else {
-            let empty = NSTextField(labelWithString: "No headings to display.")
+            let empty = NSTextField(labelWithString: L.t("info.toc.empty"))
             empty.font = NSFont.systemFont(ofSize: 12)
             empty.textColor = mallowDim
             empty.alignment = .center
