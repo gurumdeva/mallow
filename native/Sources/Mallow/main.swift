@@ -11,6 +11,7 @@
 
 import AppKit
 import UniformTypeIdentifiers
+import WebKit       // offscreen render of the engine's HTML → PDF (Export as PDF)
 import CInkstone  // the Inkstone C-ABI (libinkstone.a) via the CInkstone systemLibrary module map
 
 // MARK: - Inkstone FFI (libinkstone.a, declared in include/inkstone.h)
@@ -548,6 +549,18 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
         }
     }
 
+    // Export to PDF — render the engine's HTML offscreen, then save it as a vector PDF.
+    @objc func exportPDF(_ sender: Any?) {
+        let base = (filePath as NSString?)?.deletingPathExtension.components(separatedBy: "/").last
+        let title = base ?? "Untitled"
+        let html = inkRenderHtml(textView.string, title)
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = "\(title).pdf"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        _ = PDFExporter(html: html, to: url)
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool { confirmDiscardIfDirty() }
 
     // Drop this window's controller once it closes so it (and its window) deallocate. Deferred so we
@@ -661,7 +674,7 @@ func makeChromeBar(_ c: EditorController) -> NSView {
 
     let right = NSStackView(views: [
         cornerButton("textformat", c, #selector(EditorController.showStyleMenu(_:))),
-        cornerButton("arrow.down.doc", c, #selector(EditorController.exportHTML(_:))),
+        cornerButton("arrow.down.doc", c, #selector(EditorController.exportPDF(_:))),
         cornerButton("info.circle", c, #selector(EditorController.showInfo(_:))),
     ])
     right.spacing = 6
@@ -678,6 +691,38 @@ func makeChromeBar(_ c: EditorController) -> NSView {
     c.titleLabel = name
     c.dotView = dot
     return bar
+}
+
+// MARK: - PDF export (render the engine's HTML in an offscreen WKWebView → vector PDF)
+
+var activePDFExporters: [PDFExporter] = []   // retain each until its async render completes
+
+final class PDFExporter: NSObject, WKNavigationDelegate {
+    private let web: WKWebView
+    private let url: URL
+    init(html: String, to url: URL) {
+        web = WKWebView(frame: NSRect(x: 0, y: 0, width: 794, height: 1123))  // ~A4 width @96dpi
+        self.url = url
+        super.init()
+        web.navigationDelegate = self
+        activePDFExporters.append(self)
+        web.loadHTMLString(html, baseURL: nil)
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // createPDF emits compact VECTOR output (the whole document as one continuous page).
+        webView.createPDF(configuration: WKPDFConfiguration()) { [weak self] result in
+            guard let self else { return }
+            if case .success(let data) = result {
+                try? data.write(to: self.url)
+            } else if case .failure(let err) = result {
+                NSAlert(error: err).runModal()
+            }
+            activePDFExporters.removeAll { $0 === self }
+        }
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        activePDFExporters.removeAll { $0 === self }
+    }
 }
 
 // MARK: - Recent files (persisted across launches; the File ▸ Open Recent submenu)
@@ -847,6 +892,7 @@ rebuildRecentMenu()
 addFile("Save", #selector(EditorController.saveDocument(_:)), "s")
 addFile("Save As…", #selector(EditorController.saveDocumentAs(_:)), "s", [.command, .shift])
 fileMenu.addItem(.separator())
+addFile("Export as PDF…", #selector(EditorController.exportPDF(_:)), "e")
 addFile("Export as HTML…", #selector(EditorController.exportHTML(_:)), "e", [.command, .shift])
 fileMenu.addItem(.separator())
 addFile("Close", #selector(NSWindow.performClose(_:)), "w")
