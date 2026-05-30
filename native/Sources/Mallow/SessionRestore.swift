@@ -111,7 +111,11 @@ enum SessionStore {
     ///   • move / end-of-live-resize  → debounce-save the frame
     ///   • became-main                → record the controller's document as the "last file"
     /// `controller` is captured weakly so tracking never keeps a closed window alive.
-    static func track(window: NSWindow, controller: EditorController) {
+    /// Returns the registered observer tokens so the owning controller can remove them on close —
+    /// block-based observers are NOT auto-removed when the observed window deallocs, so without this
+    /// they accumulate for the app's lifetime (3 per window ever opened).
+    @discardableResult
+    static func track(window: NSWindow, controller: EditorController) -> [NSObjectProtocol] {
         let nc = NotificationCenter.default
         // Frame changes. `didEndLiveResize` (not `didResize`) avoids a write per drag-frame; `didMove`
         // is discrete already. Both read the live frame so the two stay consistent.
@@ -119,18 +123,19 @@ enum SessionStore {
             guard let window else { return }
             saveFrame(window.frame)
         }
-        nc.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { onGeometry($0) }
-        nc.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { onGeometry($0) }
+        let move = nc.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { onGeometry($0) }
+        let resize = nc.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { onGeometry($0) }
         // Last-edited document: whenever this window becomes the active one, remember what it's editing
         // (or clear, if it's an untitled buffer). On quit the most-recently-focused document wins —
         // exactly "the last thing you were working on".
-        nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: window, queue: .main) { [weak controller] _ in
+        let main = nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: window, queue: .main) { [weak controller] _ in
             saveLastFile(controller?.vm.filePath)
         }
         // Capture the initial frame immediately so even a launch with no later move/resize persists a
         // sensible geometry (e.g. restored-then-quit without touching the window).
         saveFrame(window.frame)
         saveLastFile(controller.vm.filePath)
+        return [move, resize, main]
     }
 
     private static func saveFrame(_ frame: NSRect) {

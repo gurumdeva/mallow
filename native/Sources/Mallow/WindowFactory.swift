@@ -52,7 +52,7 @@ func makeEditor(_ content: String, _ path: String?) -> EditorController {
     if isFirstWindow, let frame = SessionStore.restoredFrame() {
         window.setFrame(frame, display: false)
     }
-    SessionStore.track(window: window, controller: controller)   // persist this window's geometry + last-file
+    controller.sessionObservers = SessionStore.track(window: window, controller: controller)   // persist geometry + last-file (tokens removed on close)
     window.makeKeyAndOrderFront(nil)
     window.makeFirstResponder(textView)   // editor ready to type immediately on open (like Mallow)
     return controller
