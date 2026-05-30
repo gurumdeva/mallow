@@ -14,6 +14,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
     weak var dotView: NSView?           // ● modified-indicator slot
     var typewriterOn = false            // View ▸ Typewriter Scrolling (caret line kept centered)
     var autosaveTimer: Timer?           // debounced background save (Autosave.swift); nil when idle
+    var sessionObservers: [NSObjectProtocol] = []   // SessionRestore geometry/last-file observers; removed on close
 
     init(textView: MarkdownTextView, window: NSWindow) {
         self.textView = textView
@@ -48,6 +49,9 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
     /// Edit/File/Format items keep validating as before.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(toggleFocusMode(_:)):
+            item.state = vm.focusMode ? .on : .off   // per-window, like the toggles below — keep it in sync
+            return true
         case #selector(toggleKeepOnTop(_:)):
             item.state = vm.keepOnTop ? .on : .off
             return true
@@ -194,6 +198,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
     /// never release ourselves from inside our own delegate callback.
     func windowWillClose(_ notification: Notification) {
         cancelAutosave()
+        sessionObservers.forEach { NotificationCenter.default.removeObserver($0) }   // no per-window observer leak
         DispatchQueue.main.async { editors.removeAll { $0 === self } }
     }
 }
