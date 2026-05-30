@@ -68,4 +68,8 @@ func configureTextView(_ textView: MarkdownTextView) {
     textView.drawsBackground = true
     textView.backgroundColor = mallowBG
     textView.insertionPointColor = mallowText
+    // Airy line spacing (Tauri line-height 1.8). Set as default + typing style so text typed between
+    // refreshes already has the rhythm; restyle() reasserts it as the base paragraph attribute.
+    textView.defaultParagraphStyle = mallowBodyParagraphStyle
+    textView.typingAttributes[.paragraphStyle] = mallowBodyParagraphStyle
 }

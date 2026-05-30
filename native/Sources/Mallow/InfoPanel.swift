@@ -177,6 +177,7 @@ enum DocOutline {
 final class InfoPanelViewController: NSViewController {
     private let stats: DocStats
     private let outline: [OutlineItem]
+    private let modified: Date?
     private let onJump: (OutlineItem) -> Void
     private weak var popover: NSPopover?
 
@@ -184,10 +185,11 @@ final class InfoPanelViewController: NSViewController {
                                           trackingMode: .selectOne, target: nil, action: nil)
     private let bodyContainer = NSView()
 
-    init(stats: DocStats, outline: [OutlineItem], popover: NSPopover,
+    init(stats: DocStats, outline: [OutlineItem], modified: Date?, popover: NSPopover,
          onJump: @escaping (OutlineItem) -> Void) {
         self.stats = stats
         self.outline = outline
+        self.modified = modified
         self.popover = popover
         self.onJump = onJump
         super.init(nibName: nil, bundle: nil)
@@ -195,7 +197,7 @@ final class InfoPanelViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("InfoPanelViewController is created in code") }
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 264, height: 248))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 304, height: 292))
 
         tabs.translatesAutoresizingMaskIntoConstraints = false
         tabs.selectedSegment = 0
@@ -236,37 +238,110 @@ final class InfoPanelViewController: NSViewController {
         ])
     }
 
-    // MARK: Statistics body — four labelled rows (value + name), like the reference stat cards.
+    // MARK: Statistics body — a 2×2 grid of rounded stat cards + a modified-date meta row, matching
+    // the reference `.stats-grid` / `.stat-card` / `.stats-meta` (24px value, 12px label, faint icon).
+
+    /// Localized long-date + short-time for the meta row (Intl-equivalent: "May 30, 2026 at 3:04 PM").
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .long
+        f.timeStyle = .short
+        return f
+    }()
+
+    /// Wrap a content row in a rounded surface-card box (NSBox does the fill + 12px radius cleanly),
+    /// with the reference's 14×12 inner padding.
+    private func cardBox(_ content: NSView, minHeight: CGFloat) -> NSBox {
+        let box = NSBox()
+        box.boxType = .custom
+        box.titlePosition = .noTitle
+        box.fillColor = surfaceCard
+        box.borderWidth = 0
+        box.cornerRadius = 12
+        box.contentViewMargins = NSSize(width: 14, height: 12)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        box.contentView = content
+        if minHeight > 0 {
+            box.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight).isActive = true
+        }
+        return box
+    }
 
     private func statsBody() -> NSView {
-        func row(_ value: String, _ label: String) -> NSStackView {
-            let v = NSTextField(labelWithString: value)
-            v.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
-            v.textColor = mallowText
-            let l = NSTextField(labelWithString: label)
-            l.font = NSFont.systemFont(ofSize: 12)
-            l.textColor = mallowDim
+        let cardWidth: CGFloat = 132   // (304 − 32 insets − 8 gap) / 2
+
+        // One stat card: a big value over a dim label, with a faint SF-symbol top-right.
+        func card(_ value: String, _ label: String, _ symbol: String) -> NSView {
+            let valueLabel = NSTextField(labelWithString: value)
+            valueLabel.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
+            valueLabel.textColor = mallowText
+            valueLabel.lineBreakMode = .byTruncatingTail
+            let nameLabel = NSTextField(labelWithString: label)
+            nameLabel.font = NSFont.systemFont(ofSize: 12)
+            nameLabel.textColor = mallowDim
+            let main = NSStackView(views: [valueLabel, nameLabel])
+            main.orientation = .vertical
+            main.alignment = .leading
+            main.spacing = 2
+
+            let icon = NSImageView()
+            icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
+            icon.contentTintColor = mallowFaint
+            icon.setContentHuggingPriority(.required, for: .horizontal)
+
             let spacer = NSView()
-            spacer.translatesAutoresizingMaskIntoConstraints = false
-            spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            let s = NSStackView(views: [l, spacer, v])  // label … value (value right-aligned)
-            s.orientation = .horizontal
-            s.alignment = .firstBaseline
-            return s
+            let row = NSStackView(views: [main, spacer, icon])
+            row.orientation = .horizontal
+            row.alignment = .top
+            let box = cardBox(row, minHeight: 70)
+            box.widthAnchor.constraint(equalToConstant: cardWidth).isActive = true
+            return box
+        }
+        func hrow(_ a: NSView, _ b: NSView) -> NSStackView {
+            let s = NSStackView(views: [a, b]); s.orientation = .horizontal; s.spacing = 8; return s
         }
         // "1m" read-time format matches the reference's `${readMinutes}${minuteUnit}` (unit = "m").
-        let stack = NSStackView(views: [
-            row("\(stats.words)", "Words"),
-            row("\(stats.characters)", "Characters"),
-            row("\(stats.paragraphs)", "Paragraphs"),
-            row("\(stats.readMinutes)m", "Read Time"),
+        let grid = NSStackView(views: [
+            hrow(card("\(stats.words)", "Words", "text.alignleft"),
+                 card("\(stats.characters)", "Characters", "character")),
+            hrow(card("\(stats.paragraphs)", "Paragraphs", "paragraphsign"),
+                 card("\(stats.readMinutes)m", "Read Time", "clock")),
         ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.distribution = .fillEqually
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 16, bottom: 6, right: 16)
-        return stack
+        grid.orientation = .vertical
+        grid.spacing = 8
+        grid.alignment = .leading
+
+        let outer = NSStackView(views: [grid])
+        outer.orientation = .vertical
+        outer.spacing = 8
+        outer.alignment = .leading
+        outer.edgeInsets = NSEdgeInsets(top: 2, left: 16, bottom: 8, right: 16)
+
+        // Modified-date meta row — only when the document has a file on disk (untitled docs have none).
+        if let modified = modified {
+            let value = NSTextField(labelWithString: Self.dateFormatter.string(from: modified))
+            value.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+            value.textColor = mallowText
+            value.lineBreakMode = .byTruncatingTail
+            let label = NSTextField(labelWithString: "Modified")
+            label.font = NSFont.systemFont(ofSize: 11)
+            label.textColor = mallowDim
+            let main = NSStackView(views: [value, label])
+            main.orientation = .vertical; main.alignment = .leading; main.spacing = 2
+            let icon = NSImageView()
+            icon.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
+            icon.contentTintColor = mallowFaint
+            icon.setContentHuggingPriority(.required, for: .horizontal)
+            let spacer = NSView()
+            let metaRow = NSStackView(views: [main, spacer, icon])
+            metaRow.orientation = .horizontal; metaRow.alignment = .centerY
+            let meta = cardBox(metaRow, minHeight: 0)
+            meta.widthAnchor.constraint(equalToConstant: cardWidth * 2 + 8).isActive = true
+            outer.addArrangedSubview(meta)
+        }
+        return outer
     }
 
     // MARK: Table-of-Contents body — a scrollable list of heading buttons (indented by level).
@@ -409,12 +484,16 @@ extension EditorController {
                                                 from: Data(inkParse(source).utf8))) ?? []
         let stats = DocStats(markdown: source)
         let outline = DocOutline.extract(source, blocks: blocks)
+        // The on-disk modified date for the meta row (nil for an unsaved document → row omitted).
+        let modified = vm.filePath.flatMap {
+            (try? FileManager.default.attributesOfItem(atPath: $0))?[.modificationDate] as? Date
+        }
 
         let pop = NSPopover()
         pop.behavior = .transient
         pop.appearance = NSAppearance(named: .darkAqua)   // match Mallow's dark chrome
         pop.contentViewController = InfoPanelViewController(
-            stats: stats, outline: outline, popover: pop,
+            stats: stats, outline: outline, modified: modified, popover: pop,
             onJump: { [weak self] item in self?.jumpToOutline(item) })
 
         // Prefer the info button as the anchor; fall back to the window content's top-trailing.
