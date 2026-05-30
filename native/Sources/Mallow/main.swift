@@ -721,6 +721,7 @@ func makeEditor(_ content: String, _ path: String?) -> EditorController {
     controller.setPath(path)   // refresh the chrome label now that it's wired
     editors.append(controller)
     window.makeKeyAndOrderFront(nil)
+    window.makeFirstResponder(textView)   // editor ready to type immediately on open (like Mallow)
     return controller
 }
 
