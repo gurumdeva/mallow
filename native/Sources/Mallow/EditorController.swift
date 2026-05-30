@@ -15,6 +15,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
     var typewriterOn = false            // View ▸ Typewriter Scrolling (caret line kept centered)
     var autosaveTimer: Timer?           // debounced background save (Autosave.swift); nil when idle
     var sessionObservers: [NSObjectProtocol] = []   // SessionRestore geometry/last-file observers; removed on close
+    private var stylePopover: NSPopover?             // retained while the Text-Style popover is shown
 
     init(textView: MarkdownTextView, window: NSWindow) {
         self.textView = textView
@@ -121,11 +122,12 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
 
     // MARK: titlebar buttons
 
-    /// Style button → pop the Format menu under the button (the Mallow ✏️ panel's role).
+    /// Style button → the Text-Style popover (the Mallow ✏️ panel's role), anchored under the button.
+    /// Replaces the old Format-menu popUp whose `item(withTitle:"Format")` lookup was always nil.
     @objc func showStyleMenu(_ sender: NSButton) {
-        if let fmt = NSApp.mainMenu?.item(withTitle: "Format")?.submenu {
-            fmt.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
-        }
+        let pop = makeStylePopover(self)
+        stylePopover = pop
+        pop.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
 
     // MARK: file I/O + export (the @objc menu targets; writes go through the view-model state)

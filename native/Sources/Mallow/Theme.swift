@@ -16,8 +16,11 @@ let cornerBtnFillActive = NSColor(srgbRed: 96 / 255, green: 96 / 255, blue: 98 /
 
 // Card surface behind stat cards / style buttons (--surface-card) + the tabs track (--overlay-tabs-track).
 let surfaceCard = NSColor(srgbRed: 72 / 255, green: 72 / 255, blue: 74 / 255, alpha: 0.45)          // rgba(72,72,74,.45)
+let surfaceCardHover = NSColor(srgbRed: 96 / 255, green: 96 / 255, blue: 98 / 255, alpha: 0.6)      // --surface-card-hover
+let borderStrong = NSColor(white: 1, alpha: 0.18)                                                   // --border-strong (style-btn hover)
 let overlayTabsTrack = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.25)                          // rgba(0,0,0,.25)
 let overlayWeak = NSColor(white: 1, alpha: 0.05)                                                    // --overlay-weak (toc hover)
+let mallowBorderColor = NSColor(white: 1, alpha: 0.08)                                              // --border (hr rule, card borders)
 
 /// Body line spacing matching the Tauri app's `line-height: 1.8`. NSLayoutManager multiplies the
 /// font's natural line height (~1.2× for SF Pro) by this multiple, so ~1.5 lands at roughly 1.8×
@@ -26,5 +29,24 @@ let overlayWeak = NSColor(white: 1, alpha: 0.05)                                
 let mallowBodyParagraphStyle: NSParagraphStyle = {
     let p = NSMutableParagraphStyle()
     p.lineHeightMultiple = 1.5
+    return p
+}()
+
+/// Blockquote indent (CSS `.ProseMirror blockquote { padding-left:16; border-left:3px }`): the body
+/// rhythm plus a left inset, leaving a gutter for the 3px quote bar drawn by MarkdownTextView.
+let mallowQuoteParagraphStyle: NSParagraphStyle = {
+    let p = NSMutableParagraphStyle()
+    p.lineHeightMultiple = 1.5
+    p.firstLineHeadIndent = 22
+    p.headIndent = 22
+    return p
+}()
+
+/// Code-block indent: a small left inset so fenced code sits off the margin inside its tint.
+let mallowCodeParagraphStyle: NSParagraphStyle = {
+    let p = NSMutableParagraphStyle()
+    p.lineHeightMultiple = 1.4
+    p.firstLineHeadIndent = 12
+    p.headIndent = 12
     return p
 }()

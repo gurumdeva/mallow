@@ -124,6 +124,11 @@ enum L {
         "format.quote": "Quote",
         "format.codeBlock": "Code Block",
         "format.divider": "Divider",
+        // style — the Text-Style popover (the ✏️ corner button)
+        "style.title": "Text Style",
+        "style.headingSection": "Heading",
+        "style.blockSection": "Block",
+        "style.inlineSection": "Inline",
         // doc — derived document name
         "doc.untitled": "Untitled",
         // dialog — the unsaved-changes guard (confirmDiscardIfDirty)
@@ -207,6 +212,10 @@ enum L {
         "format.quote": "인용",
         "format.codeBlock": "코드 블록",
         "format.divider": "구분선",
+        "style.title": "텍스트 스타일",
+        "style.headingSection": "제목",
+        "style.blockSection": "블록",
+        "style.inlineSection": "인라인",
         "doc.untitled": "제목 없음",
         "dialog.discard.title": "저장하지 않은 변경 사항을 무시할까요?",
         "dialog.discard.body": "현재 문서에 저장하지 않은 변경 사항이 있습니다.",
@@ -285,6 +294,10 @@ enum L {
         "format.quote": "引用",
         "format.codeBlock": "コードブロック",
         "format.divider": "区切り線",
+        "style.title": "テキストスタイル",
+        "style.headingSection": "見出し",
+        "style.blockSection": "ブロック",
+        "style.inlineSection": "インライン",
         "doc.untitled": "無題",
         "dialog.discard.title": "保存していない変更を破棄しますか？",
         "dialog.discard.body": "現在のドキュメントに保存されていない変更があります。",

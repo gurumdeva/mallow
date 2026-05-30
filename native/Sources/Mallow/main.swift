@@ -77,7 +77,8 @@ editMenu.addItem(.separator())
 addEdit(L.t("menu.find"), #selector(NSTextView.performFindPanelAction(_:)), "f", tag: 1)
 addEdit(L.t("menu.findNext"), #selector(NSTextView.performFindPanelAction(_:)), "g", tag: 2)
 addEdit(L.t("menu.findPrevious"), #selector(NSTextView.performFindPanelAction(_:)), "g", [.command, .shift], tag: 3)
-addEdit(L.t("menu.useSelectionForFind"), #selector(NSTextView.performFindPanelAction(_:)), "e", tag: 7)
+// No ⌘E here: it would shadow File ▸ Export as PDF (the text view wins key-equivalent matching).
+addEdit(L.t("menu.useSelectionForFind"), #selector(NSTextView.performFindPanelAction(_:)), "", tag: 7)
 editItem.submenu = editMenu
 
 let formatItem = NSMenuItem()
