@@ -5,6 +5,7 @@
 // centered filename + ● dot) is refreshed from the view-model's derived state.
 
 import AppKit
+import CoreText
 import UniformTypeIdentifiers
 
 final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDelegate, NSLayoutManagerDelegate, NSMenuItemValidation {
@@ -72,7 +73,9 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
         if vm.typewriterOn { centerCaretLine() }
     }
 
-    /// Mark hidden syntax glyphs as `.null` (zero-width, not drawn) from the view-model's set.
+    /// Mark hidden syntax glyphs as `.null` (zero-width, not drawn), AND substitute a `•` glyph for the
+    /// unordered-list dashes (`- ` source kept as truth; shown as a bullet off the caret line) — both
+    /// from the view-model's sets. 1:1 char↔glyph, so caret/selection offsets stay correct.
     func layoutManager(_ lm: NSLayoutManager,
                        shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
                        properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
@@ -80,21 +83,36 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
                        font: NSFont,
                        forGlyphRange glyphRange: NSRange) -> Int {
         let hidden = vm.hiddenChars
-        if hidden.isEmpty { return 0 }  // 0 = no override, use default glyph generation
+        let bullets = vm.bulletMarks
+        if hidden.isEmpty && bullets.isEmpty { return 0 }  // 0 = no override, default glyph generation
+        let bulletGlyph = bullets.isEmpty ? CGGlyph(0) : Self.bulletGlyph(for: font)
+        var newGlyphs = [CGGlyph](repeating: 0, count: glyphRange.length)
         var newProps = [NSLayoutManager.GlyphProperty](repeating: .null, count: glyphRange.length)
         var changed = false
         for i in 0 ..< glyphRange.length {
-            if hidden.contains(characterIndexes[i]) {
-                newProps[i] = .null
-                changed = true
+            let ch = characterIndexes[i]
+            if hidden.contains(ch) {
+                newGlyphs[i] = glyphs[i]; newProps[i] = .null; changed = true
+            } else if bulletGlyph != 0, bullets.contains(ch) {
+                newGlyphs[i] = bulletGlyph; newProps[i] = props[i]; changed = true
             } else {
-                newProps[i] = props[i]
+                newGlyphs[i] = glyphs[i]; newProps[i] = props[i]
             }
         }
         if !changed { return 0 }
-        lm.setGlyphs(glyphs, properties: &newProps,
-                     characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
+        newGlyphs.withUnsafeBufferPointer { gptr in
+            lm.setGlyphs(gptr.baseAddress!, properties: &newProps,
+                         characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
+        }
         return glyphRange.length
+    }
+
+    /// The `•` (U+2022) glyph id for `font`, or 0 if the font lacks it (→ keep the literal dash).
+    private static func bulletGlyph(for font: NSFont) -> CGGlyph {
+        var ch: UniChar = 0x2022
+        var glyph = CGGlyph(0)
+        CTFontGetGlyphsForCharacters(font as CTFont, &ch, &glyph, 1)
+        return glyph
     }
 
     // MARK: format commands (responder-chain menu/button targets → view-model)
