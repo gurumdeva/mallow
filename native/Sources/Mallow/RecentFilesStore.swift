@@ -38,7 +38,7 @@ func rebuildRecentMenu() {
     recentMenu.removeAllItems()
     let paths = RecentFiles.list()
     if paths.isEmpty {
-        let empty = NSMenuItem(title: "No Recent Files", action: nil, keyEquivalent: "")
+        let empty = NSMenuItem(title: L.t("recent.none"), action: nil, keyEquivalent: "")
         empty.isEnabled = false
         recentMenu.addItem(empty)
         return
@@ -51,7 +51,7 @@ func rebuildRecentMenu() {
         recentMenu.addItem(item)
     }
     recentMenu.addItem(.separator())
-    let clear = NSMenuItem(title: "Clear Menu", action: #selector(AppDelegate.clearRecent(_:)), keyEquivalent: "")
+    let clear = NSMenuItem(title: L.t("menu.clearRecent"), action: #selector(AppDelegate.clearRecent(_:)), keyEquivalent: "")
     clear.target = appDelegate
     recentMenu.addItem(clear)
 }
