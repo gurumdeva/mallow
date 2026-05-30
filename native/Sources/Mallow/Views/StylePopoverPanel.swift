@@ -50,6 +50,7 @@ final class StyleButton: HoverButton {
     }
 
     override func hoverChanged() { refresh() }
+    override func appearanceDidChange() { refresh() }   // re-resolve layer fill + border for the new appearance
 }
 
 /// Build the Text-Style popover for `c`. Buttons target the controller, so they operate on the text

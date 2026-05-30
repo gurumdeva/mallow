@@ -19,7 +19,6 @@ final class CornerButton: HoverButton {
         wantsLayer = true
         layer?.cornerRadius = 8
         layer?.borderWidth = 1
-        layer?.borderColor = NSColor(white: 1, alpha: 0.08).cgColor   // --border
         image = symbolImage(symbol, pointSize: 13, weight: .medium)
         self.target = target
         self.action = action
@@ -30,14 +29,17 @@ final class CornerButton: HoverButton {
         refreshFill()
     }
 
-    /// Fill + icon tint for the current state (active beats hover beats rest), matching the CSS rules.
+    /// Fill + border + icon tint for the current state (active beats hover beats rest), matching the CSS
+    /// rules. Border (--border) is set here, not just at init, so it re-resolves on an appearance flip.
     private func refreshFill() {
         let fill = pressed ? cornerBtnFillActive : (hovering ? cornerBtnFillHover : cornerBtnFill)
         layer?.backgroundColor = fill.cgColor
+        layer?.borderColor = mallowBorderColor.cgColor   // --border
         contentTintColor = hovering ? mallowText : mallowDim   // :hover { color: var(--text) }
     }
 
     override func hoverChanged() { refreshFill() }
+    override func appearanceDidChange() { refreshFill() }   // re-resolve layer fill + border for new appearance
     override func mouseExited(with event: NSEvent) { super.mouseExited(with: event); pressed = false }
     override func mouseDown(with event: NSEvent) {
         pressed = true
@@ -84,13 +86,27 @@ final class FilenameButton: HoverButton {
     }
 
     override func hoverChanged() { refresh() }
+    override func appearanceDidChange() { refresh() }   // re-resolve the layer bg for the new appearance
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// The opaque titlebar backdrop. Its `mallowBG` fill is pushed onto the layer as a CGColor, which is a
+/// static snapshot and would NOT re-resolve on a light↔dark flip — so this re-applies it whenever the
+/// effective appearance changes (and once on insertion), keeping the bar in step with the system. The
+/// fill is the dynamic `mallowBG` token, so dark stays byte-identical; only the new light path is added.
+private final class ChromeBackdrop: NSView {
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            self.layer?.backgroundColor = mallowBG.cgColor
+        }
+    }
 }
 
 /// The 52px titlebar overlay (opaque): centered filename + ● dot, and the style / export / info
 /// corner buttons on the right. Wires the buttons + the filename/dot refs onto `c`.
 func makeChromeBar(_ c: EditorController) -> NSView {
-    let bar = NSView()
+    let bar = ChromeBackdrop()
     bar.translatesAutoresizingMaskIntoConstraints = false
     bar.wantsLayer = true
     bar.layer?.backgroundColor = mallowBG.cgColor

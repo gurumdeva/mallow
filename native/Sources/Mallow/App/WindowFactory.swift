@@ -16,11 +16,12 @@ func makeEditor(_ content: String, _ path: String?) -> EditorController {
         backing: .buffered, defer: false
     )
     window.center()
-    // Mallow chrome: transparent titlebar, hidden native title, dark bg, drag-anywhere.
+    // Mallow chrome: transparent titlebar, hidden native title, dynamic bg, drag-anywhere. The window
+    // follows the system appearance (no forced .darkAqua), so the dynamic tokens resolve light/dark to
+    // match macOS; mallowBG is itself a dynamic color, so the backdrop flips with the system.
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
     window.backgroundColor = mallowBG
-    window.appearance = NSAppearance(named: .darkAqua)   // match the dark reference (light theme: TODO)
     window.isMovableByWindowBackground = true
     let scroll = NSScrollView(frame: window.contentView!.bounds)
     scroll.autoresizingMask = [.width, .height]
