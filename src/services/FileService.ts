@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { Document } from '../domain/Document'
 import { EditorController } from '../editor/EditorController'
 import { RecentFilesStore } from './RecentFilesStore'
+import { splitFrontmatter, composeFrontmatter } from './frontmatter'
 import { t } from '../i18n'
 
 /**
@@ -105,6 +106,13 @@ export class FileService {
    */
   private lastDiskContent: string | null = null
   /**
+   * 현재 문서의 선두 YAML 프론트매터(`---`…`---`) 원문. 에디터(Milkdown AST)는 프론트매터를
+   * HR+본문으로 오인해 직렬화 시 깨뜨리므로, 열 때 떼어내 여기 원문 그대로 보관하고 본문만
+   * 에디터에 싣는다. 디스크에 쓸 때만 toDiskContent()가 다시 앞에 붙인다. 프론트매터가 없으면 ''.
+   * (제목 없는 새 문서·환영 문서는 FileService를 거치지 않고 본문만 load되므로 '' 그대로다.)
+   */
+  private frontmatter = ''
+  /**
    * 제목 없는(미저장) 문서의 "깨끗한 기준" 내용. 시작 시 환영 문서/빈 문서 등 최초 콘텐츠를
    * 담아 두고(captureBaseline), hasUnsavedChanges가 미저장 문서의 미저장 편집을 판단하는 데 쓴다.
    * (lastDiskContent는 디스크 IO가 있어야 의미가 있어 미저장 문서엔 null이므로 별도 기준이 필요하다.)
@@ -151,6 +159,15 @@ export class FileService {
    */
   hasUnsavedChanges(): boolean {
     return this.editor.getMarkdown() !== this.baselineContent
+  }
+
+  /**
+   * 디스크에 쓸 전체 내용 = 보관 중인 프론트매터 + 에디터 본문. 외부 변경 비교/저장에서 "에디터가
+   * 디스크에 만들 내용"으로 이걸 쓴다. 에디터의 getMarkdown()은 본문만이라, 프론트매터를 가진
+   * 파일에서 디스크 원본과 직접 비교하면 프론트매터만큼 어긋나기 때문이다.
+   */
+  private toDiskContent(): string {
+    return composeFrontmatter(this.frontmatter, this.editor.getMarkdown())
   }
 
   /**
@@ -237,10 +254,16 @@ export class FileService {
       await this.recent.remove(path)
       throw new OpenError(e)
     }
-    await this.editor.load(content)
+    // 선두 프론트매터를 떼어내 본문만 에디터에 싣고, 프론트매터는 원문 그대로 보관한다
+    // (Milkdown이 프론트매터를 깨뜨리지 않도록 — 저장 시 toDiskContent가 다시 붙인다).
+    const { frontmatter, body } = splitFrontmatter(content)
+    this.frontmatter = frontmatter
+    await this.editor.load(body)
     this.doc.setPath(path)
     this.doc.markSaved()
     await this.recent.add(path)
+    // lastDiskContent는 "디스크 원본 전체"(프론트매터 포함)를 보관한다 — 외부에서 프론트매터만
+    // 바뀌어도 감지하기 위해. 본문 기준선(baselineContent)은 에디터 본문이다.
     this.lastDiskContent = content
     this.baselineContent = this.editor.getMarkdown() // 정규화된 기준(외부 .md 정규화 오탐 방지)
   }
@@ -285,19 +308,21 @@ export class FileService {
       path = selected
     }
     const md = this.editor.getMarkdown()
+    // 디스크엔 보관 중인 프론트매터를 본문 앞에 다시 붙여 쓴다(에디터엔 본문만 있다).
+    const written = composeFrontmatter(this.frontmatter, md)
     // 원자적 저장(임시 파일 → rename): 쓰는 도중 강제 종료돼도 원본이 찢기지 않는다.
-    await invoke('write_file_atomic', { path, content: md })
+    await invoke('write_file_atomic', { path, content: written })
     this.doc.setPath(path)
     await this.recent.add(path)
-    // write는 비동기다. await 동안 사용자가 더 타이핑했다면 에디터 내용이 디스크보다
+    // write는 비동기다. await 동안 사용자가 더 타이핑했다면 에디터 본문이 디스크보다
     // 새롭다 → markSaved()로 dirty를 지우면 그 최신 편집이 자동 저장에서 누락된다.
-    // 실제 내용으로 비교해, "쓴 내용 == 현재 내용"일 때만 saved 처리하고 기준선을 갱신한다.
+    // 실제 본문으로 비교해, "쓴 본문 == 현재 본문"일 때만 saved 처리하고 기준선을 갱신한다.
     // 다르면 dirty를 유지해 기존 자동 저장 'changed' 경로가 최신 내용을 다시 쓰게 둔다.
-    // (lastDiskContent는 "실제로 쓴 내용"일 때만 갱신 — 후속 저장이 최신 내용을 쓰고 그때 갱신.)
+    // (lastDiskContent는 "실제로 쓴 전체 내용"일 때만 갱신 — 외부 변경 비교의 기준선.)
     if (shouldMarkSaved(md, this.editor.getMarkdown())) {
       this.doc.markSaved()
-      this.lastDiskContent = md
-      this.baselineContent = md // 방금 쓴 내용(=현재 에디터 내용)이 새 깨끗한 기준
+      this.lastDiskContent = written
+      this.baselineContent = md // 방금 쓴 본문(=현재 에디터 본문)이 새 깨끗한 기준
     }
   }
 
@@ -321,16 +346,18 @@ export class FileService {
     // Save As가 다른 창에 열린 파일을 덮어써 cross-window lost update가 나는 것을 막는다.
     await this.assertNotOpenElsewhere(selected)
     const md = this.editor.getMarkdown()
+    // 디스크엔 보관 중인 프론트매터를 본문 앞에 다시 붙여 쓴다(에디터엔 본문만 있다).
+    const written = composeFrontmatter(this.frontmatter, md)
     // 원자적 저장(임시 파일 → rename): 쓰는 도중 강제 종료돼도 원본이 찢기지 않는다.
-    await invoke('write_file_atomic', { path: selected, content: md })
+    await invoke('write_file_atomic', { path: selected, content: written })
     this.doc.setPath(selected)
     await this.recent.add(selected)
-    // save()와 동일한 내용 기반 재조정: write await 동안 사용자가 더 친 내용이 있으면
+    // save()와 동일한 본문 기반 재조정: write await 동안 사용자가 더 친 내용이 있으면
     // dirty를 유지해(자동 저장이 새 경로로 최신 내용을 다시 쓰게) 손실을 막는다.
     if (shouldMarkSaved(md, this.editor.getMarkdown())) {
       this.doc.markSaved()
-      this.lastDiskContent = md
-      this.baselineContent = md // 방금 쓴 내용이 새 깨끗한 기준
+      this.lastDiskContent = written
+      this.baselineContent = md // 방금 쓴 본문이 새 깨끗한 기준
     }
   }
 
@@ -376,7 +403,8 @@ export class FileService {
 
       // reload/prompt 결정은 debounce된 doc.isModified가 아니라 "실제 에디터 내용"으로 한다.
       // (타이핑 도중 isModified는 stale-false라, 그 순간 외부 변경이 조용히 덮어쓸 수 있다.)
-      const action = decideSyncAction(this.editor.getMarkdown(), baseline, disk)
+      // 에디터가 "디스크에 만들 내용"(프론트매터 + 본문)으로 디스크 원본과 비교한다.
+      const action = decideSyncAction(this.toDiskContent(), baseline, disk)
       if (action === 'noop') return // 외부 변경 없음
 
       if (action === 'silent') {
@@ -384,10 +412,16 @@ export class FileService {
         // 있다. 그 상태로 load하면 조합 입력이 사라지므로, 조합이 끝난 다음 기회(다음 focus)로 미룬다.
         if (this.editor.isComposing()) return
         // 로컬 편집이 없으므로(에디터 내용 == 마지막 IO 내용) 손실 위험 없이 디스크 내용 반영.
-        await this.editor.load(disk)
+        // 디스크의 프론트매터를 다시 떼어내 보관하고 본문만 에디터에 싣는다(외부에서 프론트매터가
+        // 바뀌었을 수 있으므로 함께 갱신).
+        {
+          const reloaded = splitFrontmatter(disk)
+          this.frontmatter = reloaded.frontmatter
+          await this.editor.load(reloaded.body)
+        }
         this.doc.markSaved() // load가 emit한 'change'로 dirty 표시된 것을 되돌림
         this.lastDiskContent = disk
-        this.baselineContent = this.editor.getMarkdown() // reload한 내용이 새 깨끗한 기준
+        this.baselineContent = this.editor.getMarkdown() // reload한 본문이 새 깨끗한 기준
       } else {
         // 로컬 편집 + 외부 변경이 동시에 존재 → 한쪽을 버려야 하므로 사용자 확인.
         const reload = await ask(
@@ -395,9 +429,12 @@ export class FileService {
           { title: t('dialog.externalChange.title'), kind: 'warning' },
         )
         if (reload) {
-          await this.editor.load(disk)
+          // 디스크 버전 수용: 프론트매터를 다시 떼어내 보관하고 본문만 싣는다.
+          const reloaded = splitFrontmatter(disk)
+          this.frontmatter = reloaded.frontmatter
+          await this.editor.load(reloaded.body)
           this.doc.markSaved()
-          this.baselineContent = this.editor.getMarkdown() // 디스크 내용 수용 → 새 기준
+          this.baselineContent = this.editor.getMarkdown() // 디스크 본문 수용 → 새 기준
         }
         // 거절하더라도 "이 디스크 버전은 확인함"으로 기록 → 동일 내용 재프롬프트 방지.
         // (거절 시 baselineContent는 그대로 둬, 사용자가 지킨 로컬 편집이 여전히 "미저장"으로 남는다.)
