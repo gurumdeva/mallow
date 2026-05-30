@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.28.0] - 2026-05-30
+
+### Added
+- **YAML frontmatter is now preserved.** Notes that begin with a `---` … `---` metadata block (the convention used by Obsidian, Hugo, and Jekyll) previously had that block reinterpreted and rewritten whenever Mallow autosaved — quietly corrupting it. Mallow now keeps the frontmatter exactly as written: it is set aside when the file opens and restored verbatim on every save, so your metadata round-trips byte-for-byte and stays out of the word count and exports.
+
 ## [0.27.0] - 2026-05-30
 
 ### Fixed
