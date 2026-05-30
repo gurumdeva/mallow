@@ -42,9 +42,9 @@ private enum RenameFailure: Error {
 extension EditorController {
     /// Titlebar filename click → rename. Saved documents get the inline rename popover; untitled
     /// documents have no file on disk yet, so there's nothing to rename — fall back to Save As.
-    @objc func renameFromTitlebar(_ sender: NSClickGestureRecognizer) {
+    @objc func renameFromTitlebar(_ sender: Any?) {
         guard vm.filePath != nil else { saveDocumentAs(sender); return }
-        let anchor = sender.view ?? titleLabel ?? window?.contentView
+        let anchor = (sender as? NSView) ?? titleButton ?? window?.contentView
         guard let anchor = anchor else { return }
         presentRenamePopover(from: anchor)
     }
