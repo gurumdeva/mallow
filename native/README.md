@@ -27,19 +27,31 @@ native/build.sh                       # builds the engine staticlib, then runs t
 swift build && swift run Mallow
 ```
 
-## What's here
-- **`Sources/Mallow/main.swift`** — the editor: native `NSTextView` (→ system IME),
-  hide-syntax-at-caret live preview driven by Inkstone's parse, the full command set (Format menu),
-  focus mode (View ▸ Focus Mode, ⌃⌘F), the native find bar (⌘F), and file I/O whose dirty tracking
-  is Inkstone's verified `safety`.
+## Features
+All built on the Inkstone engine over the C-ABI (`Sources/Mallow/main.swift`); the OS system IME
+comes free with `NSTextView`.
+
+- **Live preview** — Inkstone parses the markdown as you type; syntax (`#`, `**`, `*`, `~~`,
+  `` ` ``, and list/quote markers) collapses to zero width except on the caret's line, while
+  headings, bold/italic/strike/inline-code, links, code blocks, and blockquotes are styled in place.
+- **Commands** — the full Format menu (bold/italic/strikethrough/inline-code, headings ⌘1–3 / body
+  ⌘0, bullet & numbered lists, quote, code block, divider), each a verified Inkstone command.
+- **Focus mode** — View ▸ Focus Mode (⌃⌘F) dims every block but the caret's (engine
+  `focus_decoration`).
+- **Multi-window** — File ▸ New (⌘N) / Open (⌘O) spawn independent document windows; ⌘W closes one,
+  and the app quits after the last.
+- **Files** — open / save / save-as with atomic writes and per-window dirty tracking (Inkstone's
+  verified `safety`); a discard prompt guards both close (⌘W) and quit (⌘Q). **Export as HTML**
+  (⇧⌘E) renders a styled, self-contained page from the engine.
+- **Find** — the native find / replace bar (⌘F).
 - **`Sources/CInkstone/`** — the Inkstone C-ABI as a SwiftPM `systemLibrary` (module map + a symlink
   to the engine header).
 
 ![Native editor](docs/native-editor.png)
 
 ## Status
-The render is verified (see the capture above); interaction (IME typing, caret-move re-reveal,
-command execution, file dialogs, focus toggle) needs a human at the keyboard — tracked in
-`PENDING-MANUAL-TEST.local.md` (gitignored). The remaining build-out toward Tauri parity:
-multi-window, export (render HTML from Inkstone's parse), recent files, and the rest of the
-Tauri app's feature set.
+Rendering, multi-window, and HTML export are verified by screen capture. What still needs a human at
+the keyboard — IME typing, caret-move re-reveal, command execution, file dialogs, the Focus toggle,
+New/Open spawning windows, and the discard-on-quit prompt — is tracked in
+`PENDING-MANUAL-TEST.local.md` (gitignored). Remaining build-out toward Tauri parity: recent files,
+and the rest of the Tauri app's feature set.
