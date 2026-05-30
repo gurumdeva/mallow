@@ -58,7 +58,7 @@ extension EditorController {
         let field = RenameField(frame: NSRect(x: 16, y: 14, width: 208, height: 24))
         field.stringValue = vm.displayName
         field.font = NSFont.systemFont(ofSize: 13)
-        field.placeholderString = "Filename"
+        field.placeholderString = L.t("rename.placeholder")
         field.lineBreakMode = .byTruncatingMiddle
         field.bezelStyle = .roundedBezel
         field.isBezeled = true
@@ -123,16 +123,16 @@ extension EditorController {
         let alert = NSAlert()
         switch error {
         case RenameFailure.invalid:
-            alert.messageText = "Invalid file name"
-            alert.informativeText = "A file name can't be empty or contain “/”."
+            alert.messageText = L.t("rename.error.invalid.title")
+            alert.informativeText = L.t("rename.error.invalid.body")
         case RenameFailure.exists:
-            alert.messageText = "A file with that name already exists"
-            alert.informativeText = "Choose a different name to avoid replacing the other file."
+            alert.messageText = L.t("rename.error.exists.title")
+            alert.informativeText = L.t("rename.error.exists.body")
         default:
-            alert.messageText = "Couldn't rename the file"
+            alert.messageText = L.t("rename.error.failed.title")
             alert.informativeText = error.localizedDescription
         }
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L.t("common.ok"))
         if let window = window {
             alert.beginSheetModal(for: window, completionHandler: nil)
         } else {

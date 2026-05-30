@@ -179,7 +179,7 @@ extension EditorController {
     /// vs a generic add failure. Falls back to a modal alert if there's no window to attach a sheet to.
     private func presentImageError(tooLarge: Bool) {
         let alert = NSAlert()
-        alert.messageText = tooLarge ? "Image is too large (max 10 MB)" : "Couldn't add the image"
+        alert.messageText = tooLarge ? L.t("image.error.tooLarge") : L.t("image.error.failed")
         alert.alertStyle = tooLarge ? .warning : .informational
         if let window = window {
             alert.beginSheetModal(for: window, completionHandler: nil)
