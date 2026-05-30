@@ -165,7 +165,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
     }
 
     @objc func exportHTML(_ sender: Any?) {
-        let title = vm.displayName.replacingOccurrences(of: ".md", with: "")
+        let title = vm.baseName
         let html = inkRenderHtml(textView.string, title)
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.html]
@@ -179,7 +179,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
     }
 
     @objc func exportPDF(_ sender: Any?) {
-        let title = vm.displayName.replacingOccurrences(of: ".md", with: "")
+        let title = vm.baseName
         let html = inkRenderHtml(textView.string, title)
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
