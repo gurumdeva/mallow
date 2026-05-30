@@ -20,8 +20,7 @@ final class CornerButton: HoverButton {
         layer?.cornerRadius = 8
         layer?.borderWidth = 1
         layer?.borderColor = NSColor(white: 1, alpha: 0.08).cgColor   // --border
-        let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(cfg)
+        image = symbolImage(symbol, pointSize: 13, weight: .medium)
         self.target = target
         self.action = action
         NSLayoutConstraint.activate([
@@ -96,9 +95,7 @@ func makeChromeBar(_ c: EditorController) -> NSView {
     bar.wantsLayer = true
     bar.layer?.backgroundColor = mallowBG.cgColor
 
-    let dot = NSTextField(labelWithString: "●")
-    dot.font = NSFont.systemFont(ofSize: 9)
-    dot.textColor = mallowDim
+    let dot = mallowLabel("●", size: 9, color: mallowDim)
     dot.isHidden = true
     // Click the centered filename to rename the file on disk (RenameInTitlebar.swift). A real button
     // (not a label) so the click isn't swallowed as a window drag.

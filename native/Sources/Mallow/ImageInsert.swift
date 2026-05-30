@@ -181,10 +181,6 @@ extension EditorController {
         let alert = NSAlert()
         alert.messageText = tooLarge ? L.t("image.error.tooLarge") : L.t("image.error.failed")
         alert.alertStyle = tooLarge ? .warning : .informational
-        if let window = window {
-            alert.beginSheetModal(for: window, completionHandler: nil)
-        } else {
-            alert.runModal()
-        }
+        presentAlert(alert, on: window)
     }
 }

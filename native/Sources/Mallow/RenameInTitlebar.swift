@@ -51,10 +51,6 @@ extension EditorController {
 
     /// Show a small popover with a text field pre-filled with the current name, selected for retype.
     private func presentRenamePopover(from anchor: NSView) {
-        let pop = NSPopover()
-        pop.behavior = .transient
-        pop.appearance = NSAppearance(named: .darkAqua)   // match the dark chrome
-
         let field = RenameField(frame: NSRect(x: 16, y: 14, width: 208, height: 24))
         field.stringValue = vm.displayName
         field.font = NSFont.systemFont(ofSize: 13)
@@ -62,6 +58,12 @@ extension EditorController {
         field.lineBreakMode = .byTruncatingMiddle
         field.bezelStyle = .roundedBezel
         field.isBezeled = true
+
+        let vc = NSViewController()
+        let v = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 52))
+        v.addSubview(field)
+        vc.view = v
+        let pop = darkPopover(vc)
 
         // Commit on Return, dismiss on Escape. The field forwards both to us; the closures capture the
         // popover weakly so dismissing can't retain it past close.
@@ -74,11 +76,6 @@ extension EditorController {
         }
         field.onCancel = { [weak pop] in pop?.performClose(nil) }
 
-        let vc = NSViewController()
-        let v = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 52))
-        v.addSubview(field)
-        vc.view = v
-        pop.contentViewController = vc
         pop.contentSize = v.frame.size
         pop.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         // Focus + select the whole name so the user can immediately retype (like FilenamePopover).
@@ -133,11 +130,7 @@ extension EditorController {
             alert.informativeText = error.localizedDescription
         }
         alert.addButton(withTitle: L.t("common.ok"))
-        if let window = window {
-            alert.beginSheetModal(for: window, completionHandler: nil)
-        } else {
-            alert.runModal()
-        }
+        presentAlert(alert, on: window)
     }
 }
 

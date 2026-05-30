@@ -38,8 +38,7 @@ final class StyleButton: HoverButton {
     convenience init(symbol: String, target: AnyObject, action: Selector) {
         self.init(frame: .zero)
         title = ""
-        let cfg = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(cfg)
+        image = symbolImage(symbol, pointSize: 15)
         contentTintColor = mallowText
         imagePosition = .imageOnly
         setup(target, action)
@@ -65,23 +64,15 @@ func makeStylePopover(_ c: EditorController) -> NSPopover {
         return NSAttributedString(string: s, attributes: attrs)
     }
     func sectionLabel(_ s: String) -> NSTextField {
-        let l = NSTextField(labelWithString: s.uppercased())
-        l.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
-        l.textColor = mallowFaint
-        return l
+        mallowLabel(s.uppercased(), size: 10, weight: .semibold, color: mallowFaint)
     }
     func row(_ buttons: [StyleButton]) -> NSStackView {
-        let s = NSStackView(views: buttons)
-        s.orientation = .horizontal
+        let s = hstack(buttons, spacing: 6)
         s.distribution = .fillEqually
-        s.spacing = 6
         return s
     }
 
-    let title = NSTextField(labelWithString: L.t("style.title"))
-    title.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-    title.textColor = mallowDim
-    title.alignment = .center
+    let title = mallowLabel(L.t("style.title"), size: 13, weight: .medium, color: mallowDim, align: .center)
 
     let headingRow = row([
         StyleButton(label: label("H1", 18, .bold, mallowText), target: c, action: #selector(EditorController.cmdH1(_:))),
@@ -103,15 +94,12 @@ func makeStylePopover(_ c: EditorController) -> NSPopover {
         StyleButton(symbol: "curlybraces", target: c, action: #selector(EditorController.cmdCode(_:))),
     ])
 
-    let stack = NSStackView(views: [
+    let stack = vstack([
         title,
         sectionLabel(L.t("style.headingSection")), headingRow,
         sectionLabel(L.t("style.blockSection")), blockRow,
         sectionLabel(L.t("style.inlineSection")), inlineRow,
-    ])
-    stack.orientation = .vertical
-    stack.alignment = .leading
-    stack.spacing = 7
+    ], spacing: 7)
     stack.translatesAutoresizingMaskIntoConstraints = false
     stack.setCustomSpacing(12, after: title)
 
@@ -131,10 +119,7 @@ func makeStylePopover(_ c: EditorController) -> NSPopover {
 
     let vc = NSViewController()
     vc.view = root
-    let pop = NSPopover()
-    pop.behavior = .transient
-    pop.appearance = NSAppearance(named: .darkAqua)
-    pop.contentViewController = vc
+    let pop = darkPopover(vc)
     pop.contentSize = NSSize(width: width, height: root.fittingSize.height)
     return pop
 }

@@ -201,10 +201,8 @@ final class InfoPanelViewController: NSViewController {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 304, height: 314))
 
         // Centered title above the tabs (CSS `.stats-title`: 13/medium/dim), matching the reference.
-        let titleLabel = NSTextField(labelWithString: L.t("menu.documentInfo"))
-        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        titleLabel.textColor = mallowDim
-        titleLabel.alignment = .center
+        let titleLabel = mallowLabel(L.t("menu.documentInfo"), size: 13, weight: .medium,
+                                     color: mallowDim, align: .center)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(titleLabel)
 
@@ -260,95 +258,42 @@ final class InfoPanelViewController: NSViewController {
         return f
     }()
 
-    /// Wrap a content row in a rounded surface-card box (NSBox does the fill + 12px radius cleanly),
-    /// with the reference's 14×12 inner padding.
-    private func cardBox(_ content: NSView, minHeight: CGFloat) -> NSBox {
-        let box = NSBox()
-        box.boxType = .custom
-        box.titlePosition = .noTitle
-        box.fillColor = surfaceCard
-        box.borderWidth = 0
-        box.cornerRadius = 12
-        box.contentViewMargins = NSSize(width: 14, height: 12)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        box.contentView = content
-        if minHeight > 0 {
-            box.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight).isActive = true
-        }
-        return box
-    }
-
     private func statsBody() -> NSView {
         let cardWidth: CGFloat = 132   // (304 − 32 insets − 8 gap) / 2
 
-        // One stat card: a big value over a dim label, with a faint SF-symbol top-right.
+        // One stat card: a big value (24/semibold) over a dim label (12), with a faint SF-symbol
+        // top-right. The shared statCard builder owns the surface/radius/inset; the grid pins width.
         func card(_ value: String, _ label: String, _ symbol: String) -> NSView {
-            let valueLabel = NSTextField(labelWithString: value)
-            valueLabel.font = NSFont.systemFont(ofSize: 24, weight: .semibold)
-            valueLabel.textColor = mallowText
-            valueLabel.lineBreakMode = .byTruncatingTail
-            let nameLabel = NSTextField(labelWithString: label)
-            nameLabel.font = NSFont.systemFont(ofSize: 12)
-            nameLabel.textColor = mallowDim
-            let main = NSStackView(views: [valueLabel, nameLabel])
-            main.orientation = .vertical
-            main.alignment = .leading
-            main.spacing = 2
-
-            let icon = NSImageView()
-            icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
-            icon.contentTintColor = mallowFaint
-            icon.setContentHuggingPriority(.required, for: .horizontal)
-
-            let spacer = NSView()
-            let row = NSStackView(views: [main, spacer, icon])
-            row.orientation = .horizontal
-            row.alignment = .top
-            let box = cardBox(row, minHeight: 70)
+            let box = statCard(value: value, label: label, symbol: symbol,
+                               valueFont: NSFont.systemFont(ofSize: 24, weight: .semibold),
+                               labelFont: NSFont.systemFont(ofSize: 12),
+                               rowAlignment: .top, minHeight: 70)
             box.widthAnchor.constraint(equalToConstant: cardWidth).isActive = true
             return box
         }
         func hrow(_ a: NSView, _ b: NSView) -> NSStackView {
-            let s = NSStackView(views: [a, b]); s.orientation = .horizontal; s.spacing = 8; return s
+            hstack([a, b], spacing: 8)
         }
         // "1m" read-time format matches the reference's `${readMinutes}${minuteUnit}` (unit = "m").
-        let grid = NSStackView(views: [
+        let grid = vstack([
             hrow(card("\(stats.words)", L.t("info.stat.words"), "text.alignleft"),
                  card("\(stats.characters)", L.t("info.stat.characters"), "character")),
             hrow(card("\(stats.paragraphs)", L.t("info.stat.paragraphs"), "paragraphsign"),
                  card("\(stats.readMinutes)\(L.t("info.readMinuteUnit"))", L.t("info.stat.readTime"), "clock")),
-        ])
-        grid.orientation = .vertical
-        grid.spacing = 8
-        grid.alignment = .leading
+        ], spacing: 8)
 
-        let outer = NSStackView(views: [grid])
-        outer.orientation = .vertical
-        outer.spacing = 8
-        outer.alignment = .leading
+        let outer = vstack([grid], spacing: 8)
         outer.edgeInsets = NSEdgeInsets(top: 2, left: 16, bottom: 8, right: 16)
 
         // Modified-date meta row — only when the document has a file on disk (untitled docs have none).
+        // Same statCard builder as the grid, just with the meta fonts (14/500 value, 11 label) and a
+        // vertically-centered row; no min-height (it sizes to its content) and a full-width pin.
         if let modified = modified {
-            let value = NSTextField(labelWithString: Self.dateFormatter.string(from: modified))
-            value.font = NSFont.systemFont(ofSize: 14, weight: .medium)
-            value.textColor = mallowText
-            value.lineBreakMode = .byTruncatingTail
-            let label = NSTextField(labelWithString: L.t("info.meta.modified"))
-            label.font = NSFont.systemFont(ofSize: 11)
-            label.textColor = mallowDim
-            let main = NSStackView(views: [value, label])
-            main.orientation = .vertical; main.alignment = .leading; main.spacing = 2
-            let icon = NSImageView()
-            icon.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
-            icon.contentTintColor = mallowFaint
-            icon.setContentHuggingPriority(.required, for: .horizontal)
-            let spacer = NSView()
-            let metaRow = NSStackView(views: [main, spacer, icon])
-            metaRow.orientation = .horizontal; metaRow.alignment = .centerY
-            let meta = cardBox(metaRow, minHeight: 0)
+            let meta = statCard(value: Self.dateFormatter.string(from: modified),
+                                label: L.t("info.meta.modified"), symbol: "calendar",
+                                valueFont: NSFont.systemFont(ofSize: 14, weight: .medium),
+                                labelFont: NSFont.systemFont(ofSize: 11),
+                                rowAlignment: .centerY, minHeight: 0)
             meta.widthAnchor.constraint(equalToConstant: cardWidth * 2 + 8).isActive = true
             outer.addArrangedSubview(meta)
         }
@@ -359,10 +304,7 @@ final class InfoPanelViewController: NSViewController {
 
     private func tocBody() -> NSView {
         guard !outline.isEmpty else {
-            let empty = NSTextField(labelWithString: L.t("info.toc.empty"))
-            empty.font = NSFont.systemFont(ofSize: 12)
-            empty.textColor = mallowDim
-            empty.alignment = .center
+            let empty = mallowLabel(L.t("info.toc.empty"), size: 12, color: mallowDim, align: .center)
             let wrap = NSView()
             empty.translatesAutoresizingMaskIntoConstraints = false
             wrap.addSubview(empty)
@@ -378,10 +320,7 @@ final class InfoPanelViewController: NSViewController {
         // `(level - minLevel)` indentation so a doc starting at H2 isn't pushed far right).
         let minLevel = outline.map(\.level).min() ?? 1
 
-        let list = NSStackView()
-        list.orientation = .vertical
-        list.alignment = .leading
-        list.spacing = 2
+        let list = vstack([], spacing: 2)
         list.translatesAutoresizingMaskIntoConstraints = false
         for (idx, item) in outline.enumerated() {
             let btn = TocRowButton(title: item.text.isEmpty ? " " : item.text,
@@ -487,11 +426,10 @@ extension EditorController {
         }
 
         let pop = NSPopover()
-        pop.behavior = .transient
-        pop.appearance = NSAppearance(named: .darkAqua)   // match Mallow's dark chrome
         pop.contentViewController = InfoPanelViewController(
             stats: stats, outline: outline, modified: modified, popover: pop,
             onJump: { [weak self] item in self?.jumpToOutline(item) })
+        configureDarkTransient(pop)   // .transient + dark appearance (shared with the other popovers)
 
         // Prefer the info button as the anchor; fall back to the window content's top-trailing.
         if let button = sender as? NSButton {
