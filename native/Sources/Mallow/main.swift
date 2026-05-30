@@ -526,6 +526,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
             filePath = url.path
             baseline = content
             updateChrome()
+            RecentFiles.add(url.path)   // remember saved files
         } catch {
             NSAlert(error: error).runModal()
         }
@@ -679,6 +680,60 @@ func makeChromeBar(_ c: EditorController) -> NSView {
     return bar
 }
 
+// MARK: - Recent files (persisted across launches; the File ▸ Open Recent submenu)
+
+enum RecentFiles {
+    static let maxCount = 5
+    private static var storeURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MallowNative", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("recent.json")
+    }
+    /// Most-recent-first, with paths that no longer exist on disk filtered out.
+    static func list() -> [String] {
+        guard let data = try? Data(contentsOf: storeURL),
+              let arr = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return arr.filter { FileManager.default.fileExists(atPath: $0) }
+    }
+    static func add(_ path: String) {
+        var arr = list().filter { $0 != path }
+        arr.insert(path, at: 0)
+        arr = Array(arr.prefix(maxCount))
+        try? JSONEncoder().encode(arr).write(to: storeURL, options: .atomic)
+        rebuildRecentMenu()
+    }
+    static func clear() {
+        try? JSONEncoder().encode([String]()).write(to: storeURL, options: .atomic)
+        rebuildRecentMenu()
+    }
+}
+
+let recentMenu = NSMenu(title: "Open Recent")
+
+/// Repopulate the Open Recent submenu from the persisted list (filename only; full path stored).
+func rebuildRecentMenu() {
+    recentMenu.removeAllItems()
+    let paths = RecentFiles.list()
+    if paths.isEmpty {
+        let empty = NSMenuItem(title: "No Recent Files", action: nil, keyEquivalent: "")
+        empty.isEnabled = false
+        recentMenu.addItem(empty)
+        return
+    }
+    for p in paths {
+        let item = NSMenuItem(title: (p as NSString).lastPathComponent,
+                              action: #selector(AppDelegate.openRecent(_:)), keyEquivalent: "")
+        item.representedObject = p
+        item.target = appDelegate
+        recentMenu.addItem(item)
+    }
+    recentMenu.addItem(.separator())
+    let clear = NSMenuItem(title: "Clear Menu", action: #selector(AppDelegate.clearRecent(_:)), keyEquivalent: "")
+    clear.target = appDelegate
+    recentMenu.addItem(clear)
+}
+
 /// Every open document is its own window + controller; we retain them here and drop each on close
 /// (EditorController.windowWillClose), so documents live independently.
 var editors: [EditorController] = []
@@ -719,6 +774,7 @@ func makeEditor(_ content: String, _ path: String?) -> EditorController {
         chrome.heightAnchor.constraint(equalToConstant: 52),
     ])
     controller.setPath(path)   // refresh the chrome label now that it's wired
+    if let path = path { RecentFiles.add(path) }   // remember opened files
     editors.append(controller)
     window.makeKeyAndOrderFront(nil)
     window.makeFirstResponder(textView)   // editor ready to type immediately on open (like Mallow)
@@ -749,6 +805,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             makeEditor(content, url.path)
         }
     }
+    @objc func openRecent(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String,
+              let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        makeEditor(content, path)
+    }
+    @objc func clearRecent(_ sender: Any?) { RecentFiles.clear() }
 }
 
 let app = NSApplication.shared
@@ -778,6 +840,10 @@ func addFile(_ title: String, _ action: Selector, _ key: String,
 }
 addFile("New", #selector(AppDelegate.newDocument(_:)), "n", target: appDelegate)
 addFile("Open…", #selector(AppDelegate.openDocument(_:)), "o", target: appDelegate)
+let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+recentItem.submenu = recentMenu
+fileMenu.addItem(recentItem)
+rebuildRecentMenu()
 addFile("Save", #selector(EditorController.saveDocument(_:)), "s")
 addFile("Save As…", #selector(EditorController.saveDocumentAs(_:)), "s", [.command, .shift])
 fileMenu.addItem(.separator())
