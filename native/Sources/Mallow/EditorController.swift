@@ -7,11 +7,13 @@
 import AppKit
 import UniformTypeIdentifiers
 
-final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDelegate, NSLayoutManagerDelegate {
+final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDelegate, NSLayoutManagerDelegate, NSMenuItemValidation {
     let textView: MarkdownTextView
     let vm: EditorViewModel
     weak var titleLabel: NSTextField?   // custom titlebar filename
     weak var dotView: NSView?           // ● modified-indicator slot
+    var typewriterOn = false            // View ▸ Typewriter Scrolling (caret line kept centered)
+    var autosaveTimer: Timer?           // debounced background save (Autosave.swift); nil when idle
 
     init(textView: MarkdownTextView, window: NSWindow) {
         self.textView = textView
@@ -39,11 +41,32 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
 
     func setPath(_ path: String?) { vm.setPath(path); updateChrome() }
 
+    /// Single merged menu validator for the key window (the menu bar is app-global, so checkmarks can
+    /// drift when another window toggled a shared item — fix them here before the menu shows). Each
+    /// feature folds its branch in: KeepOnTop / Typewriter set their checkmark; ClipboardExtras greys
+    /// out its two items when they can't act. Every other selector returns true so the built-in
+    /// Edit/File/Format items keep validating as before.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(toggleKeepOnTop(_:)):
+            item.state = vm.keepOnTop ? .on : .off
+            return true
+        case #selector(toggleTypewriter(_:)):
+            item.state = typewriterOn ? .on : .off
+            return true
+        default:
+            return validateClipboardExtra(item)   // answers its own two items, true for the rest
+        }
+    }
+
     // MARK: text-view + layout-manager delegate
 
-    func textDidChange(_ notification: Notification) { vm.refresh(); updateChrome() }
+    func textDidChange(_ notification: Notification) { vm.refresh(); updateChrome(); scheduleAutosave() }
 
-    func textViewDidChangeSelection(_ notification: Notification) { vm.selectionChanged() }
+    func textViewDidChangeSelection(_ notification: Notification) {
+        vm.selectionChanged()
+        if typewriterOn { centerCaretLine() }
+    }
 
     /// Mark hidden syntax glyphs as `.null` (zero-width, not drawn) from the view-model's set.
     func layoutManager(_ lm: NSLayoutManager,
@@ -101,35 +124,16 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
         }
     }
 
-    /// Info button → a small popover with the document's word / character counts.
-    @objc func showInfo(_ sender: NSButton) {
-        let s = textView.string
-        let words = s.split { $0 == " " || $0 == "\n" || $0 == "\t" }.count
-        let chars = s.count
-        let pop = NSPopover()
-        pop.behavior = .transient
-        let vc = NSViewController()
-        let label = NSTextField(labelWithString: "Words  \(words)\nCharacters  \(chars)")
-        label.font = NSFont.systemFont(ofSize: 13)
-        label.maximumNumberOfLines = 2
-        let v = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 64))
-        label.frame = NSRect(x: 16, y: 14, width: 148, height: 36)
-        v.addSubview(label)
-        vc.view = v
-        pop.contentViewController = vc
-        pop.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
-    }
-
     // MARK: file I/O + export (the @objc menu targets; writes go through the view-model state)
 
     func confirmDiscardIfDirty() -> Bool {
         guard vm.isDirty else { return true }
         window?.makeKeyAndOrderFront(nil)  // surface WHICH document is prompting (e.g. during ⌘Q)
         let alert = NSAlert()
-        alert.messageText = "Discard unsaved changes?"
-        alert.informativeText = "The current document has edits that haven't been saved."
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L.t("dialog.discard.title")
+        alert.informativeText = L.t("dialog.discard.body")
+        alert.addButton(withTitle: L.t("dialog.discard.confirm"))
+        alert.addButton(withTitle: L.t("dialog.discard.cancel"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -180,11 +184,16 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
 
     // MARK: window lifecycle
 
+    /// Regaining focus re-syncs this window with its file on disk (ExternalReload): silent reload
+    /// when there are no local edits, prompt on conflict. No-op with no path / no external change.
+    func windowDidBecomeKey(_ notification: Notification) { reloadFromDiskIfChanged() }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool { confirmDiscardIfDirty() }
 
     /// Drop this window's controller once it closes so it (and its window) deallocate. Deferred so we
     /// never release ourselves from inside our own delegate callback.
     func windowWillClose(_ notification: Notification) {
+        cancelAutosave()
         DispatchQueue.main.async { editors.removeAll { $0 === self } }
     }
 }

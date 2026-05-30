@@ -7,25 +7,7 @@ import UniformTypeIdentifiers
 
 let markdownTypes: [UTType] = [UTType(filenameExtension: "md") ?? .plainText, .plainText]
 
-let demoText = """
-# Inkstone
-
-A native macOS editor where **markdown is the source of truth** — parsed and
-styled live by a Rust engine, with the system IME for 한글 / 日本語.
-
-`#`, `**`, and `>` collapse away and return only on the caret's line. Try
-*italic*, ~~strikethrough~~, `inline code`, or a [link](https://example.com).
-
-## Highlights
-- **Live styling** that never rewrites your text
-- Lists, quotes, and code rendered in place
-1. headings sized by level
-2. links, code, and rules
-
-> Markdown stays markdown — nothing is changed behind your back.
-
-The Format menu and ⌘B / ⌘I run the engine's commands; ⌘N / O / S handle files.
-"""
+let demoText = L.t("welcome.demo")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -36,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for editor in editors where !editor.confirmDiscardIfDirty() {
             return .terminateCancel   // a window had unsaved edits and the user chose Cancel
         }
+        SessionStore.flushNow()   // SessionRestore: persist final geometry + last-file before exit
         return .terminateNow
     }
 
