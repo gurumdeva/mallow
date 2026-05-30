@@ -63,12 +63,7 @@ enum SessionStore {
     /// saves too; live-resize fires continuously). Short, since a crash/quit between events is benign.
     private static let saveDebounce: TimeInterval = 0.4
 
-    private static var storeURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MallowNative", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("window.json")
-    }
+    private static var storeURL: URL { mallowSupportFile("window.json") }
 
     /// In-memory mirror of the persisted state; loaded once, mutated by the save helpers, and flushed
     /// atomically. Read on the main thread only (all callers are main-thread AppKit hooks).

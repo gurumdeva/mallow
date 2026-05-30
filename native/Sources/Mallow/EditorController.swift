@@ -12,7 +12,6 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
     let vm: EditorViewModel
     weak var titleButton: FilenameButton?   // custom titlebar filename (clickable → rename)
     weak var dotView: NSView?               // ● modified-indicator slot
-    var typewriterOn = false            // View ▸ Typewriter Scrolling (caret line kept centered)
     var autosaveTimer: Timer?           // debounced background save (Autosave.swift); nil when idle
     var sessionObservers: [NSObjectProtocol] = []   // SessionRestore geometry/last-file observers; removed on close
     private var stylePopover: NSPopover?             // retained while the Text-Style popover is shown
@@ -57,7 +56,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
             item.state = vm.keepOnTop ? .on : .off
             return true
         case #selector(toggleTypewriter(_:)):
-            item.state = typewriterOn ? .on : .off
+            item.state = vm.typewriterOn ? .on : .off
             return true
         default:
             return validateClipboardExtra(item)   // answers its own two items, true for the rest
@@ -70,7 +69,7 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
 
     func textViewDidChangeSelection(_ notification: Notification) {
         vm.selectionChanged()
-        if typewriterOn { centerCaretLine() }
+        if vm.typewriterOn { centerCaretLine() }
     }
 
     /// Mark hidden syntax glyphs as `.null` (zero-width, not drawn) from the view-model's set.

@@ -7,9 +7,8 @@ import AppKit
 /// A 30×30 rounded titlebar button with an SF-Symbol icon — matches Mallow's `.corner-btn`, including
 /// the fill + icon-tint changes on hover/active (style.css `.corner-btn:hover` / `:active`). The bare
 /// NSButton was static; this restores the three interaction states the WebView version has.
-final class CornerButton: NSButton {
+final class CornerButton: HoverButton {
     private var pressed = false { didSet { refreshFill() } }
-    private var hovering = false { didSet { refreshFill() } }
 
     convenience init(symbol: String, target: AnyObject, action: Selector) {
         self.init(frame: .zero)
@@ -39,15 +38,8 @@ final class CornerButton: NSButton {
         contentTintColor = hovering ? mallowText : mallowDim   // :hover { color: var(--text) }
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-                                       owner: self, userInfo: nil))
-    }
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false; pressed = false }
+    override func hoverChanged() { refreshFill() }
+    override func mouseExited(with event: NSEvent) { super.mouseExited(with: event); pressed = false }
     override func mouseDown(with event: NSEvent) {
         pressed = true
         super.mouseDown(with: event)   // runs the button's own click-tracking loop, sends the action
@@ -64,8 +56,7 @@ func cornerButton(_ symbol: String, _ target: AnyObject, _ action: Selector) -> 
 /// brighter text). An NSButton — not a label — because a control reliably receives the click; a plain
 /// label let `isMovableByWindowBackground` swallow it as a window drag, so rename never fired. Click →
 /// renameFromTitlebar; truncates long names.
-final class FilenameButton: NSButton {
-    private var hovering = false { didSet { refresh() } }
+final class FilenameButton: HoverButton {
     private var name = "Untitled"
 
     convenience init(target: AnyObject, action: Selector) {
@@ -93,16 +84,8 @@ final class FilenameButton: NSButton {
         ])
     }
 
+    override func hoverChanged() { refresh() }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self, userInfo: nil))
-    }
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
 }
 
 /// The 52px titlebar overlay (opaque): centered filename + ● dot, and the style / export / info

@@ -411,9 +411,8 @@ final class InfoPanelViewController: NSViewController {
 
 /// A left-aligned, borderless heading row that highlights on hover (so the list reads as clickable
 /// like the Tauri `.toc-item`). `indent` shifts the title right by the heading's relative depth.
-final class TocRowButton: NSButton {
+final class TocRowButton: HoverButton {
     var indent: CGFloat = 0 { didSet { needsLayout = true } }
-    private var hovering = false
 
     convenience init(title: String, target: AnyObject, action: Selector) {
         self.init(frame: .zero)
@@ -449,20 +448,8 @@ final class TocRowButton: NSButton {
         }
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-                                       owner: self, userInfo: nil))
-    }
-    override func mouseEntered(with event: NSEvent) {
-        hovering = true
-        layer?.backgroundColor = NSColor(white: 1, alpha: 0.08).cgColor
-    }
-    override func mouseExited(with event: NSEvent) {
-        hovering = false
-        layer?.backgroundColor = NSColor.clear.cgColor
+    override func hoverChanged() {
+        layer?.backgroundColor = (hovering ? NSColor(white: 1, alpha: 0.08) : .clear).cgColor
     }
 }
 
@@ -481,8 +468,7 @@ extension EditorController {
     @objc func showDocumentInfo(_ sender: Any?) {
         let source = textView.string
         // Parse for the outline. Reuse the engine (markdown stays the source of truth — read only).
-        let blocks = (try? JSONDecoder().decode([PBlock].self,
-                                                from: Data(inkParse(source).utf8))) ?? []
+        let blocks = inkParseBlocks(source)
         let stats = DocStats(markdown: source)
         let outline = DocOutline.extract(source, blocks: blocks)
         // The on-disk modified date for the meta row (nil for an unsaved document → row omitted).

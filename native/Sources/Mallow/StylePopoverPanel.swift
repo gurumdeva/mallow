@@ -11,9 +11,7 @@ import AppKit
 /// A rounded "style card" button matching CSS `.style-btn`: surface-card fill, 1px border, radius 10,
 /// min-height 40, hover → surface-card-hover + a stronger border. Content is the button's own
 /// attributed title or SF-symbol image (no subview, so nothing intercepts the click).
-final class StyleButton: NSButton {
-    private var hovering = false { didSet { refresh() } }
-
+final class StyleButton: HoverButton {
     private func setup(_ target: AnyObject, _ action: Selector) {
         translatesAutoresizingMaskIntoConstraints = false
         isBordered = false
@@ -52,15 +50,7 @@ final class StyleButton: NSButton {
         layer?.borderColor = (hovering ? borderStrong : mallowBorderColor).cgColor
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self, userInfo: nil))
-    }
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func hoverChanged() { refresh() }
 }
 
 /// Build the Text-Style popover for `c`. Buttons target the controller, so they operate on the text
