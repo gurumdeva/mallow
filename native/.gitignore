@@ -1,0 +1,8 @@
+# SwiftPM build dir
+.build/
+
+# Local-only notes (manual tests, scratch) — never committed
+*.local.md
+
+# macOS
+.DS_Store

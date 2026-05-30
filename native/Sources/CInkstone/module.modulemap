@@ -1,0 +1,4 @@
+module CInkstone {
+    header "inkstone.h"
+    export *
+}
