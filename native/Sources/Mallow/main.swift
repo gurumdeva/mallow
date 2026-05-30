@@ -467,8 +467,11 @@ final class EditorController: NSWindowController, NSTextViewDelegate, NSWindowDe
         updateChrome()
     }
 
-    private func confirmDiscardIfDirty() -> Bool {
+    // Internal (not private): the app delegate calls this for every window on ⌘Q (see
+    // applicationShouldTerminate), since Quit does NOT route through windowShouldClose.
+    func confirmDiscardIfDirty() -> Bool {
         guard isDirty else { return true }
+        window?.makeKeyAndOrderFront(nil)  // surface WHICH document is prompting (e.g. during ⌘Q)
         let alert = NSAlert()
         alert.messageText = "Discard unsaved changes?"
         alert.informativeText = "The current document has edits that haven't been saved."
@@ -600,6 +603,15 @@ func makeEditor(_ content: String, _ path: String?) -> EditorController {
 /// window closes (one document per window).
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    // ⌘Q / Log Out / Restart / Shut Down do NOT invoke each window's windowShouldClose, so the
+    // per-window discard guard must be re-applied here or unsaved edits are silently lost on quit.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        for editor in editors where !editor.confirmDiscardIfDirty() {
+            return .terminateCancel   // a window had unsaved edits and the user chose Cancel
+        }
+        return .terminateNow
+    }
 
     @objc func newDocument(_ sender: Any?) { makeEditor("", nil) }
     @objc func openDocument(_ sender: Any?) {
