@@ -24,6 +24,7 @@ func inkParse(_ s: String) -> String { inkTake(inkstone_parse_json(s)) }
 func inkCommand(_ name: String, _ s: String, _ anchor: Int, _ head: Int) -> String {
     inkTake(inkstone_apply_command(name, s, anchor, head))
 }
+func inkRenderHtml(_ s: String, _ title: String) -> String { inkTake(inkstone_render_html(s, title)) }
 
 // MARK: - Minimal JSON view-model (only what the spike needs; extra keys are ignored)
 
@@ -522,6 +523,22 @@ final class EditorController: NSObject, NSTextViewDelegate, NSWindowDelegate, NS
         }
     }
 
+    // Export the current document to a styled, self-contained HTML file (Inkstone renders it).
+    @objc func exportHTML(_ sender: Any?) {
+        let base = (filePath as NSString?)?.deletingPathExtension.components(separatedBy: "/").last
+        let title = base ?? "Untitled"
+        let html = inkRenderHtml(textView.string, title)
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.html]
+        panel.nameFieldStringValue = "\(title).html"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try html.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool { confirmDiscardIfDirty() }
 }
 
@@ -610,6 +627,8 @@ addFile("New", #selector(EditorController.newDocument(_:)), "n")
 addFile("Open…", #selector(EditorController.openDocument(_:)), "o")
 addFile("Save", #selector(EditorController.saveDocument(_:)), "s")
 addFile("Save As…", #selector(EditorController.saveDocumentAs(_:)), "s", [.command, .shift])
+fileMenu.addItem(.separator())
+addFile("Export as HTML…", #selector(EditorController.exportHTML(_:)), "e", [.command, .shift])
 fileItem.submenu = fileMenu
 
 // Edit menu — standard actions route through the responder chain to the text view (target nil).
