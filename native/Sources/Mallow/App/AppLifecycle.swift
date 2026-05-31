@@ -8,7 +8,7 @@
 //
 // Why a notification instead of calling `openWindow` from the delegate: `@Environment(\.openWindow)` is
 // only resolvable inside a View/Scene body, not from an AppDelegate. So the delegate's job is purely to
-// *broadcast* the path; MallowApp subscribes (see INTEGRATION NOTES) and does the actual window open.
+// *broadcast* the path; MallowApp subscribes and does the actual window open.
 //
 // Why a representable for the window delegate (mirroring WindowActiveTracker / SessionRestore's seam):
 // WindowGroup content windows on macOS 14 expose no SwiftUI hook for "should this window close?" — that
@@ -24,7 +24,7 @@ import AppKit
 extension Notification.Name {
     /// Posted by `MallowAppDelegate` for each file the OS hands us (Finder double-click, `open -a`,
     /// dock drop). `userInfo["path"]` is the absolute file path. MallowApp observes this and opens a
-    /// window with `OpenSpec.file(path:)` — see INTEGRATION NOTES at the bottom of this file.
+    /// window with `OpenSpec.file(path:)`.
     static let mallowOpenFile = Notification.Name("mallowOpenFile")
     /// Posted by the View ▸ Document Info (⇧⌘I) command; the front editor window toggles its info popover.
     static let mallowToggleInfo = Notification.Name("mallowToggleInfo")
@@ -228,62 +228,3 @@ struct WindowConfigurator: NSViewRepresentable {
         }
     }
 }
-
-// =============================================================================================
-// INTEGRATION NOTES (no other file was edited per task; apply these two small changes by hand):
-// =============================================================================================
-//
-// 1) MallowApp.swift — register the delegate and bridge `.mallowOpenFile` → openWindow.
-//
-//    `@Environment(\.openWindow)` only resolves inside a View/Scene, so the AppDelegate can't call it.
-//    The clean fix: register the delegate, and add a tiny hidden view INSIDE a Scene that listens for
-//    `.mallowOpenFile` and calls `openWindow(value:)`. WindowGroup needs a window to mount its content,
-//    so put the listener in a `Settings` (or `MenuBarExtra`) scene that's always present — or, simplest,
-//    fold it into the WindowGroup content via a background listener. Concrete, drop-in version:
-//
-//        @main
-//        struct MallowApp: App {
-//            @NSApplicationDelegateAdaptor(MallowAppDelegate.self) private var appDelegate
-//            @Environment(\.openWindow) private var openWindow   // valid here: App body is a Scene context on 14+
-//
-//            var body: some Scene {
-//                WindowGroup(for: OpenSpec.self) { $spec in
-//                    EditorWindow(spec: spec)
-//                        // Bridge OS open-file events to a new file window. Attaching the receiver to the
-//                        // editor content means at least one is alive whenever any window is open (and the
-//                        // first window already exists by the time Finder hands off a file on launch).
-//                        .onReceive(NotificationCenter.default.publisher(for: .mallowOpenFile)) { note in
-//                            guard let path = note.userInfo?["path"] as? String else { return }
-//                            openWindow(value: OpenSpec.file(path: path))
-//                        }
-//                }
-//                .windowStyle(.hiddenTitleBar)
-//                .defaultSize(width: 760, height: 560)
-//                .commands { MallowCommands() }
-//            }
-//        }
-//
-//    Notes / alternatives:
-//      • If `@Environment(\.openWindow)` doesn't resolve at App scope in your SDK, move the `.onReceive`
-//        modifier down onto a view that has its own `@Environment(\.openWindow)` (e.g. EditorWindow, or a
-//        zero-size `Color.clear` placed in the editor's background) — openWindow always resolves in a View.
-//      • De-dupe: every open editor window mounts this receiver, so N windows → N opens for one event.
-//        Cheapest guard is to attach it to exactly one always-present scene instead (a hidden
-//        `Settings { EmptyView().onReceive(...) }` on macOS), or gate on a shared "already opening this
-//        path this runloop" flag. With a single WindowGroup the first-window case is fine; add the guard
-//        once multiple windows can be open simultaneously.
-//      • `.handlesExternalEvents(matching:)` is the other route, but it keys off registered URL schemes /
-//        document types in an app bundle's Info.plist. This SwiftPM executable has none, so the
-//        AppDelegate `application(_:open:)` path above is the reliable mechanism; revisit handlesExternal-
-//        Events only once the app ships as a bundle with CFBundleDocumentTypes declared.
-//
-// 2) EditorWindow.body (in MallowApp.swift) — install the per-window configurator alongside the existing
-//    WindowActiveTracker background:
-//
-//        .background(WindowActiveTracker(doc: doc))
-//        .background(WindowConfigurator(doc: doc))   // ← add: close-confirm delegate + session tracking
-//
-//    Two `.background(...)` layers coexist fine (each is its own zero-size representable). They install
-//    independent things — WindowActiveTracker watches didBecomeKey for AppState.activeDoc; WindowConfig-
-//    urator owns windowShouldClose + SessionStore.track — so neither one fights the other for the window.
-// =============================================================================================

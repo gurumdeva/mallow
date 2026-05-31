@@ -18,7 +18,7 @@
 // representable's Coordinator, which has no equivalent timer slot — so the debounce/centring state lives
 // here in a small plain object the Coordinator owns (`let behaviors = EditorBehaviors()`). The Coordinator
 // forwards its two delegate callbacks in (textChanged / selectionChanged); the View menu toggle calls
-// EditorDocument.toggleTypewriter(). See the INTEGRATION NOTES returned with this change for the wiring.
+// EditorDocument.toggleTypewriter().
 
 import AppKit
 

@@ -18,7 +18,7 @@
 //
 // Wiring: WindowActiveTracker already owns this window's NSWindow.didBecomeKeyNotification observer (it
 // marks the window's doc active for the menu commands); the integrator adds a
-// `doc.reloadFromDiskIfChanged()` call in that same handler (see INTEGRATION NOTES). This file is
+// `doc.reloadFromDiskIfChanged()` call in that same handler. This file is
 // otherwise self-contained: the re-entrancy guard (so the focus that returns when the modal alert
 // closes doesn't re-enter and stack a second alert) lives here, since extensions can't add stored
 // properties.

@@ -12,7 +12,7 @@
 // work itself without reaching back into the document/VM, and the Coordinator already holds `doc`
 // (text view + view-model). The Coordinator's own `vm` is private, so this file goes through
 // `doc.vm` / `doc.textView`. Integration: MarkdownTextView.paste / performDragOperation / drag-entered
-// forward to these methods (see the file's INTEGRATION NOTES), and the Edit menu targets the two
+// forward to these methods, and the Edit menu targets the two
 // menu actions.
 //
 // Insertion contract (per the editor's design): `doc.textView.insertText(md, replacementRange:)` is

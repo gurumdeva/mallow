@@ -21,8 +21,7 @@
 //     registry takes no lock; it is a plain main-thread singleton like AppState.shared.
 //
 // This file is self-contained: the registry, the canonical-path helper, and the three free guard
-// functions all live here. Call sites are listed in the INTEGRATION NOTES at the bottom — per the task,
-// no existing file is edited; the lead wires these in by hand.
+// functions all live here.
 
 import AppKit
 
@@ -144,7 +143,7 @@ final class WindowRegistry {
 /// Decide whether the app may quit, given the currently-open windows. If one or more windows have unsaved
 /// changes, present a single modal alert naming the count and return the user's choice; otherwise allow
 /// the quit. Call this from `MallowAppDelegate.applicationShouldTerminate(_:)` and map the Bool to a
-/// reply (see INTEGRATION NOTES).
+/// `NSApplication.TerminateReply`.
 ///
 /// Returns `true` to proceed with termination, `false` to cancel it. With no dirty windows it returns
 /// `true` immediately (no alert) — the per-window close-confirm in WindowConfigurator already covers the
@@ -216,105 +215,3 @@ func presentPathInUseAlert(path: String, anchor: NSWindow? = nil) {
         alert.runModal()
     }
 }
-
-// =============================================================================================
-// INTEGRATION NOTES (no existing file was edited per the task; the lead applies these by hand):
-// =============================================================================================
-//
-// All five entry points are one-liners against the existing seams. Everything below runs on the main
-// thread already (window lifecycle, menu commands, DocumentActions) — the same main-thread-by-convention
-// model the rest of the app uses (no actor isolation anywhere in the codebase).
-//
-// ── 1) register / unregister — tie registry membership to window lifetime ──────────────────────────
-//
-//   Preferred (deterministic with SwiftUI's @State document): EditorWindow.body in MallowApp.swift,
-//   alongside the existing `.background(WindowActiveTracker)` / `.background(WindowConfigurator)`:
-//
-//       .onAppear    { WindowRegistry.shared.register(doc) }
-//       .onDisappear { WindowRegistry.shared.unregister(doc) }
-//
-//   (`doc` is the `@State private var doc` already in EditorWindow.) `.onAppear` fires once the window's
-//   view is up; `.onDisappear` fires when the window closes. register() is idempotent, so even if a
-//   future SwiftUI quirk re-fires onAppear it won't double-insert. Weak entries make unregister a
-//   belt-and-suspenders step — a closed window's doc would compact out on its own — but calling it keeps
-//   the table tight and the dirty-count exact the instant a window closes.
-//
-//   Alternative (if you'd rather key off the NSWindow): register inside WindowConfigurator.Coordinator
-//   .attach(to:) and unregister in its `deinit`. EditorWindow.onAppear/onDisappear is simpler and is the
-//   recommended spot; pick one, not both.
-//
-// ── 2) ⌘Q guard — MallowAppDelegate.applicationShouldTerminate ─────────────────────────────────────
-//
-//   Add this method to MallowAppDelegate (AppLifecycle.swift). It is NOT currently implemented (the
-//   delegate only has applicationShouldTerminateAfterLastWindowClosed), so there's no conflict:
-//
-//       func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-//           confirmQuitIfDirty() ? .terminateNow : .terminateCancel
-//       }
-//
-//   `.terminateNow` proceeds with the quit; `.terminateCancel` aborts it and keeps the app running. This
-//   fires for ⌘Q / Quit menu / logout-initiated termination — the cases the per-window windowShouldClose
-//   never sees. (Leave applicationShouldTerminateAfterLastWindowClosed as-is.)
-//
-// ── 3) Save / Save-As guard — DocumentActions.write(to:) / saveAs() ────────────────────────────────
-//
-//   In `write(to:)`, before the `content.write(...)`, refuse to overwrite a file another window owns:
-//
-//       if pathOpenInOtherWindow(url.path, excluding: self) {
-//           presentPathInUseAlert(path: url.path, anchor: textView.window)
-//           return
-//       }
-//
-//   `excluding: self` makes a normal Save back to your own file always allowed (you are not "another"
-//   window). This guards BOTH Save (existing path) and Save-As (panel-chosen path), since both funnel
-//   through `write(to:)`. If you prefer to guard only the explicit-target cases, put the same check at
-//   the top of `saveAs()` right after the panel returns a `url` instead — but `write(to:)` is the single
-//   chokepoint and is the recommended spot.
-//
-// ── 4) Open / Open-Recent — focus an existing window instead of duplicating ─────────────────────────
-//
-//   (a) MallowCommands.openFile() (the NSOpenPanel path): after the panel yields `url`, prefer focus:
-//
-//       if let existing = WindowRegistry.shared.document(forPath: url.path) {
-//           WindowRegistry.shared.focusWindow(of: existing)
-//       } else {
-//           openWindow(value: OpenSpec.file(path: url.path))
-//       }
-//
-//   (b) MallowCommands Open-Recent buttons (the ForEach over RecentFiles.list()): same pattern around
-//       the existing `openWindow(value: OpenSpec.file(path: path))`:
-//
-//       Button((path as NSString).lastPathComponent) {
-//           if let existing = WindowRegistry.shared.document(forPath: path) {
-//               WindowRegistry.shared.focusWindow(of: existing)
-//           } else {
-//               openWindow(value: OpenSpec.file(path: path))
-//           }
-//       }
-//
-//   (c) MallowApp.swift, the `.mallowOpenFile` receiver (Finder "open with" / `open -a` / dock drop):
-//       inside the `.onReceive`, focus-existing before opening. It already gates on `claimFileOpen(path)`
-//       (the per-runloop OS-event de-dupe); add the registry check after that:
-//
-//           .onReceive(NotificationCenter.default.publisher(for: .mallowOpenFile)) { note in
-//               guard let path = note.userInfo?["path"] as? String, claimFileOpen(path) else { return }
-//               if let existing = WindowRegistry.shared.document(forPath: path) {
-//                   WindowRegistry.shared.focusWindow(of: existing)
-//               } else {
-//                   openWindow(value: OpenSpec.file(path: path))
-//               }
-//           }
-//
-//   Why both `claimFileOpen` and the registry check stay: claimFileOpen de-dupes the *same OS event*
-//   fanning out to every mounted receiver within ~1s (a transient race); the registry check is the
-//   durable "this file is already open in a live window" decision. They solve different problems — keep
-//   both. (A small optional polish: factor the three-line focus-or-open into one helper, e.g.
-//   `openOrFocus(path:openWindow:)`, and call it from all three sites; not required.)
-//
-// ── Canonicalization note ──────────────────────────────────────────────────────────────────────────
-//
-//   All comparisons go through WindowRegistry.canonicalPath (symlinks resolved + standardized), so
-//   `/tmp/x.md` vs `/private/tmp/x.md`, a `~`-relative path, and a `./x.md` all dedupe to one identity.
-//   It does not require the target to exist, so a brand-new Save-As path still compares correctly against
-//   any window that already holds that (about-to-exist) file.
-// =============================================================================================

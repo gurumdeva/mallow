@@ -124,7 +124,7 @@ enum SmartTypography {
     ///   • Dash at the very start of a line is suppressed (returns nil), mirroring the Tauri
     ///     block-start carve-out that let CommonMark's "---" → horizontal-rule shortcut survive.
     ///     (This editor has no HR input rule, so the visible effect is simply that a line-leading
-    ///     "--"/"---" stays literal hyphens. Faithful to the source; see INTEGRATION NOTES.)
+    ///     "--"/"---" stays literal hyphens. Faithful to the source.)
     ///
     /// `loc` is a UTF-16 offset (NSTextView/NSString convention). All indexing here goes through
     /// UTF-16 so it lines up with `selectedRange()` / `replacementRange.location`.
@@ -154,7 +154,7 @@ enum SmartTypography {
             // Ellipsis needs the two chars already in the doc to be dots: "..".
             guard prev == ".", characterBefore(utf16, at - 1) == "." else { return nil }
             // Replace the two existing dots + this one. The caller widens the replacement range to
-            // cover the two preceding dots (see INTEGRATION NOTES); here we return the full glyph.
+            // cover the two preceding dots; here we return the full glyph.
             return ellipsis("...").map(String.init)
 
         case "-":
