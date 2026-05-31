@@ -8,49 +8,36 @@
 
 import AppKit
 
+/// Fixed size of a style card. All cards are square so the 4-button Heading/Inline rows and the
+/// 5-button Block row are the same button size (the previous `.fillEqually` rows stretched each row's
+/// buttons to a different width — the non-square bug this layout fixes).
+private let styleCardSize: CGFloat = 44
+
 /// A rounded "style card" button matching CSS `.style-btn`: surface-card fill, 1px border, radius 10,
-/// min-height 40, hover → surface-card-hover + a stronger border. Content is the button's own
-/// attributed title or SF-symbol image (no subview, so nothing intercepts the click).
-final class StyleButton: HoverButton {
-    private func setup(_ target: AnyObject, _ action: Selector) {
-        translatesAutoresizingMaskIntoConstraints = false
-        isBordered = false
-        bezelStyle = .shadowlessSquare
-        wantsLayer = true
-        layer?.cornerRadius = 10
-        layer?.borderWidth = 1
-        self.target = target
-        self.action = action
-        heightAnchor.constraint(greaterThanOrEqualToConstant: 40).isActive = true
-        refresh()
-    }
+/// hover → surface-card-hover + a stronger border — now a fixed 44×44 `SquareButton`. The shared
+/// pieces of the `Config`; the two factories below fill in the symbol-vs-label content.
+private func styleCard(_ content: SquareButton.Content) -> SquareButton.Config {
+    SquareButton.Config(
+        size: styleCardSize,
+        cornerRadius: 10,
+        content: content,
+        fill: surfaceCard,
+        hoverFill: surfaceCardHover,
+        activeFill: nil,                 // no pressed state
+        border: mallowBorderColor,
+        hoverBorder: borderStrong,
+        tint: mallowText,                // ignored for label content (label carries its own colors)
+        hoverTint: mallowText)
+}
 
-    /// A text card (H1/H2/H3/Body): the label is the button's attributed title.
-    convenience init(label: NSAttributedString, target: AnyObject, action: Selector) {
-        self.init(frame: .zero)
-        title = ""
-        attributedTitle = label
-        imagePosition = .noImage
-        setup(target, action)
-    }
+/// A text card (H1/H2/H3/Body): the label is the button's attributed title (colors baked in).
+func styleButton(label: NSAttributedString, target: AnyObject, action: Selector) -> SquareButton {
+    SquareButton(styleCard(.label(label)), target: target, action: action)
+}
 
-    /// An icon card (block + inline actions): an SF symbol tinted to the body color.
-    convenience init(symbol: String, target: AnyObject, action: Selector) {
-        self.init(frame: .zero)
-        title = ""
-        image = symbolImage(symbol, pointSize: 15)
-        contentTintColor = mallowText
-        imagePosition = .imageOnly
-        setup(target, action)
-    }
-
-    private func refresh() {
-        layer?.backgroundColor = (hovering ? surfaceCardHover : surfaceCard).cgColor
-        layer?.borderColor = (hovering ? borderStrong : mallowBorderColor).cgColor
-    }
-
-    override func hoverChanged() { refresh() }
-    override func appearanceDidChange() { refresh() }   // re-resolve layer fill + border for the new appearance
+/// An icon card (block + inline actions): an SF symbol tinted to the body color.
+func styleButton(symbol: String, target: AnyObject, action: Selector) -> SquareButton {
+    SquareButton(styleCard(.symbol(symbol, pointSize: 15)), target: target, action: action)
 }
 
 /// Build the Text-Style popover for `c`. Buttons target the controller, so they operate on the text
@@ -67,32 +54,44 @@ func makeStylePopover(_ c: EditorController) -> NSPopover {
     func sectionLabel(_ s: String) -> NSTextField {
         mallowLabel(s.uppercased(), size: 10, weight: .semibold, color: mallowFaint)
     }
-    func row(_ buttons: [StyleButton]) -> NSStackView {
+    // A row of fixed 44×44 cards, centered inside a full-width container. The buttons are their own
+    // fixed size (no `.fillEqually`), so the 4-card Heading/Inline rows stay 44×44 just like the
+    // 5-card Block row instead of stretching to fill — and centering keeps the shorter rows aligned
+    // under the wider Block row. `rowWidth` (the widest row, 5 cards) sets the content width below.
+    func row(_ buttons: [SquareButton]) -> NSView {
         let s = hstack(buttons, spacing: 6)
-        s.distribution = .fillEqually
-        return s
+        s.translatesAutoresizingMaskIntoConstraints = false
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(s)
+        NSLayoutConstraint.activate([
+            s.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            s.topAnchor.constraint(equalTo: container.topAnchor),
+            s.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        return container
     }
 
     let title = mallowLabel(L.t("style.title"), size: 13, weight: .medium, color: mallowDim, align: .center)
 
     let headingRow = row([
-        StyleButton(label: label("H1", 18, .bold, mallowText), target: c, action: #selector(EditorController.cmdH1(_:))),
-        StyleButton(label: label("H2", 16, .bold, mallowText), target: c, action: #selector(EditorController.cmdH2(_:))),
-        StyleButton(label: label("H3", 14, .bold, mallowText), target: c, action: #selector(EditorController.cmdH3(_:))),
-        StyleButton(label: label(L.t("format.body"), 13, .medium, mallowDim), target: c, action: #selector(EditorController.cmdBody(_:))),
+        styleButton(label: label("H1", 18, .bold, mallowText), target: c, action: #selector(EditorController.cmdH1(_:))),
+        styleButton(label: label("H2", 16, .bold, mallowText), target: c, action: #selector(EditorController.cmdH2(_:))),
+        styleButton(label: label("H3", 14, .bold, mallowText), target: c, action: #selector(EditorController.cmdH3(_:))),
+        styleButton(label: label(L.t("format.body"), 13, .medium, mallowDim), target: c, action: #selector(EditorController.cmdBody(_:))),
     ])
     let blockRow = row([
-        StyleButton(symbol: "text.quote", target: c, action: #selector(EditorController.cmdQuote(_:))),
-        StyleButton(symbol: "list.bullet", target: c, action: #selector(EditorController.cmdBullet(_:))),
-        StyleButton(symbol: "list.number", target: c, action: #selector(EditorController.cmdNumbered(_:))),
-        StyleButton(symbol: "chevron.left.forwardslash.chevron.right", target: c, action: #selector(EditorController.cmdCodeBlock(_:))),
-        StyleButton(symbol: "minus", target: c, action: #selector(EditorController.cmdDivider(_:))),
+        styleButton(symbol: "text.quote", target: c, action: #selector(EditorController.cmdQuote(_:))),
+        styleButton(symbol: "list.bullet", target: c, action: #selector(EditorController.cmdBullet(_:))),
+        styleButton(symbol: "list.number", target: c, action: #selector(EditorController.cmdNumbered(_:))),
+        styleButton(symbol: "chevron.left.forwardslash.chevron.right", target: c, action: #selector(EditorController.cmdCodeBlock(_:))),
+        styleButton(symbol: "minus", target: c, action: #selector(EditorController.cmdDivider(_:))),
     ])
     let inlineRow = row([
-        StyleButton(label: label("B", 15, .bold, mallowText), target: c, action: #selector(EditorController.cmdBold(_:))),
-        StyleButton(label: label("I", 15, .regular, mallowText, italic: true), target: c, action: #selector(EditorController.cmdItalic(_:))),
-        StyleButton(label: label("S", 14, .regular, mallowText, strike: true), target: c, action: #selector(EditorController.cmdStrike(_:))),
-        StyleButton(symbol: "curlybraces", target: c, action: #selector(EditorController.cmdCode(_:))),
+        styleButton(label: label("B", 15, .bold, mallowText), target: c, action: #selector(EditorController.cmdBold(_:))),
+        styleButton(label: label("I", 15, .regular, mallowText, italic: true), target: c, action: #selector(EditorController.cmdItalic(_:))),
+        styleButton(label: label("S", 14, .regular, mallowText, strike: true), target: c, action: #selector(EditorController.cmdStrike(_:))),
+        styleButton(symbol: "curlybraces", target: c, action: #selector(EditorController.cmdCode(_:))),
     ])
 
     let stack = vstack([
@@ -104,7 +103,10 @@ func makeStylePopover(_ c: EditorController) -> NSPopover {
     stack.translatesAutoresizingMaskIntoConstraints = false
     stack.setCustomSpacing(12, after: title)
 
-    let width: CGFloat = 248
+    // Content width = the widest row (the 5-card Block row) + the 14px side insets. The Block row is
+    // 5 cards of 44 with 4 gaps of 6 = 244; the card area drives the popover width, no fixed 248.
+    let rowWidth = styleCardSize * 5 + 6 * 4
+    let width = rowWidth + 14 * 2
     let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 300))
     root.addSubview(stack)
     NSLayoutConstraint.activate([
@@ -113,7 +115,8 @@ func makeStylePopover(_ c: EditorController) -> NSPopover {
         stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
         stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
     ])
-    // Rows + title span the full content width (so fillEqually distributes evenly).
+    // Title + each row container span the full content width: the title so its centered text fills the
+    // card, the rows so their inner card group can center within it.
     for v in [title, headingRow, blockRow, inlineRow] as [NSView] {
         v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
     }

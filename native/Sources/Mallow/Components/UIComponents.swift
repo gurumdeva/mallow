@@ -4,7 +4,7 @@
 // collapses that repetition to one place so the call sites read as intent, not assembly. These are
 // pure construction helpers: every factory reproduces the EXACT attributes (font/size/weight/color/
 // alignment/spacing/radius/inset/behavior) of the sites it replaces — it does not restyle anything.
-// (The HoverButton base — CornerButton/FilenameButton/StyleButton/TocRowButton — is its own seam.)
+// (The HoverButton base — SquareButton/FilenameButton/TocRowButton — is its own seam.)
 
 import AppKit
 
