@@ -4,8 +4,6 @@
 // menus, popovers, and the open/save/session lifecycle land in the following phases.
 
 import SwiftUI
-import AppKit
-import UniformTypeIdentifiers
 
 @main
 struct MallowApp: App {
@@ -15,6 +13,7 @@ struct MallowApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 760, height: 560)
+        .commands { MallowCommands() }
     }
 }
 
@@ -32,22 +31,11 @@ struct EditorWindow: View {
             MarkdownEditor(doc: doc)
                 .ignoresSafeArea()
             ChromeBar(doc: doc, showStyle: $showStyle, showInfo: $showInfo,
-                      onExport: exportPDF, onRename: {})
+                      onExport: { doc.exportPDF() }, onRename: {})
         }
         .frame(minWidth: 480, minHeight: 360)
         .background(Theme.bg)
-    }
-
-    /// Export the document to PDF via the engine's HTML renderer + the WKWebView PDF exporter (the same
-    /// path the AppKit build used). The full open/save lifecycle + menu commands land in a later phase.
-    private func exportPDF() {
-        let title = doc.vm.baseName
-        let html = inkRenderHtml(doc.textView.string, title)
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.nameFieldStringValue = "\(title).pdf"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        _ = PDFExporter(html: html, to: url)
+        .background(WindowActiveTracker(doc: doc))   // report this window active to AppState for the menu commands
     }
 }
 
