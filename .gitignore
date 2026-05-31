@@ -1,31 +1,22 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# SwiftPM build output
+.build/
 
-node_modules
-dist
-dist-ssr
+# Local-only notes (manual-test logs, scratch) — never committed
 *.local
+*.local.md
 
-# Editor directories and files
+# Archived Tauri app (superseded by the native app). Kept locally for reference;
+# intentionally never tracked or pushed — the native app at the repo root is the product now.
+.tauri/
+
+# Tooling / OS
+.claude/
+.DS_Store
+*.log
+logs
+
+# Editor directories
 .vscode/*
 !.vscode/extensions.json
 .idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Tauri (Rust build artifacts & generated schemas)
-src-tauri/target
-src-tauri/gen
-
-# Generated icon (source of truth is icon.svg)
-icon.png
+*.swp
