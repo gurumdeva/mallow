@@ -54,11 +54,11 @@ func rebuildRecentMenu() {
         let item = NSMenuItem(title: (p as NSString).lastPathComponent,
                               action: #selector(AppDelegate.openRecent(_:)), keyEquivalent: "")
         item.representedObject = p
-        item.target = appDelegate
+        item.target = nil   // legacy AppKit menu (dead in the SwiftUI build); recents are a SwiftUI menu now
         recentMenu.addItem(item)
     }
     recentMenu.addItem(.separator())
     let clear = NSMenuItem(title: L.t("menu.clearRecent"), action: #selector(AppDelegate.clearRecent(_:)), keyEquivalent: "")
-    clear.target = appDelegate
+    clear.target = nil
     recentMenu.addItem(clear)
 }

@@ -3,8 +3,14 @@
 // returns the original literal (byte-identical to the old dark-only build), on a light system it
 // returns the light value from style.css `:root[data-theme="light"]`. The window/popovers follow the
 // system appearance, so the chrome flips automatically when macOS does.
+//
+// The NSColor tokens below stay the source of truth — the editor (NSTextView text attributes, the
+// MarkdownTextView decorations) needs NSColor. The SwiftUI chrome reads the `Theme.*` namespace at the
+// bottom, which simply wraps those same dynamic NSColors in `Color(nsColor:)`, so light/dark stays in
+// lockstep with the editor and there is exactly ONE place each value is defined.
 
 import AppKit
+import SwiftUI
 
 /// Build a dynamic color: `dark` on `.darkAqua`, `light` otherwise. `bestMatch` collapses any of the
 /// many concrete appearances (vibrant variants, high-contrast, etc.) down to aqua vs. darkAqua first,
@@ -90,3 +96,28 @@ let mallowCodeParagraphStyle: NSParagraphStyle = {
     p.headIndent = 12
     return p
 }()
+
+// MARK: - SwiftUI color tokens
+
+/// The SwiftUI face of the palette: every token wraps the matching dynamic NSColor above, so the
+/// chrome (titlebar, popovers, buttons) resolves the SAME light/dark value the editor does — no second
+/// source of truth, no manual `@Environment(\.colorScheme)` branching. Names are distinct from the
+/// global NSColor tokens (e.g. `card`, not `surfaceCard`) so the wrapper isn't a self-reference.
+enum Theme {
+    static let bg = Color(nsColor: mallowBG)                 // --bg (titlebar / popover surface)
+    static let text = Color(nsColor: mallowText)             // --text (primary)
+    static let dim = Color(nsColor: mallowDim)               // --text-dim (secondary)
+    static let faint = Color(nsColor: mallowFaint)           // --text-faint (section labels, stat icons)
+    static let elevated = Color(nsColor: mallowElevated)     // --bg-elevated (filename hover)
+
+    static let cornerFill = Color(nsColor: cornerBtnFill)            // .corner-btn rest
+    static let cornerFillHover = Color(nsColor: cornerBtnFillHover)  // .corner-btn:hover
+    static let cornerFillActive = Color(nsColor: cornerBtnFillActive) // .corner-btn:active
+
+    static let card = Color(nsColor: surfaceCard)            // .stat-card / .style-btn surface
+    static let cardHover = Color(nsColor: surfaceCardHover)  // .style-btn:hover surface
+    static let strongBorder = Color(nsColor: borderStrong)   // .style-btn:hover border
+    static let tabsTrack = Color(nsColor: overlayTabsTrack)  // segmented control track
+    static let weakOverlay = Color(nsColor: overlayWeak)     // toc row hover
+    static let border = Color(nsColor: mallowBorderColor)    // --border (hairlines, card borders)
+}
