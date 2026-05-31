@@ -340,6 +340,9 @@ final class InfoPanelViewController: NSViewController {
         let flipped = FlippedClip()
         flipped.translatesAutoresizingMaskIntoConstraints = false
         flipped.addSubview(list)
+        scroll.documentView = flipped   // MUST precede the flipped↔contentView constraint below — else the
+                                        // two anchors have no common ancestor and activate() throws an
+                                        // NSException, which AppKit swallows so the TOC tab silently never shows.
         NSLayoutConstraint.activate([
             list.topAnchor.constraint(equalTo: flipped.topAnchor, constant: 4),
             list.leadingAnchor.constraint(equalTo: flipped.leadingAnchor, constant: 12),
@@ -347,7 +350,6 @@ final class InfoPanelViewController: NSViewController {
             list.bottomAnchor.constraint(equalTo: flipped.bottomAnchor, constant: -4),
             flipped.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
         ])
-        scroll.documentView = flipped
         return scroll
     }
 
@@ -361,12 +363,13 @@ final class InfoPanelViewController: NSViewController {
 /// A left-aligned, borderless heading row that highlights on hover (so the list reads as clickable
 /// like the Tauri `.toc-item`). `indent` shifts the title right by the heading's relative depth.
 final class TocRowButton: HoverButton {
-    var indent: CGFloat = 0 { didSet { needsLayout = true } }
+    var indent: CGFloat = 0 { didSet { applyTitle() } }
+    private var rowTitle = ""
 
     convenience init(title: String, target: AnyObject, action: Selector) {
         self.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        self.title = title
+        rowTitle = title
         self.target = target
         self.action = action
         isBordered = false
@@ -374,27 +377,24 @@ final class TocRowButton: HoverButton {
         alignment = .left
         lineBreakMode = .byTruncatingTail
         font = NSFont.systemFont(ofSize: 13)
-        contentTintColor = mallowText
         wantsLayer = true
         layer?.cornerRadius = 5
         heightAnchor.constraint(equalToConstant: 24).isActive = true
-        // Indent via a leading title inset (cell content rect is shifted in layout()).
         (cell as? NSButtonCell)?.imagePosition = .noImage
+        applyTitle()
     }
 
-    override func layout() {
-        super.layout()
-        // Re-apply the indent as left padding on the title using an attributed firstLineHeadIndent.
-        if let cell = cell as? NSButtonCell {
-            let p = NSMutableParagraphStyle()
-            p.firstLineHeadIndent = 8 + indent
-            p.lineBreakMode = .byTruncatingTail
-            cell.attributedTitle = NSAttributedString(
-                string: title,
-                attributes: [.paragraphStyle: p,
-                             .font: font ?? NSFont.systemFont(ofSize: 13),
-                             .foregroundColor: mallowText])
-        }
+    /// Set the attributed title with the depth indent (firstLineHeadIndent). Called from init + when
+    /// `indent` changes — NOT from layout(): setting attributedTitle re-invalidates layout, so doing it
+    /// inside layout() risks a re-layout loop.
+    private func applyTitle() {
+        let p = NSMutableParagraphStyle()
+        p.firstLineHeadIndent = 8 + indent
+        p.lineBreakMode = .byTruncatingTail
+        attributedTitle = NSAttributedString(string: rowTitle, attributes: [
+            .paragraphStyle: p,
+            .font: font ?? NSFont.systemFont(ofSize: 13),
+            .foregroundColor: mallowText])
     }
 
     override func hoverChanged() {
