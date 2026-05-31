@@ -8,8 +8,10 @@ import SwiftUI
 @main
 struct MallowApp: App {
     var body: some Scene {
-        WindowGroup {
-            EditorWindow()
+        // Parameterized by OpenSpec so File ▸ Open / Open Recent can open a window onto a specific file
+        // (`openWindow(value:)`), while New Window / first launch arrive as nil → blank / welcome demo.
+        WindowGroup(for: OpenSpec.self) { $spec in
+            EditorWindow(spec: spec)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 760, height: 560)
@@ -22,9 +24,13 @@ struct MallowApp: App {
 /// popovers anchor to their corner buttons inside ChromeBar; export + rename are wired here (rename is
 /// reintroduced in the features phase).
 struct EditorWindow: View {
-    @State private var doc = EditorDocument(text: demoMarkdown)
+    @State private var doc: EditorDocument
     @State private var showStyle = false
     @State private var showInfo = false
+
+    init(spec: OpenSpec?) {
+        _doc = State(initialValue: EditorDocument.make(for: spec))
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
