@@ -283,7 +283,7 @@ final class InfoPanelViewController: NSViewController {
         // width AND height. A fixed height (not `>=`) is what keeps the layout unambiguous: with only a
         // minimum, `fittingSize` collapsed the cards and the popover came out too short, so the stack
         // compressed and the meta row overlapped the bottom cards.
-        let cardHeight: CGFloat = 78
+        let cardHeight: CGFloat = 72   // ≈ the content height (value + label + 12px padding); matches CSS min-height:70
         func card(_ value: String, _ label: String, _ symbol: String) -> NSView {
             let box = statCard(value: value, label: label, symbol: symbol,
                                valueFont: NSFont.systemFont(ofSize: 24, weight: .semibold),
@@ -320,7 +320,7 @@ final class InfoPanelViewController: NSViewController {
                                 rowAlignment: .centerY, minHeight: 0)
             NSLayoutConstraint.activate([
                 meta.widthAnchor.constraint(equalToConstant: cardWidth * 2 + 8),
-                meta.heightAnchor.constraint(equalToConstant: 56),   // fixed, like the grid cards
+                meta.heightAnchor.constraint(equalToConstant: 58),   // fixed; fits the 14pt value + 11pt label centered
             ])
             outer.addArrangedSubview(meta)
         }
