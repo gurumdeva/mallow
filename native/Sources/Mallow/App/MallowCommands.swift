@@ -29,9 +29,7 @@ struct MallowCommands: Commands {
                     Button(L.t("recent.none")) {}.disabled(true)
                 } else {
                     ForEach(recents, id: \.self) { path in
-                        Button((path as NSString).lastPathComponent) {
-                            openWindow(value: OpenSpec.file(path: path))
-                        }
+                        Button((path as NSString).lastPathComponent) { openOrFocus(path) }
                     }
                     Divider()
                     Button(L.t("menu.clearRecent")) { RecentFiles.clear() }
@@ -90,6 +88,11 @@ struct MallowCommands: Commands {
             Button(L.t("menu.typewriter")) { doc?.toggleTypewriter() }
                 .keyboardShortcut("t", modifiers: [.command, .control])
             Divider()
+            Button(L.t("menu.documentInfo")) {
+                NotificationCenter.default.post(name: .mallowToggleInfo, object: nil)
+            }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
+            Divider()
             Button(L.t("menu.zoomIn")) { doc?.zoomIn() }
                 .keyboardShortcut("+", modifiers: .command)
             Button(L.t("menu.zoomOut")) { doc?.zoomOut() }
@@ -105,7 +108,17 @@ struct MallowCommands: Commands {
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText, .plainText]
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
-            openWindow(value: OpenSpec.file(path: url.path))
+            openOrFocus(url.path)
+        }
+    }
+
+    /// Open `path` in a new window, or focus the window already editing it (data-safety: avoids two
+    /// windows on one file autosave-clobbering each other).
+    private func openOrFocus(_ path: String) {
+        if let existing = WindowRegistry.shared.document(forPath: path) {
+            WindowRegistry.shared.focusWindow(of: existing)
+        } else {
+            openWindow(value: OpenSpec.file(path: path))
         }
     }
 }

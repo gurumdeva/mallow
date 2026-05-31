@@ -51,6 +51,12 @@ extension EditorDocument {
     }
 
     private func write(to url: URL) {
+        // Refuse to write onto a file another window is already editing (its autosave would clobber this,
+        // and vice-versa). Saving to OUR OWN current path is allowed (excluding: self).
+        if pathOpenInOtherWindow(url.path, excluding: self) {
+            presentPathInUseAlert(path: url.path, anchor: window)
+            return
+        }
         let content = textView.string
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)

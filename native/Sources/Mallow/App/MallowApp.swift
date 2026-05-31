@@ -39,20 +39,33 @@ struct EditorWindow: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            MarkdownEditor(doc: doc)
-                .ignoresSafeArea()
-            ChromeBar(doc: doc, showStyle: $showStyle, showInfo: $showInfo,
-                      onExport: { doc.exportPDF() }, onRename: { showRename = true })
+        VStack(spacing: 0) {
+            ZStack(alignment: .top) {
+                MarkdownEditor(doc: doc)
+                    .ignoresSafeArea()
+                ChromeBar(doc: doc, showStyle: $showStyle, showInfo: $showInfo,
+                          onExport: { doc.exportPDF() }, onRename: { showRename = true })
+            }
+            StatusBar(doc: doc)   // bottom word/char/read-time bar
         }
         .frame(minWidth: 480, minHeight: 360)
         .background(Theme.bg)
         .background(WindowActiveTracker(doc: doc))   // report this window active to AppState for the menu commands
         .background(WindowConfigurator(doc: doc))    // close-confirm on unsaved edits + session geometry persistence
         .sheet(isPresented: $showRename) { RenameSheet(doc: doc) }
+        .onAppear { WindowRegistry.shared.register(doc) }
+        .onDisappear { WindowRegistry.shared.unregister(doc) }
         .onReceive(NotificationCenter.default.publisher(for: .mallowOpenFile)) { note in
             guard let path = note.userInfo?["path"] as? String, claimFileOpen(path) else { return }
-            openWindow(value: OpenSpec.file(path: path))
+            // Focus an already-open window for this file instead of opening a duplicate (data-safety).
+            if let existing = WindowRegistry.shared.document(forPath: path) {
+                WindowRegistry.shared.focusWindow(of: existing)
+            } else {
+                openWindow(value: OpenSpec.file(path: path))
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .mallowToggleInfo)) { _ in
+            if doc === AppState.shared.activeDoc { showInfo.toggle() }   // ⇧⌘I toggles Document Info on the front window
         }
     }
 }

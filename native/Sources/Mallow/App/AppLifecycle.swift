@@ -26,6 +26,8 @@ extension Notification.Name {
     /// dock drop). `userInfo["path"]` is the absolute file path. MallowApp observes this and opens a
     /// window with `OpenSpec.file(path:)` — see INTEGRATION NOTES at the bottom of this file.
     static let mallowOpenFile = Notification.Name("mallowOpenFile")
+    /// Posted by the View ▸ Document Info (⇧⌘I) command; the front editor window toggles its info popover.
+    static let mallowToggleInfo = Notification.Name("mallowToggleInfo")
 }
 
 // MARK: - Application delegate
@@ -71,6 +73,19 @@ final class MallowAppDelegate: NSObject, NSApplicationDelegate {
     /// old AppKit build). Without this a windowless app would linger in the Dock with only the menu bar.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// Confirm before quitting if any window has unsaved changes (⌘Q closes all windows at once, which
+    /// would otherwise bypass the per-window close prompt). Mirrors the Tauri app's dirty-window guard.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        confirmQuitIfDirty() ? .terminateNow : .terminateCancel
+    }
+
+    /// Drop the automatic window-tab affordances (Show Tab Bar / Show All Tabs) — this is a single-window-
+    /// per-document editor, and removing them de-clutters the system View menu so it doesn't duplicate the
+    /// app's own 보기/View menu.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSWindow.allowsAutomaticWindowTabbing = false
     }
 }
 
