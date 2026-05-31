@@ -20,13 +20,19 @@ extension EditorDocument {
             let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
             RecentFiles.add(path)
             return EditorDocument(text: text, path: path)
-        case .blank, .none:
-            let key = "mallow.welcomed"
-            if !UserDefaults.standard.bool(forKey: key) {
-                UserDefaults.standard.set(true, forKey: key)
+        case .blank:
+            return EditorDocument(text: "", path: nil)   // New Window: always an empty buffer
+        case .none:
+            // First launch only (New uses .blank): reopen the last-edited file, else the welcome demo on
+            // the first ever run, else blank. SessionStore.planStartup owns the welcomed flag + the read.
+            switch SessionStore.planStartup(explicitPath: nil, demo: demoMarkdown) {
+            case let .explicit(content, path), let .restore(content, path):
+                return EditorDocument(text: content, path: path)
+            case .welcome:
                 return EditorDocument(text: demoMarkdown, path: nil)
+            case .blank:
+                return EditorDocument(text: "", path: nil)
             }
-            return EditorDocument(text: "", path: nil)
         }
     }
 }
