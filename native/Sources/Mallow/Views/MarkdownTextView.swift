@@ -10,6 +10,7 @@ final class MarkdownTextView: NSTextView {
     // left bar; thematic-break ranges get a 1px horizontal rule (their source dashes are hidden), the
     // two block decorations NSTextView can't express as text attributes. Redraw when they change.
     var codeCards: [NSRange] = [] { didSet { needsDisplay = true } }
+    var tableCards: [NSRange] = [] { didSet { needsDisplay = true } }   // GFM table → rounded surface card
     var quoteBars: [NSRange] = [] { didSet { needsDisplay = true } }
     var ruleLines: [NSRange] = [] { didSet { needsDisplay = true } }
 
@@ -20,6 +21,24 @@ final class MarkdownTextView: NSTextView {
     // literal double space instead. (Manually typed "." comes in as "." with no replacement, so this
     // guard is specific to the substitution and never touches real periods.)
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        // Smart typography (our rule-based port; the OS substitutions stay OFF). Fires only for a single
+        // typed trigger char (" ' - .); the multi-char glyphs (… – —) consume the already-typed
+        // preceding chars by widening the replacement range backward.
+        if let s = (string as? String) ?? (string as? NSAttributedString)?.string {
+            let loc = replacementRange.location == NSNotFound ? selectedRange().location : replacementRange.location
+            if let replacement = SmartTypography.substitution(for: s, in: self.string, at: loc) {
+                let extra: Int
+                switch replacement {
+                case "\u{2026}": extra = 2                 // … consumed ".."
+                case "\u{2013}", "\u{2014}": extra = 1     // – / — consumed one preceding hyphen / en-dash
+                default: extra = 0                          // “ ” ‘ ’
+                }
+                if loc - extra >= 0 {
+                    super.insertText(replacement, replacementRange: NSRange(location: loc - extra, length: extra))
+                    return
+                }
+            }
+        }
         if let s = (string as? String) ?? (string as? NSAttributedString)?.string,
            s == ". ",
            replacementRange.length == 1, replacementRange.location != NSNotFound,
@@ -66,6 +85,14 @@ final class MarkdownTextView: NSTextView {
         // text-attribute background can't give). Full content width minus the rule inset.
         mallowElevated.setFill()
         for r in codeCards {
+            let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+            guard gr.length > 0 else { continue }
+            let box = lm.boundingRect(forGlyphRange: gr, in: tc)
+            let card = NSRect(x: origin.x, y: origin.y + box.minY - 2,
+                              width: tc.size.width - 8, height: box.height + 4)
+            NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
+        }
+        for r in tableCards {   // same elevated card as code; cells are monospaced + pipes dimmed by restyle
             let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
             guard gr.length > 0 else { continue }
             let box = lm.boundingRect(forGlyphRange: gr, in: tc)

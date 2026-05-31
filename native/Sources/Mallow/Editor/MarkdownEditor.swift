@@ -24,6 +24,13 @@ struct MarkdownEditor: NSViewRepresentable {
         // syntax + bullet substitution pipeline depends on it).
         textView.layoutManager?.delegate = context.coordinator
 
+        // Click a task-list ☐/☑ to toggle it. delaysPrimaryMouseButtonEvents=false so normal caret/
+        // selection clicks still pass through; the handler no-ops off a checkbox.
+        let taskClick = NSClickGestureRecognizer(target: context.coordinator,
+                                                 action: #selector(Coordinator.handleTaskClick(_:)))
+        taskClick.delaysPrimaryMouseButtonEvents = false
+        textView.addGestureRecognizer(taskClick)
+
         // Vertically-growing text view inside a scroll view (the classic NSTextView-in-NSScrollView setup).
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -59,6 +66,13 @@ struct MarkdownEditor: NSViewRepresentable {
 
         init(doc: EditorDocument) { self.doc = doc }
 
+        /// Map a click to a character index and toggle a task checkbox if it landed on one (else no-op).
+        @objc func handleTaskClick(_ g: NSClickGestureRecognizer) {
+            let tv = doc.textView
+            let idx = tv.characterIndexForInsertion(at: g.location(in: tv))
+            _ = toggleTaskBoxAt(idx)
+        }
+
         func textDidChange(_ notification: Notification) {
             vm.refresh()
             doc.revision &+= 1   // chrome re-renders title/dirty
@@ -81,8 +95,10 @@ struct MarkdownEditor: NSViewRepresentable {
                            forGlyphRange glyphRange: NSRange) -> Int {
             let hidden = vm.hiddenChars
             let bullets = vm.bulletMarks
-            if hidden.isEmpty && bullets.isEmpty { return 0 }  // 0 = no override, default glyph generation
+            let taskBoxes = vm.taskBoxes
+            if hidden.isEmpty && bullets.isEmpty && taskBoxes.isEmpty { return 0 }  // 0 = no override
             let bulletGlyph = bullets.isEmpty ? CGGlyph(0) : Self.bulletGlyph(for: font)
+            let taskGlyphs = taskBoxes.isEmpty ? nil : TaskBoxGlyphs(font: font)
             var newGlyphs = [CGGlyph](repeating: 0, count: glyphRange.length)
             var newProps = [NSLayoutManager.GlyphProperty](repeating: .null, count: glyphRange.length)
             var changed = false
@@ -90,6 +106,8 @@ struct MarkdownEditor: NSViewRepresentable {
                 let ch = characterIndexes[i]
                 if hidden.contains(ch) {
                     newGlyphs[i] = glyphs[i]; newProps[i] = .null; changed = true
+                } else if let tg = taskGlyphs, let checked = taskBoxes[ch], tg.glyph(checked: checked) != 0 {
+                    newGlyphs[i] = tg.glyph(checked: checked); newProps[i] = props[i]; changed = true
                 } else if bulletGlyph != 0, bullets.contains(ch) {
                     newGlyphs[i] = bulletGlyph; newProps[i] = props[i]; changed = true
                 } else {

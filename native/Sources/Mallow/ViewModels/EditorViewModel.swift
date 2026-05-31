@@ -14,6 +14,7 @@ final class EditorViewModel {
     private var blocks: [PBlock] = []           // cached parse (one parse per text change)
     private(set) var hiddenChars = Set<Int>()   // UTF-16 indices of collapsed syntax glyphs (read by the layout-manager delegate)
     private(set) var bulletMarks = Set<Int>()   // UTF-16 indices of unordered `- ` dashes to render as `•` (glyph delegate)
+    private(set) var taskBoxes = [Int: Bool]()  // UTF-16 index of a task `[ ]`/`[x]` inner char → isChecked (glyph delegate ☐/☑)
     var focusMode = false                        // dim every block but the caret's
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
     var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
@@ -106,6 +107,7 @@ final class EditorViewModel {
         var quotes: [NSRange] = []   // blockquote ranges → 3px left bar drawn by the text view
         var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
         var codeCards: [NSRange] = [] // code-block ranges → rounded elevated card drawn by the text view
+        var tableCards: [NSRange] = [] // GFM table ranges → rounded surface card (monospace cells, dimmed pipes)
 
         storage.beginEditing()
         storage.setAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor,
@@ -135,6 +137,9 @@ final class EditorViewModel {
                 }
             case "ThematicBreak":
                 if let nr = nsRange(block.range) { rules.append(nr) }   // dashes hidden; a rule is drawn instead
+            case "Table":
+                if let nr = TableRendering.style(block, source: s, storage: storage) { tableCards.append(nr) }
+                continue   // TableRendering owns the cell font + dimmed pipes; skip the generic inline pass
             default:
                 break
             }
@@ -156,6 +161,7 @@ final class EditorViewModel {
         }
         storage.endEditing()
         textView.codeCards = codeCards     // hand the decoration ranges to the view's draw pass
+        textView.tableCards = tableCards
         textView.quoteBars = quotes
         textView.ruleLines = rules
         textView.needsDisplay = true
@@ -196,6 +202,17 @@ final class EditorViewModel {
             }
         }
         bulletMarks = bullets
+
+        // GFM task-list checkboxes: render `[ ]`/`[x]` as ☐/☑ — hide the two brackets and substitute the
+        // inner char (glyph delegate). Off the caret's own line, where the raw `[ ]` shows for editing.
+        var boxes = [Int: Bool]()
+        for (inner, checked) in TaskBoxScanner(s).allBoxes(blocks)
+        where !(inner >= caretLine.location && inner < caretLine.location + caretLine.length) {
+            boxes[inner] = checked
+            collector.hidden.insert(inner - 1)   // [
+            collector.hidden.insert(inner + 1)   // ]
+        }
+        taskBoxes = boxes
 
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {
