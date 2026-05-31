@@ -29,7 +29,10 @@ struct WindowActiveTracker: NSViewRepresentable {
             AppState.shared.activeDoc = doc   // this window is up — make it active now
             context.coordinator.token = NotificationCenter.default.addObserver(
                 forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
-            ) { _ in AppState.shared.activeDoc = doc }
+            ) { _ in
+                AppState.shared.activeDoc = doc
+                doc.reloadFromDiskIfChanged()   // re-sync with the file if it changed on disk while we were away
+            }
         }
         return view
     }
