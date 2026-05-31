@@ -54,10 +54,12 @@ func makeStylePopover(_ c: EditorController) -> NSPopover {
     func sectionLabel(_ s: String) -> NSTextField {
         mallowLabel(s.uppercased(), size: 10, weight: .semibold, color: mallowFaint)
     }
-    // A row of fixed 44×44 cards, centered inside a full-width container. The buttons are their own
-    // fixed size (no `.fillEqually`), so the 4-card Heading/Inline rows stay 44×44 just like the
-    // 5-card Block row instead of stretching to fill — and centering keeps the shorter rows aligned
-    // under the wider Block row. `rowWidth` (the widest row, 5 cards) sets the content width below.
+    // A row of fixed 44×44 cards, LEFT-aligned inside a full-width container. The buttons are their own
+    // fixed size (no `.fillEqually`), so the 4-card Heading/Inline rows stay 44×44 just like the 5-card
+    // Block row. Left-aligning (not centering) makes the first button of every row sit directly under
+    // its section label (제목/블록/인라인 are leading-aligned) and under each other — a tidy column grid,
+    // where centering left the shorter rows floating out of line with their labels. The widest row
+    // (5 cards) sets the content width, so the 4-card rows simply leave a gap on the right.
     func row(_ buttons: [SquareButton]) -> NSView {
         let s = hstack(buttons, spacing: 6)
         s.translatesAutoresizingMaskIntoConstraints = false
@@ -65,9 +67,10 @@ func makeStylePopover(_ c: EditorController) -> NSPopover {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(s)
         NSLayoutConstraint.activate([
-            s.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            s.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             s.topAnchor.constraint(equalTo: container.topAnchor),
             s.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            s.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
         ])
         return container
     }
