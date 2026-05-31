@@ -4,6 +4,8 @@
 // menus, popovers, and the open/save/session lifecycle land in the following phases.
 
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 @main
 struct MallowApp: App {
@@ -16,16 +18,36 @@ struct MallowApp: App {
     }
 }
 
-/// One editor window's content: the document model + the editor surface. The chrome overlay will be
-/// layered on top of this in the chrome phase.
+/// One editor window's content: the document model, the editor surface, and the custom titlebar chrome
+/// (filename + dirty dot + style/export/info corner buttons) overlaid at the top. The style and info
+/// popovers anchor to their corner buttons inside ChromeBar; export + rename are wired here (rename is
+/// reintroduced in the features phase).
 struct EditorWindow: View {
     @State private var doc = EditorDocument(text: demoMarkdown)
+    @State private var showStyle = false
+    @State private var showInfo = false
 
     var body: some View {
-        MarkdownEditor(doc: doc)
-            .ignoresSafeArea()
-            .frame(minWidth: 480, minHeight: 360)
-            .background(Theme.bg)
+        ZStack(alignment: .top) {
+            MarkdownEditor(doc: doc)
+                .ignoresSafeArea()
+            ChromeBar(doc: doc, showStyle: $showStyle, showInfo: $showInfo,
+                      onExport: exportPDF, onRename: {})
+        }
+        .frame(minWidth: 480, minHeight: 360)
+        .background(Theme.bg)
+    }
+
+    /// Export the document to PDF via the engine's HTML renderer + the WKWebView PDF exporter (the same
+    /// path the AppKit build used). The full open/save lifecycle + menu commands land in a later phase.
+    private func exportPDF() {
+        let title = doc.vm.baseName
+        let html = inkRenderHtml(doc.textView.string, title)
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = "\(title).pdf"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        _ = PDFExporter(html: html, to: url)
     }
 }
 

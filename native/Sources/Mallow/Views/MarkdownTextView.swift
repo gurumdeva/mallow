@@ -101,21 +101,15 @@ final class MarkdownTextView: NSTextView {
     // Try the image embed first, then the URL-wrap; otherwise fall through to the normal text paste.
     // The controller (our delegate) does the work so VM refresh / chrome stay there.
     override func paste(_ sender: Any?) {
-        if let controller = delegate as? EditorController {
-            if controller.insertImagesFromPasteboard(NSPasteboard.general) { return }
-            if controller.handleURLWrapPaste() { return }
-        }
+        // Image-embed + URL-wrap paste are reintroduced through the SwiftUI editor coordinator in the
+        // features phase of the rewrite; until then the editor uses the standard text paste.
         super.paste(sender)
     }
 
     // ImageInsert: a drop that carries image(s) is embedded at the drop point; otherwise (dragged
     // text, internal moves) defer to NSTextView's default handling.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        if let controller = delegate as? EditorController,
-           controller.insertImagesFromDrag(sender) {
-            return true
-        }
-        return super.performDragOperation(sender)
+        return super.performDragOperation(sender)   // image-drop embedding returns in the features phase
     }
 
     // ImageInsert: advertise a copy operation for image drags so the cursor shows the (+) badge and
