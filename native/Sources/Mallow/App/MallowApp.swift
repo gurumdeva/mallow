@@ -39,15 +39,18 @@ struct EditorWindow: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack(alignment: .top) {
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
                 MarkdownEditor(doc: doc)
-                    .ignoresSafeArea()
-                ChromeBar(doc: doc, showStyle: $showStyle, showInfo: $showInfo,
-                          onExport: { doc.exportPDF() }, onRename: { showRename = true })
+                StatusBar(doc: doc)   // bottom word/char/read-time bar
             }
-            StatusBar(doc: doc)   // bottom word/char/read-time bar
+            // Chrome OVERLAYS the editor's top (not in the layout flow), so it stays flush at the window
+            // top and covers the editor's top band — the editor's textContainerInset clears it. (Putting
+            // it in a VStack pushed it below the title-bar safe area, so scrolled text bled in above it.)
+            ChromeBar(doc: doc, showStyle: $showStyle, showInfo: $showInfo,
+                      onExport: { doc.exportPDF() }, onRename: { showRename = true })
         }
+        .ignoresSafeArea(edges: .top)   // chrome flush at the very top of the window
         .frame(minWidth: 480, minHeight: 360)
         .background(Theme.bg)
         .background(WindowActiveTracker(doc: doc))   // report this window active to AppState for the menu commands
