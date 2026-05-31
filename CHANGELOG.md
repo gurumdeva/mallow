@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.29.0] - 2026-05-31
+
+### Changed
+- **Mallow is now a fully native macOS app.** The editor has been rebuilt from the ground up — the previous Tauri + web-view (WKWebView) implementation is replaced by a native AppKit/SwiftUI app driven by a small Rust engine (Inkstone). Text editing now uses the macOS system text engine directly, so Korean/Japanese IME composition, the caret, and selection behave exactly like any native app, and the download is a fraction of the size. The writing experience carries over: live-preview styling, the Format menu, focus mode, multi-window, find, autosave, session restore, statistics/TOC, and HTML/PDF export.
+
+### Note
+- Apple Silicon (arm64) build, and not code-signed yet. On first launch, right-click the app in Finder → **Open** (or run `xattr -dr com.apple.quarantine /Applications/Mallow.app`).
+
 ## [0.28.0] - 2026-05-30
 
 ### Added
