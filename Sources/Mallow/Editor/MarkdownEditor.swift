@@ -46,6 +46,10 @@ struct MarkdownEditor: NSViewRepresentable {
         scroll.backgroundColor = mallowBG
         scroll.borderType = .noBorder
         scroll.documentView = textView
+        // The ChromeBar overlays the editor's top (it's a ZStack overlay, outside the layout flow), so the
+        // vertical scroller would otherwise run up underneath it and its top would look clipped. Inset the
+        // scroller down by the bar height so the scrollbar starts cleanly below the chrome.
+        scroll.scrollerInsets = NSEdgeInsets(top: ChromeBar.barHeight, left: 0, bottom: 0, right: 0)
 
         // First render: parse + style + hide once the view is in the hierarchy.
         DispatchQueue.main.async { doc.vm.refresh() }

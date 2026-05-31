@@ -15,8 +15,9 @@ struct ChromeBar: View {
     var onExport: () -> Void          // export (arrow.down.doc) button
     var onRename: () -> Void          // tapping the filename
 
-    /// Total bar height; matches the AppKit titlebar inset the window reserves.
-    private let barHeight: CGFloat = 52
+    /// Total bar height; matches the AppKit titlebar inset the window reserves. `static` so the editor's
+    /// scroll view can inset its scroller by the same amount (the bar overlays the editor's top).
+    static let barHeight: CGFloat = 52
 
     var body: some View {
         // GeometryReader gives us the bar's own width, so the centered name can be capped to a fraction
@@ -41,7 +42,7 @@ struct ChromeBar: View {
                 .padding(.trailing, 16)
             }
         }
-        .frame(height: barHeight)
+        .frame(height: Self.barHeight)
         .frame(maxWidth: .infinity)
     }
 
