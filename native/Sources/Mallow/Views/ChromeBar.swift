@@ -5,52 +5,27 @@
 import AppKit
 
 /// A 30×30 rounded titlebar button with an SF-Symbol icon — matches Mallow's `.corner-btn`, including
-/// the fill + icon-tint changes on hover/active (style.css `.corner-btn:hover` / `:active`). The bare
-/// NSButton was static; this restores the three interaction states the WebView version has.
-final class CornerButton: HoverButton {
-    private var pressed = false { didSet { refreshFill() } }
-
-    convenience init(symbol: String, target: AnyObject, action: Selector) {
-        self.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        isBordered = false
-        title = ""
-        imagePosition = .imageOnly
-        wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.borderWidth = 1
-        image = symbolImage(symbol, pointSize: 13, weight: .medium)
-        self.target = target
-        self.action = action
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 30),
-            heightAnchor.constraint(equalToConstant: 30),
-        ])
-        refreshFill()
-    }
-
-    /// Fill + border + icon tint for the current state (active beats hover beats rest), matching the CSS
-    /// rules. Border (--border) is set here, not just at init, so it re-resolves on an appearance flip.
-    private func refreshFill() {
-        let fill = pressed ? cornerBtnFillActive : (hovering ? cornerBtnFillHover : cornerBtnFill)
-        layer?.backgroundColor = fill.cgColor
-        layer?.borderColor = mallowBorderColor.cgColor   // --border
-        contentTintColor = hovering ? mallowText : mallowDim   // :hover { color: var(--text) }
-    }
-
-    override func hoverChanged() { refreshFill() }
-    override func appearanceDidChange() { refreshFill() }   // re-resolve layer fill + border for new appearance
-    override func mouseExited(with event: NSEvent) { super.mouseExited(with: event); pressed = false }
-    override func mouseDown(with event: NSEvent) {
-        pressed = true
-        super.mouseDown(with: event)   // runs the button's own click-tracking loop, sends the action
-        pressed = false
-    }
+/// the fill + icon-tint changes on hover/active (style.css `.corner-btn:hover` / `:active`). Now just a
+/// `SquareButton.Config`: size 30, radius 8, the three corner-btn fills (rest/hover/active → pressed),
+/// a --border border, and a mallowDim→mallowText tint. All three chrome icons share one symbol point
+/// size/weight (14 / .medium) so they read as a consistent set.
+func cornerButtonConfig(_ symbol: String) -> SquareButton.Config {
+    SquareButton.Config(
+        size: 30,
+        cornerRadius: 8,
+        content: .symbol(symbol, pointSize: 14, weight: .medium),
+        fill: cornerBtnFill,
+        hoverFill: cornerBtnFillHover,
+        activeFill: cornerBtnFillActive,            // ⇒ pressed (mouseDown) state, like the CSS :active
+        border: mallowBorderColor,                  // --border, same color at rest + hover
+        hoverBorder: mallowBorderColor,
+        tint: mallowDim,                            // :hover { color: var(--text) }
+        hoverTint: mallowText)
 }
 
-/// Factory kept so the chrome-bar call sites stay unchanged; returns the interactive CornerButton.
+/// Factory kept so the chrome-bar call sites stay unchanged; returns the interactive square button.
 func cornerButton(_ symbol: String, _ target: AnyObject, _ action: Selector) -> NSButton {
-    CornerButton(symbol: symbol, target: target, action: action)
+    SquareButton(cornerButtonConfig(symbol), target: target, action: action)
 }
 
 /// The centered filename as a real NSButton (CSS `.titlebar-center`: `radius 7`, hover → elevated bg +
