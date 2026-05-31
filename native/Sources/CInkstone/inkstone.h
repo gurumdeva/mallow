@@ -1,1 +1,0 @@
-../../../../inkstone/include/inkstone.h
