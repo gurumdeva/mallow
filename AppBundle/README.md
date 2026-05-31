@@ -9,8 +9,8 @@ layout macOS needs to launch it as an app and route file-open events.
 ## Files here
 
 - **`Info.plist`** — bundle metadata. Bundle id is **`com.gurumdeva.mallow-native`**,
-  deliberately distinct from the Tauri build's `com.gurumdeva.mallow` so the two
-  don't collide in LaunchServices / TCC. Declares `CFBundleDocumentTypes` for
+  deliberately distinct from the old Tauri build so the two don't collide in
+  LaunchServices / TCC. Declares `CFBundleDocumentTypes` for
   `md`, `markdown`, `mdown`, `markdn` (role Editor, rank Owner) plus a
   `public.plain-text` fallback, and imports/exports the
   `net.daringfireball.markdown` UTI.

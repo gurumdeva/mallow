@@ -20,6 +20,9 @@ final class EditorViewModel {
     var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
     var zoomFactor: CGFloat = 1                   // text zoom (View ▸ Zoom); per-window, resets each launch
 
+    private var lastCaretLoc = 0                  // previous caret UTF-16 location — gives the hidden-run snap its direction
+    private var isAdjustingSelection = false      // guards the re-entrant setSelectedRange in `snapCaretOutOfHiddenRuns`
+
     private let baseSize: CGFloat = 16   // Mallow body size; SANS (mono only for code)
     private let fm = NSFontManager.shared
     // Computed (not a stored lazy) so it always reflects the current zoomFactor.
@@ -54,10 +57,63 @@ final class EditorViewModel {
         applyFocus()
     }
 
-    /// The caret moved. Hidden syntax is caret-independent (markers are always hidden), so only focus
-    /// mode reacts — it re-dims around the new caret block. Text is unchanged → the cached parse stands.
+    /// The caret moved. Hidden syntax is caret-independent (markers are always hidden), so the only
+    /// work is (a) keeping the caret/selection out of a hidden run's interior, and (b) focus mode
+    /// re-dimming around the new caret block. Text is unchanged → the cached parse stands.
     func selectionChanged() {
+        if isAdjustingSelection { return }   // re-entrant call from the snap's own setSelectedRange
+        snapCaretOutOfHiddenRuns()
         if focusMode { restyle(); applyFocus() }
+    }
+
+    // MARK: caret / selection vs hidden syntax
+    //
+    // Hidden markers are zero-width glyphs, so a click or drag can land the caret (or a selection
+    // endpoint) *inside* a hidden run — e.g. between the `(` and `)` of a link's `](url)` — where
+    // every position shares one x and is visually indistinguishable. That makes the caret feel
+    // stuck and a selection's range disagree with what's highlighted. Since markers don't exist as
+    // far as the cursor is concerned, an endpoint never rests in a run's interior:
+    //   • a bare caret jumps out to the run edge in its direction of travel (so ← / → step over a
+    //     whole marker in one press), and
+    //   • a selection grows to fully contain any partially-covered run (so selecting a link is
+    //     atomic — the whole `[text](url)` — and the highlight matches the visible text exactly).
+    private func snapCaretOutOfHiddenRuns() {
+        guard let textView, !textView.hasMarkedText() else { return }  // never fight an IME composition
+        // Don't mutate the selection in the middle of a live mouse-drag — NSTextView is tracking the
+        // drag and re-deriving the range from the mouse each frame, so changing it here would fight
+        // the tracking loop. The drag's end (mouseUp / a click's mouseDown) and arrow keys/shift-
+        // select still snap; only the intermediate drag frames are skipped.
+        if NSApp.currentEvent?.type == .leftMouseDragged { return }
+        let total = (textView.string as NSString).length
+        let sel = textView.selectedRange()
+        let fixed = snappedSelection(sel, total: total)
+        if fixed != sel {
+            isAdjustingSelection = true
+            textView.setSelectedRange(fixed)
+            isAdjustingSelection = false
+        }
+        lastCaretLoc = textView.selectedRange().location
+    }
+
+    /// Pure geometry for `snapCaretOutOfHiddenRuns` (see it for the why). A boundary is "interior"
+    /// to a hidden run only when the chars on BOTH sides are hidden — so a run's outer edges, where
+    /// the caret meets visible text, stay valid landing spots. A bare caret's escape direction
+    /// comes from `lastCaretLoc`; a range grows each interior endpoint outward to the run edge.
+    private func snappedSelection(_ sel: NSRange, total: Int) -> NSRange {
+        let hidden = hiddenChars
+        if hidden.isEmpty { return sel }
+        func interior(_ b: Int) -> Bool { b > 0 && b < total && hidden.contains(b) && hidden.contains(b - 1) }
+        func runEnd(_ b: Int) -> Int { var e = b; while e < total, hidden.contains(e) { e += 1 }; return e }
+        func runStart(_ b: Int) -> Int { var s = b; while s > 0, hidden.contains(s - 1) { s -= 1 }; return s }
+        if sel.length == 0 {
+            let b = sel.location
+            guard interior(b) else { return sel }
+            return NSRange(location: b >= lastCaretLoc ? runEnd(b) : runStart(b), length: 0)
+        }
+        var lo = sel.location, hi = sel.location + sel.length
+        if interior(lo) { lo = runStart(lo) }
+        if interior(hi) { hi = runEnd(hi) }
+        return NSRange(location: lo, length: hi - lo)
     }
 
     // MARK: focus mode
@@ -219,16 +275,46 @@ final class EditorViewModel {
 
     // MARK: commands — toggle a mark / set a heading via the engine, then re-render.
 
+    /// Inline-mark toggles that WRAP the selection in a delimiter. On a bare caret these would wrap
+    /// an empty selection — inserting a delimiter pair (`****`, `` `` ``) the parser can't see as a
+    /// mark, so the hide-pass never collapses it and the raw markers SHOW (and would persist in the
+    /// saved file). For these, a caret with no selection formats the WORD under the caret instead.
+    private static let wrappingCommands: Set<String> =
+        ["toggle_strong", "toggle_emphasis", "toggle_strikethrough", "toggle_inline_code"]
+
     func apply(_ command: String) {
         guard let textView else { return }
         let s = textView.string
         let r = textView.selectedRange()
-        let anchor = utf16ToChar(s, r.location)
-        let head = utf16ToChar(s, r.location + r.length)
+        var anchor = utf16ToChar(s, r.location)
+        var head = utf16ToChar(s, r.location + r.length)
+        // A wrapping toggle on a bare caret formats the word under it (never inserts an empty,
+        // un-hideable delimiter pair). Caret not on a word (whitespace / blank line) → nothing to
+        // format, so no-op rather than leave stray markers.
+        if anchor == head, Self.wrappingCommands.contains(command) {
+            guard let (lo, hi) = wordScalarRange(s, caret: anchor) else { return }
+            anchor = lo; head = hi
+        }
         guard let edit = try? JSONDecoder().decode(
             IEditResult.self, from: Data(inkCommand(command, s, anchor, head).utf8)
         ) else { return }
         replace(with: edit)
+    }
+
+    /// The Unicode-scalar range `[from, to)` of the word the caret sits in or touches, or nil when
+    /// the caret isn't adjacent to any word scalar (whitespace / blank line). Scalar-indexed to
+    /// match the engine (Inkstone `char` = Unicode scalar). A "word scalar" is any alphanumeric, so
+    /// markdown delimiters (`*`, `` ` ``, `[`) are boundaries and a caret inside a styled word
+    /// expands to exactly that word's text.
+    private func wordScalarRange(_ s: String, caret: Int) -> (Int, Int)? {
+        let scalars = Array(s.unicodeScalars)
+        let n = scalars.count
+        let c = max(0, min(caret, n))
+        func isWord(_ u: Unicode.Scalar) -> Bool { CharacterSet.alphanumerics.contains(u) }
+        var lo = c, hi = c
+        while lo > 0, isWord(scalars[lo - 1]) { lo -= 1 }   // grow left over word scalars
+        while hi < n, isWord(scalars[hi]) { hi += 1 }       // grow right over word scalars
+        return lo < hi ? (lo, hi) : nil
     }
 
     func applyHeading(_ level: UInt8) {
