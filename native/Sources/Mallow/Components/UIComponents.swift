@@ -132,15 +132,45 @@ func statCard(value: String,
     nameLabel.font = labelFont
     nameLabel.textColor = mallowDim
     let main = vstack([valueLabel, nameLabel], spacing: 2)
+    main.translatesAutoresizingMaskIntoConstraints = false
 
     let icon = NSImageView()
     icon.image = symbolImage(symbol, pointSize: 12)
     icon.contentTintColor = mallowFaint
+    icon.translatesAutoresizingMaskIntoConstraints = false
     icon.setContentHuggingPriority(.required, for: .horizontal)
+    icon.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-    let spacer = NSView()
-    let row = hstack([main, spacer, icon], alignment: rowAlignment)
-    return cardBox(row, minHeight: minHeight)
+    // Lay out value/label (left) and icon (right) with explicit constraints instead of a spacer-stack,
+    // so each is vertically anchored precisely (a `.top` stack aligned the icon to the value FIELD's
+    // top — above the digits' cap — leaving it floating high). Mirrors the CSS `.stat-card`
+    // (space-between) + `.stat-icon { margin-top: 2px }`.
+    let container = NSView()
+    container.addSubview(main)
+    container.addSubview(icon)
+    NSLayoutConstraint.activate([
+        main.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+        main.trailingAnchor.constraint(lessThanOrEqualTo: icon.leadingAnchor, constant: -8),
+        icon.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+    ])
+    if rowAlignment == .centerY {
+        // Meta row (`.stats-meta { align-items: center }`): value/label block + icon vertically centered.
+        NSLayoutConstraint.activate([
+            main.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            main.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor),
+            main.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
+            icon.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+    } else {
+        // Grid card (`.stat-card { align-items: flex-start }`): value/label at the top; icon nudged
+        // down 2px so it lines up with the big value's cap height rather than the field's leading top.
+        NSLayoutConstraint.activate([
+            main.topAnchor.constraint(equalTo: container.topAnchor),
+            main.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
+            icon.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+        ])
+    }
+    return cardBox(container, minHeight: minHeight)
 }
 
 // MARK: - Alert presentation
