@@ -203,10 +203,9 @@ struct DocumentInfoPopover: View {
         let nsString = doc.textView.string as NSString
         let loc = max(0, min(item.caretUTF16, nsString.length))
         let r = NSRange(location: loc, length: 0)
-        doc.textView.setSelectedRange(r)
+        doc.textView.setSelectedRange(r)                        // also notifies the delegate (focus/typewriter)
         doc.textView.scrollRangeToVisible(r)
         doc.textView.window?.makeFirstResponder(doc.textView)   // return focus to the editor
-        doc.vm.selectionChanged()                               // reveal the now-current line's syntax
         dismiss()                                               // minimal UI: close after jumping
     }
 }
