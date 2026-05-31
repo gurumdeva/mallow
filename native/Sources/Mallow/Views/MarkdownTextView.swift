@@ -101,26 +101,23 @@ final class MarkdownTextView: NSTextView {
     // Try the image embed first, then the URL-wrap; otherwise fall through to the normal text paste.
     // The controller (our delegate) does the work so VM refresh / chrome stay there.
     override func paste(_ sender: Any?) {
-        // Image-embed + URL-wrap paste are reintroduced through the SwiftUI editor coordinator in the
-        // features phase of the rewrite; until then the editor uses the standard text paste.
+        // Image-embed + URL-wrap paste via the editor coordinator (PasteHandlers); falls through to the
+        // standard text paste when neither applies.
+        if (delegate as? MarkdownEditor.Coordinator)?.handlePaste() == true { return }
         super.paste(sender)
     }
 
     // ImageInsert: a drop that carries image(s) is embedded at the drop point; otherwise (dragged
     // text, internal moves) defer to NSTextView's default handling.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        return super.performDragOperation(sender)   // image-drop embedding returns in the features phase
+        if (delegate as? MarkdownEditor.Coordinator)?.handleDrop(sender) == true { return true }
+        return super.performDragOperation(sender)
     }
 
     // ImageInsert: advertise a copy operation for image drags so the cursor shows the (+) badge and
     // the drop is accepted; non-image drags keep NSTextView's behavior.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        if sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self],
-                                                   options: [.urlReadingFileURLsOnly: true,
-                                                             .urlReadingContentsConformToTypes: [UTType.image.identifier]])
-            || sender.draggingPasteboard.canReadItem(withDataConformingToTypes: [UTType.image.identifier]) {
-            return .copy
-        }
+        if (delegate as? MarkdownEditor.Coordinator)?.acceptsImageDrag(sender) == true { return .copy }
         return super.draggingEntered(sender)
     }
 }

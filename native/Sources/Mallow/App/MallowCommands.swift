@@ -11,6 +11,8 @@ import UniformTypeIdentifiers
 struct MallowCommands: Commands {
     /// The front editor window's document, resolved at the moment a command fires.
     private var doc: EditorDocument? { AppState.shared.activeDoc }
+    /// The editor coordinator behind that document (for paste/clipboard commands that act on the text view).
+    private var coordinator: MarkdownEditor.Coordinator? { doc?.textView.delegate as? MarkdownEditor.Coordinator }
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
@@ -50,6 +52,14 @@ struct MallowCommands: Commands {
                 .keyboardShortcut("e", modifiers: [.command, .shift])
         }
 
+        // Edit ▸ Paste & Match Style / Copy as Rich Text (clipboard extras on the editor coordinator).
+        CommandGroup(after: .pasteboard) {
+            Button(L.t("menu.pasteMatchStyle")) { coordinator?.pasteAndMatchStyle() }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+            Button(L.t("menu.copyRichText")) { coordinator?.copyAsRichText() }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+        }
+
         // Format — a new top-level menu (the engine commands the Style popover also issues).
         CommandMenu(L.t("menu.format")) {
             Button(L.t("format.bold")) { doc?.vm.apply("toggle_strong") }
@@ -77,6 +87,8 @@ struct MallowCommands: Commands {
             Button(L.t("menu.focusMode")) { doc?.toggleFocus() }
                 .keyboardShortcut("f", modifiers: [.command, .control])
             Button(L.t("menu.keepOnTop")) { doc?.toggleKeepOnTop() }
+            Button(L.t("menu.typewriter")) { doc?.toggleTypewriter() }
+                .keyboardShortcut("t", modifiers: [.command, .control])
             Divider()
             Button(L.t("menu.zoomIn")) { doc?.zoomIn() }
                 .keyboardShortcut("+", modifiers: .command)

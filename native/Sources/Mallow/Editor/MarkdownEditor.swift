@@ -54,6 +54,7 @@ struct MarkdownEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
         let doc: EditorDocument
+        let behaviors = EditorBehaviors()   // debounced autosave + typewriter caret-centering (one per window)
         private var vm: EditorViewModel { doc.vm }
 
         init(doc: EditorDocument) { self.doc = doc }
@@ -61,10 +62,12 @@ struct MarkdownEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             vm.refresh()
             doc.revision &+= 1   // chrome re-renders title/dirty
+            behaviors.textChanged(doc)   // schedule debounced autosave
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             vm.selectionChanged()
+            behaviors.selectionChanged(doc)   // recenter the caret line when typewriter mode is on
         }
 
         /// Mark hidden-syntax glyphs as `.null` (zero-width) and substitute a `•` glyph for unordered-list

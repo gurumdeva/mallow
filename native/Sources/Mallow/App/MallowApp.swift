@@ -7,6 +7,10 @@ import SwiftUI
 
 @main
 struct MallowApp: App {
+    // The app delegate handles Finder / `open` file events (no SwiftUI hook for those on a plain
+    // executable) by posting `.mallowOpenFile`, which EditorWindow turns into an openWindow below.
+    @NSApplicationDelegateAdaptor(MallowAppDelegate.self) private var appDelegate
+
     var body: some Scene {
         // Parameterized by OpenSpec so File ▸ Open / Open Recent can open a window onto a specific file
         // (`openWindow(value:)`), while New Window / first launch arrive as nil → blank / welcome demo.
@@ -27,6 +31,8 @@ struct EditorWindow: View {
     @State private var doc: EditorDocument
     @State private var showStyle = false
     @State private var showInfo = false
+    @State private var showRename = false
+    @Environment(\.openWindow) private var openWindow
 
     init(spec: OpenSpec?) {
         _doc = State(initialValue: EditorDocument.make(for: spec))
@@ -37,12 +43,28 @@ struct EditorWindow: View {
             MarkdownEditor(doc: doc)
                 .ignoresSafeArea()
             ChromeBar(doc: doc, showStyle: $showStyle, showInfo: $showInfo,
-                      onExport: { doc.exportPDF() }, onRename: {})
+                      onExport: { doc.exportPDF() }, onRename: { showRename = true })
         }
         .frame(minWidth: 480, minHeight: 360)
         .background(Theme.bg)
         .background(WindowActiveTracker(doc: doc))   // report this window active to AppState for the menu commands
+        .background(WindowConfigurator(doc: doc))    // close-confirm on unsaved edits + session geometry persistence
+        .sheet(isPresented: $showRename) { RenameSheet(doc: doc) }
+        .onReceive(NotificationCenter.default.publisher(for: .mallowOpenFile)) { note in
+            guard let path = note.userInfo?["path"] as? String, claimFileOpen(path) else { return }
+            openWindow(value: OpenSpec.file(path: path))
+        }
     }
+}
+
+/// De-dupe Finder/`open` file events: every open window mounts the `.onReceive` above, so without this
+/// each would call openWindow for the same path. Allow one open per path per ~1 second.
+private var lastFileOpen: (path: String, at: TimeInterval) = ("", 0)
+private func claimFileOpen(_ path: String) -> Bool {
+    let now = ProcessInfo.processInfo.systemUptime
+    if lastFileOpen.path == path, now - lastFileOpen.at < 1.0 { return false }
+    lastFileOpen = (path, now)
+    return true
 }
 
 /// First-launch sample document (mirrors the AppKit build's welcome text), exercising headings, inline
