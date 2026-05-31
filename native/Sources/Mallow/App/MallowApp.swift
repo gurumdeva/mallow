@@ -92,7 +92,7 @@ A native macOS markdown editor — **markdown is the source of truth**, parsed a
 
 ## Inline styles
 
-Try **bold**, *italic*, ~~strikethrough~~, and `inline code`. A [link](https://example.com) renders underlined; the #, **, > markers collapse away and return only on the caret's line.
+Try **bold**, *italic*, ~~strikethrough~~, and `inline code`. A [link](https://example.com) renders underlined; the #, **, > markers always collapse away — you edit clean styled text and change structure from the Style menu.
 
 ## Lists
 
