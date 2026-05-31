@@ -221,7 +221,10 @@ extension MarkdownEditor.Coordinator {
             if lineBoxes[idx] != nil { return idx }          // landed exactly on the inner char
             if lineBoxes[idx - 1] != nil { return idx - 1 }  // landed on `]` (inner is idx-1)
             if lineBoxes[idx + 1] != nil { return idx + 1 }  // landed on `[` (inner is idx+1)
-            return nil
+            // The line-leading marker prefix (indent + `- `) is hidden/zero-width and shares the rendered
+            // ☐'s x, so a click on the box can resolve to a prefix index just LEFT of it. Map any on-line
+            // click at or left of a box (but not out on the task text, which is right of `]`) to that box.
+            return lineBoxes.keys.filter { idx <= $0 + 1 }.min()
         }
         guard let inner = innerFor(charIndex),
               let isChecked = lineBoxes[inner],

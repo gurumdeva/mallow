@@ -80,8 +80,11 @@ struct MallowCommands: Commands {
             Button(L.t("format.divider")) { doc?.vm.apply("insert_divider") }
         }
 
-        // View — focus mode, keep-on-top, and zoom (typewriter + document-info return in later phases).
-        CommandMenu(L.t("menu.view")) {
+        // View — focus mode, keep-on-top, zoom, etc. Injected INTO the standard View menu (via the
+        // .sidebar placement) rather than as a separate CommandMenu: a CommandMenu makes a NEW menu, so
+        // macOS's auto-provided "View" menu (Enter Full Screen) and our "보기" showed up as TWO View
+        // menus. Merging keeps a single View menu with our items above the system Enter Full Screen.
+        CommandGroup(after: .sidebar) {
             Button(L.t("menu.focusMode")) { doc?.toggleFocus() }
                 .keyboardShortcut("f", modifiers: [.command, .control])
             Button(L.t("menu.keepOnTop")) { doc?.toggleKeepOnTop() }

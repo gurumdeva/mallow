@@ -262,6 +262,15 @@ final class EditorViewModel {
             boxes[inner] = checked
             collector.hidden.insert(inner - 1)   // [
             collector.hidden.insert(inner + 1)   // ]
+            // A task item shows ONLY its ☐/☑ — hide the `- `/`* `/`N. ` bullet marker before the box so it
+            // never renders as "• ☐ text". KEEP any leading indent visible so a nested task stays indented
+            // (matching nested bullets). The box `[` is at inner-1, so the marker is [firstNonIndent, inner-1).
+            // Hidden wins over the bullet glyph in the layout delegate, so this also suppresses the • without
+            // touching bulletMarks.
+            let box = inner - 1
+            var mStart = ns.lineRange(for: NSRange(location: box, length: 0)).location
+            while mStart < box, ns.character(at: mStart) == 32 || ns.character(at: mStart) == 9 { mStart += 1 }
+            for i in mStart ..< box { collector.hidden.insert(i) }
         }
         taskBoxes = boxes
 
