@@ -8,9 +8,9 @@ layout macOS needs to launch it as an app and route file-open events.
 
 ## Files here
 
-- **`Info.plist`** — bundle metadata. Bundle id is **`com.gwon.mallow-native`**,
-  deliberately distinct from the Tauri build's `com.gwon.mallow` so the two
-  don't collide in LaunchServices / TCC. Declares `CFBundleDocumentTypes` for
+- **`Info.plist`** — bundle metadata. Bundle id is **`com.gurumdeva.mallow-native`**,
+  deliberately distinct from the old Tauri build so the two don't collide in
+  LaunchServices / TCC. Declares `CFBundleDocumentTypes` for
   `md`, `markdown`, `mdown`, `markdn` (role Editor, rank Owner) plus a
   `public.plain-text` fallback, and imports/exports the
   `net.daringfireball.markdown` UTI.
@@ -81,7 +81,7 @@ self-contained on its own and the script skips this step automatically.)
 
 `UserDefaults.standard` keys by bundle id. The bare `swift run` binary has no
 bundle id, so it persists under a process-name domain (`Mallow`); the bundle
-persists under **`com.gwon.mallow-native`**. They're different stores, so
+persists under **`com.gurumdeva.mallow-native`**. They're different stores, so
 session/recent-file state does **not** carry over the first time you switch to
 the bundle — expect a fresh start. (No data is lost; the old domain just isn't
 read by the bundled app.)

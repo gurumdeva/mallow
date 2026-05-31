@@ -5,8 +5,8 @@
 	<!-- ============================================================
 	     Mallow (native) — macOS app bundle Info.plist
 	     Used by build-app.sh to assemble .build/Mallow.app.
-	     Bundle id is DISTINCT from the Tauri app's com.gwon.mallow so the
-	     two never collide in LaunchServices / TCC.
+	     Bundle id is DISTINCT from the old Tauri build so the two never
+	     collide in LaunchServices / TCC.
 	     ============================================================ -->
 
 	<key>CFBundleName</key>
@@ -14,9 +14,9 @@
 	<key>CFBundleDisplayName</key>
 	<string>Mallow</string>
 
-	<!-- Distinct from the Tauri build (com.gwon.mallow) on purpose. -->
+	<!-- Distinct from the old Tauri build on purpose. -->
 	<key>CFBundleIdentifier</key>
-	<string>com.gwon.mallow-native</string>
+	<string>com.gurumdeva.mallow-native</string>
 
 	<!-- Must match the file copied to Contents/MacOS/ by build-app.sh. -->
 	<key>CFBundleExecutable</key>
