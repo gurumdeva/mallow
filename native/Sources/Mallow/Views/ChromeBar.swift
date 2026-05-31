@@ -1,119 +1,123 @@
-// ChromeBar — the custom titlebar overlay (View layer), matching Mallow's transparent titlebar:
-// the centered filename + ● modified dot, and the style / export / info corner buttons. It only
-// builds + wires the views; the actions live on the EditorController (the responder).
+// ChromeBar — the SwiftUI custom titlebar overlay. Mallow hides/clears the native titlebar (transparent
+// titlebar) and draws its own 52pt bar on top: a centered filename + ● modified dot, and the style /
+// export / info corner buttons trailing-right. It is a PURE VISUAL component — it reads doc.title /
+// doc.isDirty for display, and every action + popover-toggle is injected (bindings + closures) so the
+// lead owns window access and anchors the `.popover`s to the buttons via `showStyle` / `showInfo`.
 
-import AppKit
+import SwiftUI
 
-/// A 30×30 rounded titlebar button with an SF-Symbol icon — matches Mallow's `.corner-btn`, including
-/// the fill + icon-tint changes on hover/active (style.css `.corner-btn:hover` / `:active`). Now just a
-/// `SquareButton.Config`: size 30, radius 8, the three corner-btn fills (rest/hover/active → pressed),
-/// a --border border, and a mallowDim→mallowText tint. All three chrome icons share one symbol point
-/// size/weight (14 / .medium) so they read as a consistent set.
-func cornerButtonConfig(_ symbol: String) -> SquareButton.Config {
-    SquareButton.Config(
-        size: 30,
-        cornerRadius: 8,
-        content: .symbol(symbol, pointSize: 14, weight: .medium),
-        fill: cornerBtnFill,
-        hoverFill: cornerBtnFillHover,
-        activeFill: cornerBtnFillActive,            // ⇒ pressed (mouseDown) state, like the CSS :active
-        border: mallowBorderColor,                  // --border, same color at rest + hover
-        hoverBorder: mallowBorderColor,
-        tint: mallowDim,                            // :hover { color: var(--text) }
-        hoverTint: mallowText)
-}
+/// The 52pt titlebar overlay: centered filename + ● dot, and the style / export / info corner buttons on
+/// the right. Stateless beyond the injected bindings — see the file header for the wiring contract.
+struct ChromeBar: View {
+    let doc: EditorDocument
+    @Binding var showStyle: Bool      // toggled by the style (textformat) button
+    @Binding var showInfo: Bool       // toggled by the info (info.circle) button
+    var onExport: () -> Void          // export (arrow.down.doc) button
+    var onRename: () -> Void          // tapping the filename
 
-/// Factory kept so the chrome-bar call sites stay unchanged; returns the interactive square button.
-func cornerButton(_ symbol: String, _ target: AnyObject, _ action: Selector) -> NSButton {
-    SquareButton(cornerButtonConfig(symbol), target: target, action: action)
-}
+    /// Total bar height; matches the AppKit titlebar inset the window reserves.
+    private let barHeight: CGFloat = 52
 
-/// The centered filename as a real NSButton (CSS `.titlebar-center`: `radius 7`, hover → elevated bg +
-/// brighter text). An NSButton — not a label — because a control reliably receives the click; a plain
-/// label let `isMovableByWindowBackground` swallow it as a window drag, so rename never fired. Click →
-/// renameFromTitlebar; truncates long names.
-final class FilenameButton: HoverButton {
-    private var name = "Untitled"
+    var body: some View {
+        // GeometryReader gives us the bar's own width, so the centered name can be capped to a fraction
+        // of it (matching the AppKit `widthAnchor … multiplier: 0.55`) and truncate before it reaches the
+        // corner buttons — robust even in a narrow window on a wide display.
+        GeometryReader { geo in
+            ZStack {
+                // Opaque backdrop — the dynamic Theme.bg token tracks light/dark with the editor.
+                Theme.bg
 
-    convenience init(target: AnyObject, action: Selector) {
-        self.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        isBordered = false
-        bezelStyle = .inline
-        imagePosition = .noImage
-        wantsLayer = true
-        layer?.cornerRadius = 7
-        lineBreakMode = .byTruncatingTail
-        self.target = target
-        self.action = action
-        refresh()
+                // CENTER: ● dot (only when dirty) + the filename button, centered in the bar.
+                filenameCluster
+                    .frame(maxWidth: geo.size.width * 0.55)
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                // RIGHT: the three corner buttons, trailing-inset, vertically centered. Its own
+                // full-width row so it stays pinned to the trailing edge regardless of the centered name.
+                HStack {
+                    Spacer(minLength: 0)
+                    cornerButtons
+                }
+                .padding(.trailing, 16)
+            }
+        }
+        .frame(height: barHeight)
+        .frame(maxWidth: .infinity)
     }
 
-    /// Set the displayed filename (mirrors the old label's stringValue).
-    func setName(_ s: String) { name = s; refresh() }
+    // MARK: - Center (dirty dot + filename)
 
-    private func refresh() {
-        layer?.backgroundColor = (hovering ? mallowElevated : NSColor.clear).cgColor
-        attributedTitle = NSAttributedString(string: name, attributes: [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: hovering ? mallowText : mallowDim,
-        ])
+    private var filenameCluster: some View {
+        HStack(spacing: 4) {
+            if doc.isDirty {
+                Text("●")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.dim)
+            }
+            FilenameButton(title: doc.title, onRename: onRename)
+        }
     }
 
-    override func hoverChanged() { refresh() }
-    override func appearanceDidChange() { refresh() }   // re-resolve the layer bg for the new appearance
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
+    // MARK: - Right (corner buttons)
 
-/// The opaque titlebar backdrop. Its `mallowBG` fill is pushed onto the layer as a CGColor, which is a
-/// static snapshot and would NOT re-resolve on a light↔dark flip — so this re-applies it whenever the
-/// effective appearance changes (and once on insertion), keeping the bar in step with the system. The
-/// fill is the dynamic `mallowBG` token, so dark stays byte-identical; only the new light path is added.
-private final class ChromeBackdrop: NSView {
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            self.layer?.backgroundColor = mallowBG.cgColor
+    private var cornerButtons: some View {
+        HStack(spacing: 6) {
+            // 1. Style menu — the Text-Style popover, anchored to this button.
+            Button { showStyle.toggle() } label: {
+                Image(systemName: "textformat")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .buttonStyle(SquareButtonStyle.corner)
+            .popover(isPresented: $showStyle, arrowEdge: .bottom) {
+                StylePopover(doc: doc)
+            }
+
+            // 2. Export to PDF — injected action (window/save panel lives on the lead).
+            Button { onExport() } label: {
+                Image(systemName: "arrow.down.doc")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .buttonStyle(SquareButtonStyle.corner)
+
+            // 3. Document info — the Statistics / Contents popover, anchored to this button.
+            Button { showInfo.toggle() } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .buttonStyle(SquareButtonStyle.corner)
+            .popover(isPresented: $showInfo, arrowEdge: .bottom) {
+                DocumentInfoPopover(doc: doc)
+            }
         }
     }
 }
 
-/// The 52px titlebar overlay (opaque): centered filename + ● dot, and the style / export / info
-/// corner buttons on the right. Wires the buttons + the filename/dot refs onto `c`.
-func makeChromeBar(_ c: EditorController) -> NSView {
-    let bar = ChromeBackdrop()
-    bar.translatesAutoresizingMaskIntoConstraints = false
-    bar.wantsLayer = true
-    bar.layer?.backgroundColor = mallowBG.cgColor
+/// The centered filename as a plain button (CSS `.titlebar-center`): 13pt medium, Theme.dim at rest →
+/// Theme.text on hover, with a subtle radius-7 Theme.elevated background on hover. `.plain` style + an
+/// `.onHover` flag drive the hover look; tapping calls `onRename`. Truncates a long name with a tail
+/// ellipsis so the bar stays robust at small widths.
+private struct FilenameButton: View {
+    let title: String
+    let onRename: () -> Void
+    @State private var hovering = false
 
-    let dot = mallowLabel("●", size: 9, color: mallowDim)
-    dot.isHidden = true
-    // Click the centered filename to rename the file on disk (RenameInTitlebar.swift). A real button
-    // (not a label) so the click isn't swallowed as a window drag.
-    let nameButton = FilenameButton(target: c, action: #selector(EditorController.renameFromTitlebar(_:)))
-    let center = NSStackView(views: [dot, nameButton])
-    center.spacing = 4
-    center.alignment = .centerY
-    center.translatesAutoresizingMaskIntoConstraints = false
-    bar.addSubview(center)
-
-    let right = NSStackView(views: [
-        cornerButton("textformat", c, #selector(EditorController.showStyleMenu(_:))),
-        cornerButton("arrow.down.doc", c, #selector(EditorController.exportPDF(_:))),
-        cornerButton("info.circle", c, #selector(EditorController.showDocumentInfo(_:))),
-    ])
-    right.spacing = 6
-    right.translatesAutoresizingMaskIntoConstraints = false
-    bar.addSubview(right)
-
-    NSLayoutConstraint.activate([
-        center.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
-        center.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-        center.widthAnchor.constraint(lessThanOrEqualTo: bar.widthAnchor, multiplier: 0.55),
-        right.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -16),
-        right.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-    ])
-    c.titleButton = nameButton
-    c.dotView = dot
-    return bar
+    var body: some View {
+        Button(action: onRename) {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(hovering ? Theme.text : Theme.dim)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(hovering ? Theme.elevated : Color.clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
 }

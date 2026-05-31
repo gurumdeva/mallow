@@ -30,35 +30,8 @@ enum RecentFiles {
         arr.insert(path, at: 0)
         arr = Array(arr.prefix(maxCount))
         try? JSONEncoder().encode(arr).write(to: storeURL, options: .atomic)
-        rebuildRecentMenu()
     }
     static func clear() {
         try? JSONEncoder().encode([String]()).write(to: storeURL, options: .atomic)
-        rebuildRecentMenu()
     }
-}
-
-let recentMenu = NSMenu(title: "Open Recent")
-
-/// Repopulate the Open Recent submenu from the persisted list (filename only; full path stored).
-func rebuildRecentMenu() {
-    recentMenu.removeAllItems()
-    let paths = RecentFiles.list()
-    if paths.isEmpty {
-        let empty = NSMenuItem(title: L.t("recent.none"), action: nil, keyEquivalent: "")
-        empty.isEnabled = false
-        recentMenu.addItem(empty)
-        return
-    }
-    for p in paths {
-        let item = NSMenuItem(title: (p as NSString).lastPathComponent,
-                              action: #selector(AppDelegate.openRecent(_:)), keyEquivalent: "")
-        item.representedObject = p
-        item.target = nil   // legacy AppKit menu (dead in the SwiftUI build); recents are a SwiftUI menu now
-        recentMenu.addItem(item)
-    }
-    recentMenu.addItem(.separator())
-    let clear = NSMenuItem(title: L.t("menu.clearRecent"), action: #selector(AppDelegate.clearRecent(_:)), keyEquivalent: "")
-    clear.target = nil
-    recentMenu.addItem(clear)
 }

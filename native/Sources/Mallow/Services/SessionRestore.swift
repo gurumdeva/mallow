@@ -110,7 +110,7 @@ enum SessionStore {
     /// block-based observers are NOT auto-removed when the observed window deallocs, so without this
     /// they accumulate for the app's lifetime (3 per window ever opened).
     @discardableResult
-    static func track(window: NSWindow, controller: EditorController) -> [NSObjectProtocol] {
+    static func track(window: NSWindow, lastFile: @escaping () -> String?) -> [NSObjectProtocol] {
         let nc = NotificationCenter.default
         // Frame changes. `didEndLiveResize` (not `didResize`) avoids a write per drag-frame; `didMove`
         // is discrete already. Both read the live frame so the two stay consistent.
@@ -121,15 +121,15 @@ enum SessionStore {
         let move = nc.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { onGeometry($0) }
         let resize = nc.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { onGeometry($0) }
         // Last-edited document: whenever this window becomes the active one, remember what it's editing
-        // (or clear, if it's an untitled buffer). On quit the most-recently-focused document wins —
-        // exactly "the last thing you were working on".
-        let main = nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: window, queue: .main) { [weak controller] _ in
-            saveLastFile(controller?.vm.filePath)
+        // (the `lastFile` closure reads the current path, or nil for an untitled buffer). On quit the
+        // most-recently-focused document wins — exactly "the last thing you were working on".
+        let main = nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: window, queue: .main) { _ in
+            saveLastFile(lastFile())
         }
         // Capture the initial frame immediately so even a launch with no later move/resize persists a
         // sensible geometry (e.g. restored-then-quit without touching the window).
         saveFrame(window.frame)
-        saveLastFile(controller.vm.filePath)
+        saveLastFile(lastFile())
         return [move, resize, main]
     }
 
