@@ -11,14 +11,14 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 - **Markdown is the source of truth — but its syntax never shows.** You edit clean, styled text; the `#`, `**`, `*`, `` ` ``, `>` and list markers always collapse away (structure is changed from the Style menu and shortcuts, not by typing raw symbols). What you see is the document, not its markup.
 - **Genuinely minimal — no settings screen.** Sensible defaults, zero configuration. It looks the way it should the moment you open it.
 - **Distraction-free by design.** Focus Mode dims everything but the block you're on; Typewriter Scrolling keeps that line centered. The chrome fades while you write.
-- **First-class Korean, Japanese & English.** The editor uses the macOS system IME directly (a real `NSTextView`), so Hangul/Kana composition is exactly as smooth as in any native app — and the UI follows your device language.
+- **First-class Korean, Japanese & English.** The editor uses the macOS system IME directly, so Hangul/Kana composition is exactly as smooth as in any native app — and the UI follows your device language.
 - **Your files, your disk.** One note = one `.md` file. No account, no cloud lock-in, no proprietary format. Point it at an iCloud or Dropbox folder if you want sync — that's it.
-- **Truly native.** Not a web view in a window — a real AppKit/SwiftUI app driven by a small Rust engine ([Inkstone](https://github.com/gurumdeva/inkstone)), with native menus, dialogs, and `.md` file associations.
+- **Truly native.** Not a web view in a window — a real macOS app with native menus, dialogs, and `.md` file associations.
 
 ## Features
 
-- **Live-preview editing** — Inkstone parses your markdown as you type; headings, bold/italic/strike/inline-code, links, lists, quotes, tables, task checkboxes, and code blocks are styled in place while the syntax markers stay hidden.
-- **Format commands** — the full Format menu (bold/italic/strikethrough/inline-code ⌘B/⌘I, headings ⌘1–3 / body ⌘0, bullet & numbered lists, quote, code block, divider), each a verified engine command, plus a Style popover.
+- **Live-preview editing** — Mallow parses your markdown as you type; headings, bold/italic/strike/inline-code, links, lists, quotes, tables, task checkboxes, and code blocks are styled in place while the syntax markers stay hidden.
+- **Format commands** — the full Format menu (bold/italic/strikethrough/inline-code ⌘B/⌘I, headings ⌘1–3 / body ⌘0, bullet & numbered lists, quote, code block, divider), plus a Style popover.
 - **GFM tables & task lists** — tables render on a tidy card; `- [ ]` / `- [x]` show as ☐ / ☑ and toggle on click.
 - **Focus Mode** (⌃⌘F) — dims every block but the caret's. **Typewriter Scrolling** (⌃⌘T) keeps the active line centered.
 - **Multiple windows** — New (⌘N) and Open (⌘O / Recent / Finder double-click) open a separate document window; ⌘W closes one and the app quits after the last.
@@ -28,64 +28,28 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 - **Statistics & Table of Contents** (⇧⌘I) — word / character / paragraph counts and read time, a click-to-jump TOC, and a live word-count badge in the status bar.
 - **Export** — **HTML** (⇧⌘E) saves a self-contained, styled page (math renders as native MathML); **PDF** exports a clean light-theme document. **Copy as Rich Text** (⌥⌘C) keeps headings/bold/lists/tables/code when pasting into Slack, email, Docs, or Notion; **Paste & Match Style** (⇧⌘V) pastes plain text; pasting an http(s) URL over a selection wraps it in a link.
 - **Text zoom** (⌘+ / ⌘− / ⌘0) and **Keep on Top** (View ▸ Keep on Top) — both per-window, reset each launch.
-- **Automatic light & dark theme** — follows the macOS appearance and switches live, with system fonts (SF Pro + Apple SD Gothic Neo).
+- **Automatic light & dark theme** — follows the macOS appearance and switches live, with the system fonts.
 
 > Markdown math is kept as source text in the editor (it renders as MathML in HTML export).
 
-## The engine (sibling checkout)
+## Install
 
-The editor's parsing, styling, and commands come from **[Inkstone](https://github.com/gurumdeva/inkstone)** — a markdown-as-truth Rust core, linked here as a C-ABI static library. It must be checked out as a **sibling** of this repo:
+Download the latest **`Mallow_<version>_aarch64.dmg`** from the [Releases](../../releases/latest) page (Apple Silicon), open it, and drag **Mallow** into **Applications**.
 
-```
-Documents/
-├── inkstone/          # the engine  (private: gurumdeva/inkstone)
-└── markdown-editor/   # this repo   (Mallow — the macOS app)
-```
+The build isn't code-signed yet, so on first launch macOS Gatekeeper will block a normal double-click. To open it once: right-click `Mallow.app` → **Open** → **Open**. Or from Terminal: `xattr -dr com.apple.quarantine /Applications/Mallow.app`.
 
-`Package.swift` links `../inkstone/target/release/libinkstone.a`, and `Sources/CInkstone/inkstone.h` symlinks `../inkstone/include/inkstone.h`.
+## Building from source
 
-## Build & run
-
-macOS 14+. With the `inkstone` sibling checked out:
+macOS 14+. Mallow builds against a small companion engine checked out as a sibling at `../inkstone`; with that in place:
 
 ```sh
-./build.sh                  # builds the engine staticlib (cargo), then runs the app
+./build.sh        # build + run
+./build-app.sh    # package an (unsigned) .app bundle → .build/Mallow.app
 ```
-
-or manually:
-
-```sh
-( cd ../inkstone && cargo build --features ffi --release )   # build the engine once
-swift build && swift run Mallow                              # build + run the app
-```
-
-To package a double-click `.app` bundle (unsigned):
-
-```sh
-./build-app.sh              # → .build/Mallow.app   (see AppBundle/README.md for signing notes)
-```
-
-## Project layout
-
-```
-markdown-editor/
-├── Package.swift          # SwiftPM manifest (executable target "Mallow")
-├── Sources/
-│   ├── Mallow/            # the app — App/ Editor/ ViewModels/ Views/ Features/ Services/ …
-│   └── CInkstone/         # the Inkstone C-ABI as a SwiftPM systemLibrary (module map + header symlink)
-├── AppBundle/             # Info.plist + packaging notes for the .app
-├── build.sh, build-app.sh # build/run + bundle scripts
-├── docs/                  # screenshots
-├── CHANGELOG.md, LICENSE
-└── .tauri/                # the previous Tauri/Milkdown implementation — archived locally,
-                           # superseded by this native app, intentionally not tracked in git
-```
-
-The text surface is an `NSTextView` wrapped in an `NSViewRepresentable` (TextKit is required for the live-preview glyph hiding, the custom caret, and CJK IME); everything around it — app lifecycle, chrome, popovers, menus, windows — is SwiftUI.
 
 ## Status
 
-The macOS app is the current and only implementation; the earlier Tauri + Milkdown (WKWebView) build has been superseded and archived under `.tauri/` (not pushed). Code signing / notarization for distributable releases is the remaining packaging step.
+The macOS app is the current and only build; the earlier web-view build has been superseded and archived locally (not tracked in git). Code signing / notarization for distributable releases is the remaining packaging step.
 
 ## License
 
