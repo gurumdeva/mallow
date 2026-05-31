@@ -26,8 +26,8 @@
 //      the engine commands use (`shouldChangeText` / `replaceCharacters` / `didChangeText`), then
 //      `refresh()`. ⌘Z reverts a toggle like any edit.
 //
-// See the INTEGRATION NOTES at the bottom for exactly how the lead wires these into EditorViewModel,
-// the glyph delegate, and the click recognizer. NOTHING here edits existing files.
+// These contributions are wired into EditorViewModel, the glyph delegate, and the click recognizer.
+// NOTHING here edits existing files.
 
 import AppKit
 import CoreText
