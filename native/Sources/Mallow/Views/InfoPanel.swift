@@ -186,6 +186,10 @@ final class InfoPanelViewController: NSViewController {
         trackingMode: .selectOne, target: nil, action: nil)
     private let bodyContainer = NSView()
 
+    /// Fixed content width (the 2×2 grid + 16px side insets). Height is NOT fixed — it follows the
+    /// current tab's content via `preferredContentSize` so the popover never squeezes the body.
+    private let rootWidth: CGFloat = 304
+
     init(stats: DocStats, outline: [OutlineItem], modified: Date?, popover: NSPopover,
          onJump: @escaping (OutlineItem) -> Void) {
         self.stats = stats
@@ -198,7 +202,7 @@ final class InfoPanelViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("InfoPanelViewController is created in code") }
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 304, height: 314))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: rootWidth, height: 314))
 
         // Centered title above the tabs (CSS `.stats-title`: 13/medium/dim), matching the reference.
         let titleLabel = mallowLabel(L.t("menu.documentInfo"), size: 13, weight: .medium,
@@ -239,12 +243,25 @@ final class InfoPanelViewController: NSViewController {
         bodyContainer.subviews.forEach { $0.removeFromSuperview() }
         v.translatesAutoresizingMaskIntoConstraints = false
         bodyContainer.addSubview(v)
+        // Pin top/leading/trailing required; the bottom pin is high-but-not-required so it can never
+        // fight the body's own required content height — it just lets the body fill if the container is
+        // taller. This keeps `fittingSize` (below) equal to the true content height, so the popover is
+        // sized to fit exactly instead of compressing the stack (which made the meta row overlap).
+        let bottom = v.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor)
+        bottom.priority = .defaultHigh
         NSLayoutConstraint.activate([
             v.topAnchor.constraint(equalTo: bodyContainer.topAnchor),
             v.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor),
             v.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor),
-            v.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor),
+            bottom,
         ])
+        // Grow the popover to the current tab's natural height. With a fixed-height frame the stats
+        // body (2×2 grid + meta row) was taller than the popover, so NSStackView compressed it and the
+        // meta row overlapped the bottom cards (no AutoLayout conflict is logged — the stack's spacing
+        // constraints are sub-required, so it overlaps under compression rather than erroring). Sizing
+        // to the content's fittingSize gives each tab exactly the height it needs.
+        view.layoutSubtreeIfNeeded()
+        preferredContentSize = NSSize(width: rootWidth, height: ceil(view.fittingSize.height))
     }
 
     // MARK: Statistics body — a 2×2 grid of rounded stat cards + a modified-date meta row, matching
@@ -262,13 +279,20 @@ final class InfoPanelViewController: NSViewController {
         let cardWidth: CGFloat = 132   // (304 − 32 insets − 8 gap) / 2
 
         // One stat card: a big value (24/semibold) over a dim label (12), with a faint SF-symbol
-        // top-right. The shared statCard builder owns the surface/radius/inset; the grid pins width.
+        // top-right. The shared statCard builder owns the surface/radius/inset; the grid pins an EXACT
+        // width AND height. A fixed height (not `>=`) is what keeps the layout unambiguous: with only a
+        // minimum, `fittingSize` collapsed the cards and the popover came out too short, so the stack
+        // compressed and the meta row overlapped the bottom cards.
+        let cardHeight: CGFloat = 78
         func card(_ value: String, _ label: String, _ symbol: String) -> NSView {
             let box = statCard(value: value, label: label, symbol: symbol,
                                valueFont: NSFont.systemFont(ofSize: 24, weight: .semibold),
                                labelFont: NSFont.systemFont(ofSize: 12),
-                               rowAlignment: .top, minHeight: 70)
-            box.widthAnchor.constraint(equalToConstant: cardWidth).isActive = true
+                               rowAlignment: .top, minHeight: 0)
+            NSLayoutConstraint.activate([
+                box.widthAnchor.constraint(equalToConstant: cardWidth),
+                box.heightAnchor.constraint(equalToConstant: cardHeight),
+            ])
             return box
         }
         func hrow(_ a: NSView, _ b: NSView) -> NSStackView {
@@ -294,7 +318,10 @@ final class InfoPanelViewController: NSViewController {
                                 valueFont: NSFont.systemFont(ofSize: 14, weight: .medium),
                                 labelFont: NSFont.systemFont(ofSize: 11),
                                 rowAlignment: .centerY, minHeight: 0)
-            meta.widthAnchor.constraint(equalToConstant: cardWidth * 2 + 8).isActive = true
+            NSLayoutConstraint.activate([
+                meta.widthAnchor.constraint(equalToConstant: cardWidth * 2 + 8),
+                meta.heightAnchor.constraint(equalToConstant: 56),   // fixed, like the grid cards
+            ])
             outer.addArrangedSubview(meta)
         }
         return outer
@@ -312,6 +339,7 @@ final class InfoPanelViewController: NSViewController {
                 empty.centerXAnchor.constraint(equalTo: wrap.centerXAnchor),
                 empty.centerYAnchor.constraint(equalTo: wrap.centerYAnchor),
                 empty.leadingAnchor.constraint(greaterThanOrEqualTo: wrap.leadingAnchor, constant: 16),
+                wrap.heightAnchor.constraint(equalToConstant: 96),   // definite height so the popover sizes sanely
             ])
             return wrap
         }
@@ -350,6 +378,12 @@ final class InfoPanelViewController: NSViewController {
             list.bottomAnchor.constraint(equalTo: flipped.bottomAnchor, constant: -4),
             flipped.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
         ])
+        // A definite height so `fittingSize` (which drives the popover height) is bounded: the list's
+        // own height (24px rows + 2px gaps + 8px padding) capped so long outlines scroll instead of
+        // growing the popover past a sensible max.
+        let rows = CGFloat(outline.count)
+        let contentHeight = rows * 24 + max(0, rows - 1) * 2 + 8
+        scroll.heightAnchor.constraint(equalToConstant: min(contentHeight, 264)).isActive = true
         return scroll
     }
 
