@@ -5,12 +5,38 @@
 // this covers Save/Export, the Format menu, and the View menu.
 
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct MallowCommands: Commands {
     /// The front editor window's document, resolved at the moment a command fires.
     private var doc: EditorDocument? { AppState.shared.activeDoc }
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        // File ▸ New / Open / Open Recent (replaces the default "New Window"). New opens a blank window;
+        // Open / Recent open a window onto a file via the OpenSpec value.
+        CommandGroup(replacing: .newItem) {
+            Button(L.t("menu.new")) { openWindow(value: OpenSpec.blank) }
+                .keyboardShortcut("n", modifiers: .command)
+            Button(L.t("menu.open")) { openFile() }
+                .keyboardShortcut("o", modifiers: .command)
+            Menu(L.t("menu.openRecent")) {
+                let recents = RecentFiles.list()
+                if recents.isEmpty {
+                    Button(L.t("recent.none")) {}.disabled(true)
+                } else {
+                    ForEach(recents, id: \.self) { path in
+                        Button((path as NSString).lastPathComponent) {
+                            openWindow(value: OpenSpec.file(path: path))
+                        }
+                    }
+                    Divider()
+                    Button(L.t("menu.clearRecent")) { RecentFiles.clear() }
+                }
+            }
+        }
+
         // File ▸ Save / Save As / Export (slots into the standard Save menu position).
         CommandGroup(replacing: .saveItem) {
             Button(L.t("menu.save")) { doc?.save() }
@@ -58,6 +84,16 @@ struct MallowCommands: Commands {
                 .keyboardShortcut("-", modifiers: .command)
             Button(L.t("menu.actualSize")) { doc?.zoomReset() }
                 .keyboardShortcut("0", modifiers: .command)
+        }
+    }
+
+    /// File ▸ Open — pick a markdown/text file and open it in a new window.
+    private func openFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText, .plainText]
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            openWindow(value: OpenSpec.file(path: url.path))
         }
     }
 }
