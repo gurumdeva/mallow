@@ -173,6 +173,44 @@ final class EditorViewModel {
         tag == "Paragraph" || tag == "Heading" || tag == "List" || tag == "BlockQuote"
     }
 
+    /// The tight reveal window for INLINE syntax: the styled inline token (a run carrying marks, or a
+    /// Link / inline-Code run) that the caret sits inside or directly beside, widened over the marker
+    /// gaps on each side (`prevRun.end ..< nextRun.start` = leading marker + run + trailing marker) and
+    /// clamped to the caret's own line. When the caret is in plain text — no styled token under it — the
+    /// span is empty (`location == NSNotFound`), so a paragraph's `**`/`*`/`[]()` stay hidden until you
+    /// click the styled word itself. This is what turns "reveal the whole line" into "reveal only the
+    /// marker next to the cursor". Block markers (`#`, `>`, fences, `---`) are handled line-wide elsewhere.
+    fileprivate static func inlineRevealSpan(blocks: [PBlock], s: String, total: Int,
+                                             caret: Int, caretLine: NSRange) -> NSRange {
+        let none = NSRange(location: NSNotFound, length: 0)
+        func styled(_ inline: PInline) -> Bool {
+            !inline.marks.isEmpty || inline.kindTag == "Link" || inline.kindTag == "Code"
+        }
+        for block in blocks where hideable(block.kindTag) {
+            let bLo = byteToUTF16(s, block.range.start)
+            let bHi = min(byteToUTF16(s, block.range.end), total)
+            guard caret >= bLo && caret <= bHi else { continue }
+            // Inline runs of this block, as (lo, hi, isStyled), left to right.
+            let runs = block.inlines
+                .map { (lo: byteToUTF16(s, $0.range.start),
+                        hi: min(byteToUTF16(s, $0.range.end), total),
+                        styled: styled($0)) }
+                .sorted { $0.lo < $1.lo }
+            for (idx, run) in runs.enumerated() where run.styled {
+                // The run plus the marker gap on each side (up to the neighbouring run, or the block edge).
+                let prevEnd = idx > 0 ? runs[idx - 1].hi : bLo
+                let nextStart = idx + 1 < runs.count ? runs[idx + 1].lo : bHi
+                guard caret >= prevEnd && caret <= nextStart else { continue }
+                // Clamp to the caret's line so a token never bleeds across list items / soft lines.
+                let lo = max(prevEnd, caretLine.location)
+                let hi = min(nextStart, caretLine.location + caretLine.length)
+                return hi > lo ? NSRange(location: lo, length: hi - lo) : none
+            }
+            return none   // caret is in this block but not in/beside a styled token
+        }
+        return none
+    }
+
     func recomputeHidden() {
         guard let textView else { return }
         let s = textView.string
@@ -180,10 +218,18 @@ final class EditorViewModel {
         let total = ns.length
         let caretLine = total > 0 ? ns.lineRange(for: textView.selectedRange())
                                   : NSRange(location: 0, length: 0)
+        // Inline markers (`**`, `*`, `[]()`, backticks) reveal only for the styled token the caret sits
+        // inside or directly beside — NOT the whole caret line. Block markers (`#`, `>`, `---`, fences)
+        // still reveal line-wide (they're per-line edits). This narrows the live preview to "the marker
+        // next to the cursor", closer to Tauri's behaviour.
+        let revealSpan = EditorViewModel.inlineRevealSpan(
+            blocks: blocks, s: s, total: total,
+            caret: textView.selectedRange().location, caretLine: caretLine)
 
         // Build the collector (source + caret context), run the four hide-passes into it, then read the
         // accumulated set back out. Pass order is irrelevant (each pass only inserts into the same set).
-        var collector = HiddenSyntaxCollector(s: s, ns: ns, total: total, caretLine: caretLine)
+        var collector = HiddenSyntaxCollector(s: s, ns: ns, total: total,
+                                              caretLine: caretLine, revealSpan: revealSpan)
         collector.hideBlockGaps(blocks)        // marker/`#`/`**` gaps in paragraphs/headings/lists/quotes
         collector.hideInlineCodeFences(blocks) // the ` backtick runs around inline code
         collector.hideThematicBreaks(blocks)   // the --- / *** / ___ source (a rule is drawn instead)
@@ -371,31 +417,53 @@ private struct HiddenSyntaxCollector {
     let s: String
     let ns: NSString
     let total: Int
-    let caretLine: NSRange
+    let caretLine: NSRange    // block-level reveal scope: the whole caret line (#, >, ---, fences)
+    let revealSpan: NSRange   // inline reveal scope: just the styled token next to the caret (**, *, [](), `)
     let grammar: MarkerGrammar
     var hidden = Set<Int>()
 
-    init(s: String, ns: NSString, total: Int, caretLine: NSRange) {
+    init(s: String, ns: NSString, total: Int, caretLine: NSRange, revealSpan: NSRange) {
         self.s = s
         self.ns = ns
         self.total = total
         self.caretLine = caretLine
+        self.revealSpan = revealSpan
         self.grammar = MarkerGrammar(ns: ns)
     }
 
-    /// Collapse char `i`, except newlines and any char on the caret's current line.
+    /// Collapse char `i` for BLOCK syntax, except newlines and any char on the caret's current line
+    /// (a `#`/`>`/`---`/fence reveals whenever the caret is anywhere on its line — it's a per-line edit).
     private mutating func hideChar(_ i: Int) {
         guard i >= 0, i < total else { return }
         let onCaretLine = i >= caretLine.location && i < caretLine.location + caretLine.length
         if !onCaretLine && ns.character(at: i) != 10 /* not a newline */ { hidden.insert(i) }
     }
 
-    /// Collapse every char in `[lo, hi)` not in `keep` (the kept line-leading markers).
+    /// Collapse char `i` for INLINE syntax: revealed only inside `revealSpan` (the one styled token the
+    /// caret is in/beside), so other markers on the same line stay hidden. Newlines never collapse.
+    private mutating func hideInlineChar(_ i: Int) {
+        guard i >= 0, i < total else { return }
+        let revealed = revealSpan.location != NSNotFound
+            && i >= revealSpan.location && i < revealSpan.location + revealSpan.length
+        if !revealed && ns.character(at: i) != 10 { hidden.insert(i) }
+    }
+
+    /// Collapse every char in `[lo, hi)` not in `keep` (the kept line-leading markers), block-scoped.
     private mutating func collapse(_ lo: Int, _ hi: Int, keep: Set<Int>) {
         var i = max(0, lo)
         let end = min(hi, total)
         while i < end {
             if !keep.contains(i) { hideChar(i) }
+            i += 1
+        }
+    }
+
+    /// Like `collapse`, but inline-scoped — each char reveals only when it's in the caret's token span.
+    private mutating func collapseInline(_ lo: Int, _ hi: Int, keep: Set<Int>) {
+        var i = max(0, lo)
+        let end = min(hi, total)
+        while i < end {
+            if !keep.contains(i) { hideInlineChar(i) }
             i += 1
         }
     }
@@ -411,26 +479,36 @@ private struct HiddenSyntaxCollector {
                 .map { (byteToUTF16(s, $0.range.start), byteToUTF16(s, $0.range.end)) }
                 .sorted { $0.0 < $1.0 }
             let keep = (block.kindTag == "List") ? grammar.leadingMarkers(bLo, bHi) : Set<Int>()
+            // The gap BEFORE the first inline run is the block's leading marker — for a heading/quote that
+            // is the `#`/`>`, which reveals line-wide (block-scoped). Every other gap (between runs, and
+            // the trailing gap) is inline syntax (`**`, `*`, `[]()`), revealed only per the caret's token.
+            let leadingIsBlock = block.kindTag == "Heading" || block.kindTag == "BlockQuote"
             var cursor = bLo
+            var seenRun = false
             for (lo, hi) in covered {
-                if lo > cursor { collapse(cursor, lo, keep: keep) }
+                if lo > cursor {
+                    if !seenRun && leadingIsBlock { collapse(cursor, lo, keep: keep) }
+                    else { collapseInline(cursor, lo, keep: keep) }
+                }
                 cursor = max(cursor, hi)
+                seenRun = true
             }
-            if cursor < bHi { collapse(cursor, bHi, keep: keep) }
+            if cursor < bHi { collapseInline(cursor, bHi, keep: keep) }
         }
     }
 
     /// Inline code's source range includes its backtick fences; collapse the leading/trailing ` runs so
-    /// only the code text shows (revealed on the caret line like other syntax).
+    /// only the code text shows. Inline-scoped — the fences reveal only when the caret is in that code
+    /// span (the Code run is itself a styled token, so `revealSpan` covers its backticks).
     mutating func hideInlineCodeFences(_ blocks: [PBlock]) {
         for block in blocks {
             for inline in block.inlines where inline.kindTag == "Code" {
                 let lo = byteToUTF16(s, inline.range.start)
                 let hi = min(byteToUTF16(s, inline.range.end), total)
                 var i = lo
-                while i < hi && ns.character(at: i) == 96 /* ` */ { hideChar(i); i += 1 }
+                while i < hi && ns.character(at: i) == 96 /* ` */ { hideInlineChar(i); i += 1 }
                 var j = hi - 1
-                while j >= i && ns.character(at: j) == 96 { hideChar(j); j -= 1 }
+                while j >= i && ns.character(at: j) == 96 { hideInlineChar(j); j -= 1 }
             }
         }
     }
