@@ -598,7 +598,7 @@ private struct TablePipeScanner {
         for block in blocks where block.kindTag == "Table" {
             let (bLo, bHi) = block.range.utf16Bounds(in: source, clampedTo: total)
             var lineStart = bLo
-            var lineIndex = 0
+            var foundDelimiter = false
             while lineStart < bHi {
                 let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
                 let lineHi = min(line.location + line.length, bHi)
@@ -615,16 +615,18 @@ private struct TablePipeScanner {
                     }
                     i += 1
                 }
-                // GFM delimiter row: the 2nd line, made of only `| - :` + ws with ≥1 dash → hide it whole.
-                if lineIndex == 1, sawDash, sawNonSpace, onlySeparatorChars {
+                // GFM delimiter row = the FIRST row made of only `| - :` + ws with ≥1 dash (it always sits
+                // directly under the header, before any body row). Matched by SHAPE, not a fixed line
+                // index, so a stray leading line in the block range can't throw it off; hide that row whole.
+                if !foundDelimiter, sawDash, sawNonSpace, onlySeparatorChars {
                     var j = line.location
                     while j < lineHi { if ns.character(at: j) != 10 { hide.insert(j) }; j += 1 }
+                    foundDelimiter = true
                 } else {
                     for p in linePipes { pipes.insert(p) }
                 }
                 if line.length == 0 { break }
                 lineStart = line.location + line.length
-                lineIndex += 1
             }
         }
         return (pipes, hide)

@@ -180,9 +180,9 @@ extension MarkdownEditor.Coordinator {
         guard !md.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let html = inkRenderHtml(md, doc.vm.baseName)
         let pb = NSPasteboard.general
-        pb.clearContents()
         // Declare BOTH representations on one item so a reader can pick the richest it understands:
-        // .html for rich targets; .string (the markdown source) for plain-text-only ones.
+        // .html for rich targets; .string (the markdown source) for plain-text-only ones. declareTypes
+        // also clears the prior contents, so no separate clearContents() is needed.
         pb.declareTypes([.html, .string], owner: nil)
         pb.setString(html, forType: .html)
         pb.setString(md, forType: .string)

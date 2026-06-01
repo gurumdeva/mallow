@@ -58,9 +58,6 @@ let surfaceCardHover = dynamicColor(
 let borderStrong = dynamicColor(
     dark: NSColor(white: 1, alpha: 0.18),                                                // --border-strong (style-btn hover)
     light: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.18))                          // rgba(0,0,0,.18)
-let overlayTabsTrack = dynamicColor(
-    dark: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.25),                           // rgba(0,0,0,.25)
-    light: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.06))                          // rgba(0,0,0,.06)
 let overlayWeak = dynamicColor(
     dark: NSColor(white: 1, alpha: 0.05),                                                // --overlay-weak (toc hover)
     light: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.05))                          // rgba(0,0,0,.05)
@@ -117,7 +114,6 @@ enum Theme {
     static let card = Color(nsColor: surfaceCard)            // .stat-card / .style-btn surface
     static let cardHover = Color(nsColor: surfaceCardHover)  // .style-btn:hover surface
     static let strongBorder = Color(nsColor: borderStrong)   // .style-btn:hover border
-    static let tabsTrack = Color(nsColor: overlayTabsTrack)  // segmented control track
     static let weakOverlay = Color(nsColor: overlayWeak)     // toc row hover
     static let border = Color(nsColor: mallowBorderColor)    // --border (hairlines, card borders)
 }

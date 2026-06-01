@@ -112,8 +112,13 @@ struct MarkdownEditor: NSViewRepresentable {
                 let ch = characterIndexes[i]
                 if hidden.contains(ch) {
                     newGlyphs[i] = glyphs[i]; newProps[i] = .null; changed = true
-                } else if let tg = taskGlyphs, let checked = taskBoxes[ch], tg.glyph(checked: checked) != 0 {
-                    newGlyphs[i] = tg.glyph(checked: checked); newProps[i] = props[i]; changed = true
+                } else if let tg = taskGlyphs, let checked = taskBoxes[ch] {
+                    // Substitute ☐/☑ — or, if the font lacks the glyph (0), HIDE the inner char (.null)
+                    // rather than leak the raw `[ ]`/`[x]` content (the brackets are already hidden).
+                    let g = tg.glyph(checked: checked)
+                    if g != 0 { newGlyphs[i] = g; newProps[i] = props[i] }
+                    else { newGlyphs[i] = glyphs[i]; newProps[i] = .null }
+                    changed = true
                 } else if bulletGlyph != 0, bullets.contains(ch) {
                     newGlyphs[i] = bulletGlyph; newProps[i] = props[i]; changed = true
                 } else if spaceGlyph != 0, pipes.contains(ch) {
