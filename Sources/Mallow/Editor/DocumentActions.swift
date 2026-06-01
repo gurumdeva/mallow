@@ -34,6 +34,13 @@ extension EditorDocument {
         revision &+= 1
     }
 
+    /// Fold/unfold just the section the caret is in (View ▸ Fold Section) — its enclosing heading's body.
+    /// Independent of Fold All; per-section folds reset on edit (the VM owns that — see clearSectionFolds).
+    func toggleFoldSection() {
+        vm.toggleFoldSectionAtCaret()
+        revision &+= 1
+    }
+
     // MARK: Zoom (View ▸ Zoom In/Out/Actual Size) — clamp 0.5…3.0, step 1.1×, then re-render at scale.
 
     func zoomIn() { setZoom(vm.zoomFactor * 1.1) }

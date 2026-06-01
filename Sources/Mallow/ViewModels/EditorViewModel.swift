@@ -21,6 +21,7 @@ final class EditorViewModel {
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
     var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
     var allSectionsFolded = false                 // View ▸ Fold All Sections: collapse every heading's body to an outline
+    private var foldedHeadingStarts = Set<Int>()  // per-section folds: UTF-16 starts of individually-folded headings (reset on edit)
     var zoomFactor: CGFloat = 1 { didSet { fontCache.removeAll() } }  // text zoom (View ▸ Zoom); per-window, resets each launch
 
     private var lastCaretLoc = 0                  // previous caret UTF-16 location — gives the hidden-run snap its direction
@@ -339,10 +340,11 @@ final class EditorViewModel {
         // nothing leaks, and — being hidden — the caret snaps out of them like any hidden run. Heading
         // lines stay visible. Content before the first heading (the intro) is left expanded.
         var fold = Set<Int>()
-        if allSectionsFolded {
+        if allSectionsFolded || !foldedHeadingStarts.isEmpty {
             let headings = blocks.indices.filter { blocks[$0].kindTag == "Heading" }
             for (k, i) in headings.enumerated() {
-                let hEnd = blocks[i].range.utf16Bounds(map: map, clampedTo: total).hi
+                let (hStart, hEnd) = blocks[i].range.utf16Bounds(map: map, clampedTo: total)
+                guard allSectionsFolded || foldedHeadingStarts.contains(hStart) else { continue }
                 let nextStart = k + 1 < headings.count
                     ? blocks[headings[k + 1]].range.utf16Bounds(map: map, clampedTo: total).lo
                     : total
@@ -361,6 +363,38 @@ final class EditorViewModel {
             lm.invalidateGlyphs(forCharacterRange: full, changeInLength: 0, actualCharacterRange: nil)
             lm.invalidateLayout(forCharacterRange: full, actualCharacterRange: nil)
         }
+    }
+
+    // MARK: - Section folding (View ▸ Fold Section)
+
+    /// Toggle the fold of the section the caret is in — its enclosing heading, i.e. the last heading at
+    /// or before the caret. Folds are re-derived from the parse each refresh; `foldedHeadingStarts` keys
+    /// them by the heading's UTF-16 start and is reset on any text edit (so a shifted offset can't fold
+    /// the wrong section — see `clearSectionFolds`). Fold All (`allSectionsFolded`) is independent.
+    func toggleFoldSectionAtCaret() {
+        guard let textView else { return }
+        let s = textView.string
+        let caret = textView.selectedRange().location
+        let map = byteToUTF16Map(s)
+        let total = (s as NSString).length
+        var heading: Int?
+        for b in blocks where b.kindTag == "Heading" {
+            let lo = b.range.utf16Bounds(map: map, clampedTo: total).lo
+            if lo <= caret { heading = lo } else { break }   // blocks are ordered; first heading past the caret stops us
+        }
+        guard let hStart = heading else { return }   // caret is before the first heading — nothing to fold
+        if foldedHeadingStarts.contains(hStart) { foldedHeadingStarts.remove(hStart) } else { foldedHeadingStarts.insert(hStart) }
+        refresh()
+        // Park the caret on the heading line (always visible) — so it isn't stranded in the now-collapsed
+        // body, and re-invoking the command toggles the SAME section back open.
+        textView.setSelectedRange(NSRange(location: min(hStart, (textView.string as NSString).length), length: 0))
+    }
+
+    /// Drop all per-section folds — called on every text edit, since their UTF-16 keys would otherwise go
+    /// stale against the shifted text. (Fold All re-derives from the live parse, so it is unaffected.)
+    func clearSectionFolds() {
+        guard !foldedHeadingStarts.isEmpty else { return }
+        foldedHeadingStarts.removeAll()
     }
 
     // MARK: commands — toggle a mark / set a heading via the engine, then re-render.

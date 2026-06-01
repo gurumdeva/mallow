@@ -92,6 +92,8 @@ struct MallowCommands: Commands {
                 .keyboardShortcut("t", modifiers: [.command, .control])
             Button(L.t("menu.foldSections")) { doc?.toggleFoldAll() }
                 .keyboardShortcut("o", modifiers: [.command, .control])
+            Button(L.t("menu.foldSection")) { doc?.toggleFoldSection() }
+                .keyboardShortcut(".", modifiers: [.command, .option])
             Divider()
             Button(L.t("menu.documentInfo")) {
                 NotificationCenter.default.post(name: .mallowToggleInfo, object: nil)
