@@ -157,6 +157,25 @@ struct MarkdownEditor: NSViewRepresentable {
             return glyphRange.length
         }
 
+        /// Fold All Sections: a line fragment whose first character sits inside a collapsed section
+        /// (`vm.foldedChars`) is given zero height, so the section's body disappears and the document
+        /// reads as an outline of its headings. The glyphs in that range are already hidden (the fold
+        /// chars join the hidden set), so nothing draws in the zero-height line.
+        func layoutManager(_ lm: NSLayoutManager,
+                           shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
+                           lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
+                           baselineOffset: UnsafeMutablePointer<CGFloat>,
+                           in textContainer: NSTextContainer,
+                           forGlyphRange glyphRange: NSRange) -> Bool {
+            guard !vm.foldedChars.isEmpty else { return false }
+            let charStart = lm.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil).location
+            guard vm.foldedChars.contains(charStart) else { return false }
+            lineFragmentRect.pointee.size.height = 0
+            lineFragmentUsedRect.pointee.size.height = 0
+            baselineOffset.pointee = 0
+            return true
+        }
+
         /// The `•` (U+2022) glyph id for `font`, or 0 if the font lacks it (→ keep the literal dash).
         private static func bulletGlyph(for font: NSFont) -> CGGlyph {
             var ch: UniChar = 0x2022

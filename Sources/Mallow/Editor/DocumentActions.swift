@@ -24,6 +24,16 @@ extension EditorDocument {
         revision &+= 1
     }
 
+    /// Fold All Sections: collapse every heading's body to a document outline (View ▸ Fold All Sections).
+    /// State is re-derived from the parse each refresh; toggling just re-renders. When folding, nudge the
+    /// caret out of a now-collapsed (zero-height, hidden) line so it isn't stranded on an invisible row.
+    func toggleFoldAll() {
+        vm.allSectionsFolded.toggle()
+        vm.refresh()
+        vm.selectionChanged()   // snaps the caret out of a collapsed (hidden) run if it landed in one
+        revision &+= 1
+    }
+
     // MARK: Zoom (View ▸ Zoom In/Out/Actual Size) — clamp 0.5…3.0, step 1.1×, then re-render at scale.
 
     func zoomIn() { setZoom(vm.zoomFactor * 1.1) }

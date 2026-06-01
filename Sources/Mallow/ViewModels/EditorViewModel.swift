@@ -16,9 +16,11 @@ final class EditorViewModel {
     private(set) var bulletMarks = Set<Int>()   // UTF-16 indices of unordered `- ` dashes to render as `•` (glyph delegate)
     private(set) var taskBoxes = [Int: Bool]()  // UTF-16 index of a task `[ ]`/`[x]` inner char → isChecked (glyph delegate ☐/☑)
     private(set) var tablePipes = Set<Int>()    // UTF-16 indices of GFM table `|` to render as a space (glyph delegate)
+    private(set) var foldedChars = Set<Int>()   // UTF-16 indices inside collapsed sections → zero-height lines (layout delegate)
     var focusMode = false                        // dim every block but the caret's
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
     var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
+    var allSectionsFolded = false                 // View ▸ Fold All Sections: collapse every heading's body to an outline
     var zoomFactor: CGFloat = 1 { didSet { fontCache.removeAll() } }  // text zoom (View ▸ Zoom); per-window, resets each launch
 
     private var lastCaretLoc = 0                  // previous caret UTF-16 location — gives the hidden-run snap its direction
@@ -329,6 +331,29 @@ final class EditorViewModel {
         let table = TablePipeScanner(ns: cb, total: total).scan(blocks, map: map)
         tablePipes = table.pipes
         for h in table.hide { collector.hidden.insert(h) }
+
+        // Fold All Sections: collapse every heading's body (the content between a heading and the next
+        // heading) to a document outline. Re-derived from the live parse each refresh, so it follows edits
+        // with no offset bookkeeping. Collapsed chars zero-height their lines (the layout-manager
+        // `shouldSetLineFragmentRect` delegate reads `foldedChars`); their glyphs join the hidden set so
+        // nothing leaks, and — being hidden — the caret snaps out of them like any hidden run. Heading
+        // lines stay visible. Content before the first heading (the intro) is left expanded.
+        var fold = Set<Int>()
+        if allSectionsFolded {
+            let headings = blocks.indices.filter { blocks[$0].kindTag == "Heading" }
+            for (k, i) in headings.enumerated() {
+                let hEnd = blocks[i].range.utf16Bounds(map: map, clampedTo: total).hi
+                let nextStart = k + 1 < headings.count
+                    ? blocks[headings[k + 1]].range.utf16Bounds(map: map, clampedTo: total).lo
+                    : total
+                guard nextStart > hEnd else { continue }
+                for c in hEnd ..< nextStart {
+                    fold.insert(c)
+                    if cb.character(at: c) != 10 { collector.hidden.insert(c) }   // hide glyphs (keep newlines for line structure)
+                }
+            }
+        }
+        foldedChars = fold
 
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {
