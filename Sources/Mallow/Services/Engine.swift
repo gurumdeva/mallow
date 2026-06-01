@@ -28,9 +28,10 @@ func inkSetHeading(_ s: String, _ anchor: Int, _ head: Int, _ level: UInt8) -> S
     inkTake(inkstone_set_heading(s, anchor, head, level))
 }
 func inkRenderHtml(_ s: String, _ title: String) -> String { inkTake(inkstone_render_html(s, title)) }
-/// The `title:` from a leading YAML frontmatter block, or "" when absent. Drives the document title
-/// (falling back to the filename when empty) — a near-zero-cost way for the user to name a document.
-func inkFrontmatterTitle(_ s: String) -> String { inkTake(inkstone_frontmatter_title(s)) }
+/// The document's title — the text of the FIRST heading (`#` …), or "" when there's no heading.
+/// Drives the window/chrome title and the save-as default filename (falling back to the filename when
+/// empty) — Notion-style "the first heading is the title", so the user just types a heading at the top.
+func inkDocumentTitle(_ s: String) -> String { inkTake(inkstone_document_title(s)) }
 /// Engine content-equality (NOT a debounced flag): true when `current` differs from `baseline`.
 /// Used by the dirty dot + external-reload's disk-vs-baseline check.
 func inkIsDirty(_ current: String, _ baseline: String) -> Bool { inkstone_is_dirty(current, baseline) }

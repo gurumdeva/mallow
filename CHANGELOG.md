@@ -10,7 +10,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 ## [Unreleased]
 
 ### Added
-- **Document title from frontmatter.** A document whose YAML frontmatter has a `title:` now shows that as its window/chrome title (falling back to the filename when absent) — name a document with a single `title:` line, at near-zero cost.
+- **Document title from the first heading (Notion-style).** A document's first heading (`# …`) is now its title: it shows in the window/chrome title bar, and saving a new document offers that heading as the default filename (e.g. type `# Meeting notes` → Save suggests `Meeting notes.md`). Falls back to the filename when there's no heading. No extra syntax — just write a heading at the top.
 
 ### Fixed
 - Hardened the editor engine across many formatting edge cases: bold/italic/strikethrough/inline-code no longer leak literal markers or change a line's block structure; list-type switches (bullet ↔ ordered ↔ task, including nested/indented items) replace the marker cleanly instead of stacking; inserting a link escapes special characters in the selected text and never breaks block structure; and deeply-nested or pathological math no longer crashes export.

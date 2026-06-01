@@ -38,12 +38,23 @@ final class EditorViewModel {
 
     var isDirty: Bool { inkIsDirty(textView?.string ?? "", baseline) }
     var displayName: String { (filePath as NSString?)?.lastPathComponent ?? L.t("doc.untitled") }
-    /// The title shown in the window/chrome: the document's frontmatter `title:` when it has one, else
-    /// the filename (`displayName`). Lets the user name a document with a single `title:` line at
-    /// near-zero cost. Note `displayName`/`baseName` stay the FILENAME — rename/save operate on the file.
+    /// The title shown in the window/chrome: the document's FIRST heading (`# …`) when it has one, else
+    /// the filename (`displayName`) — Notion-style, so the user just types a heading at the top. Note
+    /// `displayName`/`baseName` stay the FILENAME — rename and the save target operate on the file.
     var documentTitle: String {
-        let fmTitle = inkFrontmatterTitle(textView?.string ?? "")
-        return fmTitle.isEmpty ? displayName : fmTitle
+        let heading = inkDocumentTitle(textView?.string ?? "")
+        return heading.isEmpty ? displayName : heading
+    }
+    /// The first-heading title sanitized into a safe base filename (no extension), or "" when the
+    /// document has no heading. Seeds the Save-As panel for an untitled document (Notion-style: a doc
+    /// named by its title). Strips path-illegal characters and trims; the user can still edit it.
+    var titleAsFileName: String {
+        let heading = inkDocumentTitle(textView?.string ?? "")
+        let cleaned = heading
+            .components(separatedBy: CharacterSet(charactersIn: "/\\:\n\r\t"))
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        return String(cleaned.prefix(120))
     }
     /// `displayName` without a trailing `.md` (export filename / document title). Suffix-only — a blind
     /// `.replacingOccurrences(of:".md")` would mangle names like "notes.md.md" or "a.md.txt".

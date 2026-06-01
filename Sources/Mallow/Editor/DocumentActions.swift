@@ -44,7 +44,15 @@ extension EditorDocument {
     func saveAs() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-        panel.nameFieldStringValue = vm.displayName.hasSuffix(".md") ? vm.displayName : "Untitled.md"
+        // Seed the filename: a file-backed doc keeps its name; an untitled one is named from its first
+        // heading (Notion-style — type a `# Title` and Save offers "Title.md"), else "Untitled.md".
+        // The user can always edit the field before saving.
+        if vm.displayName.hasSuffix(".md") {
+            panel.nameFieldStringValue = vm.displayName
+        } else {
+            let title = vm.titleAsFileName
+            panel.nameFieldStringValue = title.isEmpty ? "Untitled.md" : "\(title).md"
+        }
         if panel.runModal() == .OK, let url = panel.url { write(to: url) }
     }
 
