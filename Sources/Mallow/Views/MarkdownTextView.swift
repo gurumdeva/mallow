@@ -51,8 +51,10 @@ final class MarkdownTextView: NSTextView {
     }
 
     // The airy line-height multiple inflates each line fragment, so the default insertion point spans
-    // that whole height — a too-tall caret. Constrain it to the glyph height at the caret (so it matches
-    // the text, and grows on heading lines), vertically centered in the fragment.
+    // that whole height — a too-tall caret. Constrain it to the glyph box at the caret (so it matches
+    // the text, and grows on heading lines). The glyph does NOT sit at the fragment's vertical center
+    // with airy spacing, so the caret must be pinned to the actual TEXT BASELINE (via the layout
+    // manager), not centered in the fragment — centering left it visibly above the text.
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
         var r = rect
         let len = textStorage?.length ?? 0
@@ -60,9 +62,18 @@ final class MarkdownTextView: NSTextView {
         let font = (len == 0 ? nil
                     : textStorage?.attribute(.font, at: min(loc, len - 1), effectiveRange: nil) as? NSFont)
             ?? (typingAttributes[.font] as? NSFont) ?? self.font ?? NSFont.systemFont(ofSize: 16)
-        let glyphHeight = font.ascender - font.descender + font.leading
+        let glyphHeight = font.ascender - font.descender   // ascent + |descent| — the visible glyph box
         if r.height > glyphHeight + 1 {
-            r.origin.y += (r.height - glyphHeight) / 2
+            if let lm = layoutManager, len > 0 {
+                // `location(forGlyphAt:)`.y is the baseline's offset from the line-fragment top; the caret
+                // rect's top IS that fragment top, so the baseline in view coords is rect.minY + that.
+                // Span the caret from one ascender above the baseline down through the descender.
+                let g = lm.glyphIndexForCharacter(at: min(loc, len - 1))
+                let baselineY = rect.minY + lm.location(forGlyphAt: g).y
+                r.origin.y = baselineY - font.ascender
+            } else {
+                r.origin.y += (r.height - glyphHeight) / 2   // fallback (empty doc / no layout): center
+            }
             r.size.height = glyphHeight
         }
         super.drawInsertionPoint(in: r, color: color, turnedOn: flag)
