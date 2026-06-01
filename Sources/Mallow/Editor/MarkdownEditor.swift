@@ -12,6 +12,27 @@ import SwiftUI
 import AppKit
 import CoreText
 
+/// Scroll past end: a clip view that lets the document scroll `overscroll` points beyond its natural
+/// bottom, so the last lines aren't pinned to the window's bottom edge — you can scroll them up toward
+/// the middle (comfort; matches iA Writer / Typora, and lets typewriter mode centre the final lines).
+/// Always on, no setting. This extends only the scroll CLAMP — it never touches the document view's
+/// frame or the scroll view's content insets, so the live-preview styling and the top chrome clearance
+/// are completely unaffected (the two things the frame / contentInset approaches broke). Overscroll is
+/// allowed only when the document is taller than the viewport, so short notes scroll exactly as before.
+final class BottomOverscrollClipView: NSClipView {
+    var overscroll: CGFloat = 300
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var rect = super.constrainBoundsRect(proposedBounds)
+        guard let docView = documentView, docView.frame.height > rect.height else { return rect }
+        // `super` already clamped `rect.origin.y` to the natural bottom (accounting for content insets).
+        // If the caller proposed scrolling further down than that, allow up to `overscroll` more — and no
+        // more — so the last lines rise toward the middle but never scroll fully off the top.
+        let beyond = proposedBounds.origin.y - rect.origin.y
+        if beyond > 0 { rect.origin.y += min(beyond, overscroll) }
+        return rect
+    }
+}
+
 struct MarkdownEditor: NSViewRepresentable {
     let doc: EditorDocument
 
@@ -41,6 +62,7 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
 
         let scroll = NSScrollView()
+        scroll.contentView = BottomOverscrollClipView()   // scroll-past-end: extend only the scroll clamp
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = true
         scroll.backgroundColor = mallowBG
