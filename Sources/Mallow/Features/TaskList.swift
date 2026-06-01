@@ -41,12 +41,10 @@ import CoreText
 ///
 /// All indices are UTF-16 (NSString domain), consistent with `hiddenChars` / `bulletMarks`.
 struct TaskBoxScanner {
-    let s: String          // the live source (textView.string)
-    let ns: NSString       // same string as NSString, for character(at:) — caller may pass `s as NSString`
+    let ns: CharBuffer     // bulk-read [unichar] snapshot of the source, for fast character access
 
     init(_ s: String) {
-        self.s = s
-        self.ns = s as NSString
+        self.ns = CharBuffer(s as NSString)
     }
 
     /// Marker whitespace: ASCII space (32) or tab (9). (Same predicate as `MarkerGrammar.isMarkerSpace`.)
@@ -132,10 +130,10 @@ struct TaskBoxScanner {
     /// map. `byteToUTF16` bridges each block's engine BYTE range to UTF-16 (same as recomputeHidden).
     /// EditorViewModel should call this from `recomputeHidden` and store the result in `vm.taskBoxes`,
     /// dropping any box on the caret's own line (so the raw `[ ]` is editable there) — see notes below.
-    func allBoxes(_ blocks: [PBlock]) -> [Int: Bool] {
+    func allBoxes(_ blocks: [PBlock], map: [Int]) -> [Int: Bool] {
         var out: [Int: Bool] = [:]
         for block in blocks where block.kindTag == "List" {
-            let (bLo, bHi) = block.range.utf16Bounds(in: s, clampedTo: ns.length)
+            let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: ns.length)
             for (inner, checked) in boxes(in: bLo, bHi) { out[inner] = checked }
         }
         return out

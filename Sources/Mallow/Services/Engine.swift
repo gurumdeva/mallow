@@ -70,6 +70,26 @@ func byteToUTF16(_ s: String, _ byte: Int) -> Int {
           let si = i.samePosition(in: s) else { return s.utf16.count }
     return si.utf16Offset(in: s)
 }
+
+/// A byte-offset → UTF-16-offset lookup table for `s`, built in one linear pass: `map[b]` is the UTF-16
+/// offset of source byte `b` (engine ranges always land on a character boundary). Single calls to
+/// `byteToUTF16` are O(b) — fine once, but a whole-document restyle converts every block/inline range,
+/// turning the per-keystroke cost O(n²). The styling pipeline builds this once per parse and converts
+/// each range through `PRange.utf16Bounds(map:clampedTo:)` in O(1). `map.count == s.utf8.count + 1`.
+func byteToUTF16Map(_ s: String) -> [Int] {
+    var map = [Int](repeating: 0, count: s.utf8.count + 1)
+    var byte = 0, u16 = 0
+    for scalar in s.unicodeScalars {
+        let v = scalar.value
+        let bytes = v < 0x80 ? 1 : v < 0x800 ? 2 : v < 0x1_0000 ? 3 : 4   // UTF-8 width
+        var k = 0
+        while k < bytes { map[byte + k] = u16; k += 1 }                   // interior bytes → scalar start
+        byte += bytes
+        u16 += v < 0x1_0000 ? 1 : 2                                       // UTF-16 width (surrogate pair = 2)
+    }
+    map[byte] = u16   // one-past-the-end boundary == UTF-16 length
+    return map
+}
 func utf16ToChar(_ s: String, _ u16: Int) -> Int {
     let clamped = max(0, min(u16, s.utf16.count))
     let si = String.Index(utf16Offset: clamped, in: s)
@@ -99,6 +119,22 @@ extension PRange {
     /// clamping (so callers can `guard let` instead of repeating the `hi > lo` check).
     func utf16Range(in s: String, clampedTo total: Int) -> NSRange? {
         let (lo, hi) = utf16Bounds(in: s, clampedTo: total)
+        guard hi > lo else { return nil }
+        return NSRange(location: lo, length: hi - lo)
+    }
+
+    /// Same as `utf16Bounds(in:clampedTo:)` but converts through a prebuilt `byteToUTF16Map` in O(1)
+    /// instead of an O(byte) walk — for the per-keystroke styling pipeline, which converts every range.
+    func utf16Bounds(map: [Int], clampedTo total: Int) -> (lo: Int, hi: Int) {
+        let last = map.count - 1
+        let lo = map[Swift.min(Swift.max(start, 0), last)]
+        let hi = Swift.min(map[Swift.min(Swift.max(end, 0), last)], total)
+        return (lo, hi)
+    }
+
+    /// Map-based counterpart of `utf16Range(in:clampedTo:)` (O(1) per range; see `utf16Bounds(map:…)`).
+    func utf16Range(map: [Int], clampedTo total: Int) -> NSRange? {
+        let (lo, hi) = utf16Bounds(map: map, clampedTo: total)
         guard hi > lo else { return nil }
         return NSRange(location: lo, length: hi - lo)
     }

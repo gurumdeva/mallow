@@ -19,7 +19,7 @@ final class EditorViewModel {
     var focusMode = false                        // dim every block but the caret's
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
     var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
-    var zoomFactor: CGFloat = 1                   // text zoom (View ▸ Zoom); per-window, resets each launch
+    var zoomFactor: CGFloat = 1 { didSet { fontCache.removeAll() } }  // text zoom (View ▸ Zoom); per-window, resets each launch
 
     private var lastCaretLoc = 0                  // previous caret UTF-16 location — gives the hidden-run snap its direction
     private var isAdjustingSelection = false      // guards the re-entrant setSelectedRange in `snapCaretOutOfHiddenRuns`
@@ -28,6 +28,10 @@ final class EditorViewModel {
     private let fm = NSFontManager.shared
     // Computed (not a stored lazy) so it always reflects the current zoomFactor.
     private var baseFont: NSFont { NSFont.systemFont(ofSize: baseSize * zoomFactor, weight: .regular) }
+    // Styled fonts cached by mark-combination (≤8 variants). `restyle` calls `font(for:)` once per inline
+    // run, and `NSFontManager.convert` is comparatively slow — caching keeps it off the per-keystroke path.
+    // Cleared on zoom change (the only thing that alters the resolved sizes).
+    private var fontCache: [Int: NSFont] = [:]
 
     init(textView: MarkdownTextView) {
         self.textView = textView
@@ -160,10 +164,14 @@ final class EditorViewModel {
     }
 
     private func font(for marks: [String]) -> NSFont {
-        var f = marks.contains("Code")   // inline code shrinks to 0.92em (CSS) in mono
+        let code = marks.contains("Code"), strong = marks.contains("Strong"), emph = marks.contains("Emphasis")
+        let key = (code ? 1 : 0) | (strong ? 2 : 0) | (emph ? 4 : 0)
+        if let cached = fontCache[key] { return cached }
+        var f = code   // inline code shrinks to 0.92em (CSS) in mono
             ? NSFont.monospacedSystemFont(ofSize: baseSize * 0.92 * zoomFactor, weight: .regular) : baseFont
-        if marks.contains("Strong") { f = fm.convert(f, toHaveTrait: .boldFontMask) }
-        if marks.contains("Emphasis") { f = fm.convert(f, toHaveTrait: .italicFontMask) }
+        if strong { f = fm.convert(f, toHaveTrait: .boldFontMask) }
+        if emph { f = fm.convert(f, toHaveTrait: .italicFontMask) }
+        fontCache[key] = f
         return f
     }
 
@@ -172,8 +180,9 @@ final class EditorViewModel {
         let s = textView.string
         guard let storage = textView.textStorage else { return }
         let nsLen = (s as NSString).length
+        let map = byteToUTF16Map(s)   // O(1) byte→UTF-16 per range (built once; avoids the O(n²) walk)
 
-        func nsRange(_ r: PRange) -> NSRange? { r.utf16Range(in: s, clampedTo: nsLen) }
+        func nsRange(_ r: PRange) -> NSRange? { r.utf16Range(map: map, clampedTo: nsLen) }
 
         var quotes: [NSRange] = []   // blockquote ranges → 3px left bar drawn by the text view
         var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
@@ -273,12 +282,14 @@ final class EditorViewModel {
         let s = textView.string
         let ns = s as NSString
         let total = ns.length
+        let cb = CharBuffer(ns)   // bulk-read once; the scanners index this instead of -characterAtIndex:
+        let map = byteToUTF16Map(s)   // O(1) byte→UTF-16 per range (the scanners convert every block range)
         // Markdown is the source of truth, but its syntax NEVER shows in the editor — you write and edit
         // clean styled text and change structure through commands (⌘B, Style ▸ H1…), not by touching raw
         // markers. So the hidden set is purely a function of the parse; it does NOT depend on the caret
         // (which is why `selectionChanged` no longer recomputes it). Pass order is irrelevant — each pass
         // only inserts into the same set.
-        var collector = HiddenSyntaxCollector(s: s, ns: ns, total: total)
+        var collector = HiddenSyntaxCollector(ns: cb, map: map, total: total)
         collector.hideBlockGaps(blocks)        // the `#`/`**`/`> ` marker gaps in paragraphs/headings/lists/quotes
         collector.hideInlineCodeFences(blocks) // the ` backtick runs around inline code
         collector.hideThematicBreaks(blocks)   // the --- / *** / ___ source (a rule is drawn instead)
@@ -288,15 +299,15 @@ final class EditorViewModel {
         // unconditional (the raw `- ` / `[ ]` never shows). Task brackets collapse; the inner char carries
         // the ☐/☑ glyph (drawn by the layout-manager delegate).
         var bullets = Set<Int>()
-        let grammar = MarkerGrammar(ns: ns)
+        let grammar = MarkerGrammar(ns: cb)
         for block in blocks where block.kindTag == "List" {
-            let (bLo, bHi) = block.range.utf16Bounds(in: s, clampedTo: total)
+            let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: total)
             for d in grammar.bulletDashes(bLo, bHi) { bullets.insert(d) }
         }
         bulletMarks = bullets
 
         var boxes = [Int: Bool]()
-        for (inner, checked) in TaskBoxScanner(s).allBoxes(blocks) {
+        for (inner, checked) in TaskBoxScanner(s).allBoxes(blocks, map: map) {
             boxes[inner] = checked
             collector.hidden.insert(inner - 1)   // [
             collector.hidden.insert(inner + 1)   // ]
@@ -315,7 +326,7 @@ final class EditorViewModel {
         // GFM tables: a true grid needs engine cell ranges, but the philosophy is "no raw markers". So
         // render every `|` as a space and hide the `|---|` delimiter row (see TablePipeScanner) — monospace
         // keeps the columns aligned, the bars just don't show.
-        let table = TablePipeScanner(ns: ns, total: total).scan(blocks, source: s)
+        let table = TablePipeScanner(ns: cb, total: total).scan(blocks, map: map)
         tablePipes = table.pipes
         for h in table.hide { collector.hidden.insert(h) }
 
@@ -399,12 +410,33 @@ final class EditorViewModel {
 
 // MARK: - Hide-syntax grammar + passes (extracted from EditorViewModel.recomputeHidden)
 
-/// The line-leading marker grammar over an NSString: where a list bullet / ordered number / nested
+/// A one-shot `[unichar]` snapshot of an NSString. The hide-syntax scanners read characters in tight
+/// whole-document loops; routing each read through `-[NSString characterAtIndex:]` is an ObjC message
+/// send per character and measured as roughly half the per-keystroke styling cost on large notes.
+/// Reading the buffer once and indexing the array turns each access into a plain subscript.
+/// `lineRange(for:)` delegates to the backing string (called per line, not per char, so it stays cheap).
+struct CharBuffer {
+    private let chars: [unichar]
+    let ns: NSString
+    init(_ ns: NSString) {
+        self.ns = ns
+        let n = ns.length
+        guard n > 0 else { chars = []; return }
+        var buf = [unichar](repeating: 0, count: n)
+        ns.getCharacters(&buf, range: NSRange(location: 0, length: n))
+        chars = buf
+    }
+    @inline(__always) func character(at i: Int) -> unichar { chars[i] }
+    @inline(__always) func lineRange(for r: NSRange) -> NSRange { ns.lineRange(for: r) }
+    var length: Int { chars.count }
+}
+
+/// The line-leading marker grammar over the buffer: where a list bullet / ordered number / nested
 /// blockquote prefix ends, and (for lists) the exact set of marker chars to KEEP visible. Pure — it
 /// only reads the buffer; it never decides what to hide. The marker must stay visible so a delimiter
 /// opening the first inline (e.g. `- **bold**`) still collapses while the `- ` does not.
 private struct MarkerGrammar {
-    let ns: NSString
+    let ns: CharBuffer
 
     func isMarkerSpace(_ c: unichar) -> Bool { c == 32 || c == 9 }
 
@@ -500,15 +532,15 @@ private struct MarkerGrammar {
 /// order. A char is collapsed unless it's a newline — markers are ALWAYS hidden, the editor never shows
 /// raw syntax (the app's markdown-as-truth philosophy). The result is purely a function of the parse.
 private struct HiddenSyntaxCollector {
-    let s: String
-    let ns: NSString
+    let ns: CharBuffer
+    let map: [Int]   // byte→UTF-16 lookup (O(1) range conversion; see byteToUTF16Map)
     let total: Int
     let grammar: MarkerGrammar
     var hidden = Set<Int>()
 
-    init(s: String, ns: NSString, total: Int) {
-        self.s = s
+    init(ns: CharBuffer, map: [Int], total: Int) {
         self.ns = ns
+        self.map = map
         self.total = total
         self.grammar = MarkerGrammar(ns: ns)
     }
@@ -534,9 +566,9 @@ private struct HiddenSyntaxCollector {
     /// hide the `>` (the drawn bar replaces it); every other gap collapses.
     mutating func hideBlockGaps(_ blocks: [PBlock]) {
         for block in blocks where EditorViewModel.hideable(block.kindTag) {
-            let (bLo, bHi) = block.range.utf16Bounds(in: s, clampedTo: total)
+            let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: total)
             let covered = block.inlines
-                .map { $0.range.utf16Bounds(in: s, clampedTo: total) }
+                .map { $0.range.utf16Bounds(map: map, clampedTo: total) }
                 .sorted { $0.lo < $1.lo }
             let keep = (block.kindTag == "List") ? grammar.leadingMarkers(bLo, bHi) : Set<Int>()
             var cursor = bLo
@@ -553,7 +585,7 @@ private struct HiddenSyntaxCollector {
     mutating func hideInlineCodeFences(_ blocks: [PBlock]) {
         for block in blocks {
             for inline in block.inlines where inline.kindTag == "Code" {
-                let (lo, hi) = inline.range.utf16Bounds(in: s, clampedTo: total)
+                let (lo, hi) = inline.range.utf16Bounds(map: map, clampedTo: total)
                 var i = lo
                 while i < hi && ns.character(at: i) == 96 /* ` */ { hideChar(i); i += 1 }
                 var j = hi - 1
@@ -565,7 +597,7 @@ private struct HiddenSyntaxCollector {
     /// Thematic breaks: collapse the --- / *** / ___ source so only the drawn rule shows.
     mutating func hideThematicBreaks(_ blocks: [PBlock]) {
         for block in blocks where block.kindTag == "ThematicBreak" {
-            let (lo, hi) = block.range.utf16Bounds(in: s, clampedTo: total)
+            let (lo, hi) = block.range.utf16Bounds(map: map, clampedTo: total)
             var i = lo
             while i < hi { hideChar(i); i += 1 }
         }
@@ -575,7 +607,7 @@ private struct HiddenSyntaxCollector {
     /// tint (a rounded card is drawn instead). Code content is untouched.
     mutating func hideCodeBlockFences(_ blocks: [PBlock]) {
         for block in blocks where block.kindTag == "CodeBlock" {
-            let (bLo, bHi) = block.range.utf16Bounds(in: s, clampedTo: total)
+            let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: total)
             var lineStart = bLo
             while lineStart < bHi {
                 let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
@@ -597,15 +629,15 @@ private struct HiddenSyntaxCollector {
 /// `|` bar on a content row (→ rendered as a space, keeping monospace columns aligned) and of every char
 /// on the `|---|` delimiter row (→ hidden). Mirrors `TaskBoxScanner`: detection only, no mutation.
 private struct TablePipeScanner {
-    let ns: NSString
+    let ns: CharBuffer
     let total: Int
 
     /// `pipes` = bar indices to render as spaces; `hide` = delimiter-row chars to collapse. `source`
     /// bridges each block's engine byte range to UTF-16.
-    func scan(_ blocks: [PBlock], source: String) -> (pipes: Set<Int>, hide: Set<Int>) {
+    func scan(_ blocks: [PBlock], map: [Int]) -> (pipes: Set<Int>, hide: Set<Int>) {
         var pipes = Set<Int>(), hide = Set<Int>()
         for block in blocks where block.kindTag == "Table" {
-            let (bLo, bHi) = block.range.utf16Bounds(in: source, clampedTo: total)
+            let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: total)
             var lineStart = bLo
             var foundDelimiter = false
             while lineStart < bHi {
