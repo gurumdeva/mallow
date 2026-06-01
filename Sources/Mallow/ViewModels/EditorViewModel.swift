@@ -220,7 +220,7 @@ final class EditorViewModel {
             case "ThematicBreak":
                 if let nr = nsRange(block.range) { rules.append(nr) }   // dashes hidden; a rule is drawn instead
             case "Table":
-                if let nr = TableRendering.style(block, source: s, storage: storage) { tableCards.append(nr) }
+                if let nr = TableRendering.style(block, map: map, storage: storage) { tableCards.append(nr) }
                 continue   // TableRendering owns the cell font + dimmed pipes; skip the generic inline pass
             default:
                 break

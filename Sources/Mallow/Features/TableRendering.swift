@@ -36,17 +36,17 @@ enum TableRendering {
     ///
     /// - Parameters:
     ///   - block:   the Table PBlock (its `range` is a source BYTE range).
-    ///   - source:  the full document string (`textView.string`) — the indexing base for byteToUTF16.
+    ///   - map:     the byte→UTF-16 lookup (`byteToUTF16Map`) restyle built once — O(1) range conversion
+    ///              (the old O(offset) `utf16Range(in:)` here made a table-heavy doc's load O(n²)).
     ///   - storage: the text storage to mutate (the same `textView.textStorage` restyle() edits).
     /// - Returns: the block's UTF-16 NSRange for the background card, or nil when there's nothing to draw.
     @discardableResult
-    static func style(_ block: PBlock, source: String, storage: NSTextStorage) -> NSRange? {
+    static func style(_ block: PBlock, map: [Int], storage: NSTextStorage) -> NSRange? {
         let ns = storage.string as NSString
         let total = ns.length
 
-        // Block range, byte → UTF-16, clamped to the storage. (the range indexes `source`; storage and
-        // source are the same buffer in restyle(), so the offsets line up.)
-        guard let blockRange = block.range.utf16Range(in: source, clampedTo: total) else { return nil }
+        // Block range, byte → UTF-16 via the prebuilt map (O(1)), clamped to the storage.
+        guard let blockRange = block.range.utf16Range(map: map, clampedTo: total) else { return nil }
 
         // 1) Monospace + a tidy paragraph style across the whole table block. Equal-width glyphs make the
         //    `|` columns line up (best-effort). This is applied as a block attribute; the engine's inline
@@ -63,7 +63,7 @@ enum TableRendering {
         // those attributes.) Skips runs outside the block (defensive; the engine nests them inside).
         let fm = NSFontManager.shared
         for inline in block.inlines {
-            let (ilo, ihi) = inline.range.utf16Bounds(in: source, clampedTo: total)
+            let (ilo, ihi) = inline.range.utf16Bounds(map: map, clampedTo: total)
             guard ihi > ilo, ilo >= blockRange.location, ihi <= blockRange.location + blockRange.length else { continue }
             let bold = inline.marks.contains("Strong")
             let italic = inline.marks.contains("Emphasis")

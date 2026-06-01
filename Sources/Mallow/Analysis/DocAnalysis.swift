@@ -128,6 +128,8 @@ enum DocOutline {
     static func extract(_ source: String, blocks: [PBlock]) -> [OutlineItem] {
         let ns = source as NSString
         let nsLen = ns.length
+        let map = byteToUTF16Map(source)   // O(1) byte→UTF-16 per heading (else O(n²) over a long doc's headings)
+        func b2u(_ b: Int) -> Int { map[Swift.min(Swift.max(b, 0), map.count - 1)] }
         // Skip headings inside a leading YAML frontmatter block: the closing `---` makes the engine
         // read the metadata as a setext heading, which must not show up as an outline row. Same engine
         // detection the render pass dims it with — one source of truth (see `inkFrontmatterBodyStart`).
@@ -139,7 +141,7 @@ enum DocOutline {
             // Concatenate the inline-run substrings → rendered heading text (markers excluded).
             var text = ""
             for inline in block.inlines {
-                if let r = inline.range.utf16Range(in: source, clampedTo: nsLen) {
+                if let r = inline.range.utf16Range(map: map, clampedTo: nsLen) {
                     text += ns.substring(with: r)
                 }
             }
@@ -147,15 +149,15 @@ enum DocOutline {
 
             // Fallback for headings with no inline runs (empty heading): strip the leading `#`s and
             // spaces off the block's own source so the row still shows *something* sensible.
-            if text.isEmpty, let r = block.range.utf16Range(in: source, clampedTo: nsLen) {
+            if text.isEmpty, let r = block.range.utf16Range(map: map, clampedTo: nsLen) {
                 let raw = ns.substring(with: r)
                 text = raw.drop { $0 == "#" || $0 == " " || $0 == "\t" }
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             }
 
             // Caret target: the first inline run's start (heading text start), else the block start.
-            let caret = block.inlines.first.map { byteToUTF16(source, $0.range.start) }
-                ?? byteToUTF16(source, block.range.start)
+            let caret = block.inlines.first.map { b2u($0.range.start) }
+                ?? b2u(block.range.start)
             items.append(OutlineItem(text: text, level: level, caretUTF16: min(caret, nsLen)))
         }
         return items
