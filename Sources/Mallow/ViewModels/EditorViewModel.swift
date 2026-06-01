@@ -15,6 +15,7 @@ final class EditorViewModel {
     private(set) var hiddenChars = Set<Int>()   // UTF-16 indices of collapsed syntax glyphs (read by the layout-manager delegate)
     private(set) var bulletMarks = Set<Int>()   // UTF-16 indices of unordered `- ` dashes to render as `•` (glyph delegate)
     private(set) var taskBoxes = [Int: Bool]()  // UTF-16 index of a task `[ ]`/`[x]` inner char → isChecked (glyph delegate ☐/☑)
+    private(set) var tablePipes = Set<Int>()    // UTF-16 indices of GFM table `|` to render as a space (glyph delegate)
     var focusMode = false                        // dim every block but the caret's
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
     var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
@@ -215,12 +216,45 @@ final class EditorViewModel {
                 }
             }
         }
+
+        // Frontmatter: a leading `--- … ---` YAML block. The engine mis-parses it (line-1 thematic break,
+        // and the closing `---` turns the keys into a setext H2), so without this it renders as a bold
+        // heading with a rule above it. It's metadata, not content — restyle the whole block as a quiet,
+        // body-size dim block and drop the stray rule. Its `---` fences are already collapsed by the hide
+        // passes (thematic-break + block-gap), and the bytes are untouched (markdown-as-truth).
+        if let fmRange = frontmatterRange(s, nsLen: nsLen) {
+            storage.addAttribute(.font, value: baseFont, range: fmRange)
+            storage.addAttribute(.foregroundColor, value: mallowDim, range: fmRange)
+            rules.removeAll { NSIntersectionRange($0, fmRange).length > 0 }
+        }
+
         storage.endEditing()
         textView.codeCards = codeCards     // hand the decoration ranges to the view's draw pass
         textView.tableCards = tableCards
         textView.quoteBars = quotes
         textView.ruleLines = rules
         textView.needsDisplay = true
+    }
+
+    /// The UTF-16 range of a leading YAML frontmatter block (`---` on line 1 … a closing `---` line),
+    /// fences inclusive, or nil if the document doesn't open with one. Only a fence at the very start
+    /// counts (that's what YAML frontmatter is); a `---` elsewhere is a normal thematic break.
+    private func frontmatterRange(_ s: String, nsLen: Int) -> NSRange? {
+        let ns = s as NSString
+        guard nsLen >= 3 else { return nil }
+        func isFence(_ r: NSRange) -> Bool {
+            ns.substring(with: r).trimmingCharacters(in: .whitespacesAndNewlines) == "---"
+        }
+        let first = ns.lineRange(for: NSRange(location: 0, length: 0))
+        guard first.location == 0, isFence(first) else { return nil }   // must open with `---`
+        var lineStart = first.location + first.length
+        while lineStart < nsLen {
+            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+            if isFence(line) { return NSRange(location: 0, length: line.location + line.length) }
+            if line.length == 0 { break }
+            lineStart = line.location + line.length
+        }
+        return nil   // no closing fence → it's not a frontmatter block
     }
 
     /// Which block kinds have hideable syntax (the `**`, `#`, `- `, `> ` gaps collapsed by
@@ -273,6 +307,45 @@ final class EditorViewModel {
             for i in mStart ..< box { collector.hidden.insert(i) }
         }
         taskBoxes = boxes
+
+        // GFM tables: a true grid needs engine cell ranges, but the philosophy is "no raw markers". So HIDE
+        // the delimiter row (`|---|---|`, pure structure) and render every other `|` as a SPACE — monospace
+        // keeps the columns aligned, the bars just don't show. Pipe indices feed the glyph delegate.
+        var pipes = Set<Int>()
+        for block in blocks where block.kindTag == "Table" {
+            let bLo = byteToUTF16(s, block.range.start)
+            let bHi = min(byteToUTF16(s, block.range.end), total)
+            var lineStart = bLo
+            var lineIndex = 0
+            while lineStart < bHi {
+                let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+                let lineHi = min(line.location + line.length, bHi)
+                var linePipes: [Int] = []
+                var sawDash = false, onlySeparatorChars = true, sawNonSpace = false
+                var i = line.location
+                while i < lineHi {
+                    switch ns.character(at: i) {
+                    case 124: linePipes.append(i); sawNonSpace = true       // |
+                    case 45:  sawDash = true; sawNonSpace = true            // -
+                    case 58:  sawNonSpace = true                            // :
+                    case 32, 9, 10, 13: break                               // ws / line terminator
+                    default:  onlySeparatorChars = false; sawNonSpace = true
+                    }
+                    i += 1
+                }
+                // GFM delimiter row: the 2nd line, made of only `| - :` + ws with ≥1 dash → hide it whole.
+                if lineIndex == 1, sawDash, sawNonSpace, onlySeparatorChars {
+                    var j = line.location
+                    while j < lineHi { if ns.character(at: j) != 10 { collector.hidden.insert(j) }; j += 1 }
+                } else {
+                    for p in linePipes { pipes.insert(p) }
+                }
+                if line.length == 0 { break }
+                lineStart = line.location + line.length
+                lineIndex += 1
+            }
+        }
+        tablePipes = pipes
 
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {

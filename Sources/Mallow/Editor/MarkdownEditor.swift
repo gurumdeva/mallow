@@ -100,9 +100,11 @@ struct MarkdownEditor: NSViewRepresentable {
             let hidden = vm.hiddenChars
             let bullets = vm.bulletMarks
             let taskBoxes = vm.taskBoxes
-            if hidden.isEmpty && bullets.isEmpty && taskBoxes.isEmpty { return 0 }  // 0 = no override
+            let pipes = vm.tablePipes
+            if hidden.isEmpty && bullets.isEmpty && taskBoxes.isEmpty && pipes.isEmpty { return 0 }  // 0 = no override
             let bulletGlyph = bullets.isEmpty ? CGGlyph(0) : Self.bulletGlyph(for: font)
             let taskGlyphs = taskBoxes.isEmpty ? nil : TaskBoxGlyphs(font: font)
+            let spaceGlyph = pipes.isEmpty ? CGGlyph(0) : Self.spaceGlyph(for: font)
             var newGlyphs = [CGGlyph](repeating: 0, count: glyphRange.length)
             var newProps = [NSLayoutManager.GlyphProperty](repeating: .null, count: glyphRange.length)
             var changed = false
@@ -114,6 +116,8 @@ struct MarkdownEditor: NSViewRepresentable {
                     newGlyphs[i] = tg.glyph(checked: checked); newProps[i] = props[i]; changed = true
                 } else if bulletGlyph != 0, bullets.contains(ch) {
                     newGlyphs[i] = bulletGlyph; newProps[i] = props[i]; changed = true
+                } else if spaceGlyph != 0, pipes.contains(ch) {
+                    newGlyphs[i] = spaceGlyph; newProps[i] = props[i]; changed = true  // table `|` → space (keeps columns aligned)
                 } else {
                     newGlyphs[i] = glyphs[i]; newProps[i] = props[i]
                 }
@@ -129,6 +133,15 @@ struct MarkdownEditor: NSViewRepresentable {
         /// The `•` (U+2022) glyph id for `font`, or 0 if the font lacks it (→ keep the literal dash).
         private static func bulletGlyph(for font: NSFont) -> CGGlyph {
             var ch: UniChar = 0x2022
+            var glyph = CGGlyph(0)
+            CTFontGetGlyphsForCharacters(font as CTFont, &ch, &glyph, 1)
+            return glyph
+        }
+
+        /// The space (U+0020) glyph id for `font` — used to render a table `|` as a blank of the same
+        /// (monospace) width, so columns stay aligned while the bar disappears. 0 if the font lacks it.
+        private static func spaceGlyph(for font: NSFont) -> CGGlyph {
+            var ch: UniChar = 0x20
             var glyph = CGGlyph(0)
             CTFontGetGlyphsForCharacters(font as CTFont, &ch, &glyph, 1)
             return glyph

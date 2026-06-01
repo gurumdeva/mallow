@@ -10,8 +10,9 @@
 //     CJK / emoji are wider than one cell, so alignment is "good enough", not pixel-perfect),
 //   • a tidy paragraph style (small left inset, tight leading) so it sits as a quiet block,
 //   • a subtle elevated background card behind it (returned as an NSRange for the text view to draw),
-//   • the pipe `|` characters and the whole header-separator row (`---|:--:|`) dimmed — de-emphasised,
-//     NOT hidden (markdown-as-truth keeps every byte visible & editable).
+//   • the pipe `|` bars rendered as spaces and the `|---|` delimiter row collapsed — so the raw table
+//     markers never show (the no-visible-markers rule), while the source bytes stay untouched. That hide
+//     work lives in EditorViewModel.recomputeHidden (it owns the glyph/hidden sets), NOT here.
 //
 // FOLLOW-UP (noted): a true aligned grid — real column widths, cell borders, per-column alignment —
 // needs the engine to emit cell ranges (row/col spans) on the Table block. With only the block range +
@@ -77,77 +78,14 @@ enum TableRendering {
             storage.addAttribute(.font, value: f, range: NSRange(location: ilo, length: ihi - ilo))
         }
 
-        // 2) Dim the structure: every pipe `|`, and the whole header-separator row, get a quiet
-        //    foreground. Parsed from the source substring purely in Swift (the model has no cell info).
-        dimStructure(blockRange: blockRange, source: source, ns: ns, storage: storage)
+        // 2) Structure (the `|` bars + the `|---|` delimiter row) is NOT styled here anymore — the
+        //    view-model's hide pass renders every `|` as a space and collapses the delimiter row, so the
+        //    raw table markers never show (the app's markdown-as-truth-but-no-visible-markers rule). The
+        //    monospace font above keeps the now-bar-less columns aligned.
 
         // The block's NSRange — the caller appends it to the table-card decoration list (see file footer /
         // integration notes), which MarkdownTextView.drawBackground renders as a subtle elevated card.
         return blockRange
-    }
-
-    // MARK: - structure dimming (pipes + separator row), parsed from the source substring
-
-    /// Apply `mallowDim` to every `|` and to the entire separator row inside `blockRange`. Walks the
-    /// block line-by-line over the NSString (UTF-16 indices, so it composes with the engine's offsets),
-    /// identifying the separator row by its shape (only `|`, `-`, `:`, and spaces, and at least one `-`).
-    private static func dimStructure(blockRange: NSRange, source: String, ns: NSString, storage: NSTextStorage) {
-        let blockEnd = blockRange.location + blockRange.length
-        var lineStart = blockRange.location
-        var lineIndex = 0
-        while lineStart < blockEnd {
-            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
-            let lineEnd = min(line.location + line.length, blockEnd)
-
-            // Classify this row by scanning its chars once: collect pipe positions and test whether the
-            // row is a separator (GFM: the 2nd row, made only of | - : and whitespace, with ≥1 dash).
-            var pipePositions: [Int] = []
-            var sawDash = false
-            var sawOnlySeparatorChars = true
-            var sawNonSpace = false
-            var i = line.location
-            while i < lineEnd {
-                let c = ns.character(at: i)
-                switch c {
-                case 124: // '|'
-                    pipePositions.append(i)
-                    sawNonSpace = true
-                case 45:  // '-'
-                    sawDash = true
-                    sawNonSpace = true
-                case 58:  // ':'
-                    sawNonSpace = true
-                case 32, 9: // space / tab
-                    break
-                case 10, 13: // newline / CR (line terminator — ignore)
-                    break
-                default:
-                    sawOnlySeparatorChars = false
-                    sawNonSpace = true
-                }
-                i += 1
-            }
-
-            // The separator row: dim the whole row (its source is pure structure, e.g. `|---|:--:|`).
-            // Guarded to the 2nd line of the block (GFM requires the delimiter row directly under the
-            // header) AND the shape test, so a body cell that happens to hold only dashes isn't dimmed.
-            let isSeparatorRow = lineIndex == 1 && sawDash && sawNonSpace && sawOnlySeparatorChars
-            if isSeparatorRow, lineEnd > line.location {
-                storage.addAttribute(.foregroundColor, value: mallowDim,
-                                     range: NSRange(location: line.location, length: lineEnd - line.location))
-            } else {
-                // Otherwise just dim the individual pipe glyphs so the column rules stay quiet while the
-                // cell text keeps its normal colour.
-                for p in pipePositions {
-                    storage.addAttribute(.foregroundColor, value: mallowDim,
-                                         range: NSRange(location: p, length: 1))
-                }
-            }
-
-            if line.length == 0 { break }   // guard against a zero-length final line looping forever
-            lineStart = line.location + line.length
-            lineIndex += 1
-        }
     }
 
     // MARK: - metrics
@@ -211,6 +149,6 @@ enum TableRendering {
 //
 //      textView.tableCards = tableCards
 //
-// 3. recomputeHidden() / hideable() — NO change needed. Markdown-as-truth keeps the pipes visible; we
-//    only de-emphasise them (dim foreground), we do not collapse them. Table is intentionally absent
-//    from `hideable(_:)`, which is correct — leave it out.
+// 3. recomputeHidden() owns the marker hiding for tables (the glyph/hidden sets live there): it renders
+//    each `|` as a space (via `tablePipes` + the glyph delegate) and collapses the `|---|` delimiter row.
+//    Table stays absent from `hideable(_:)` — its hiding is that dedicated pass, not the block-gap pass.
