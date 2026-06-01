@@ -116,8 +116,7 @@ extension MarkdownEditor.Coordinator {
             let url = clip.trimmingCharacters(in: .whitespacesAndNewlines)
             let selected = (view.string as NSString).substring(with: sel)
             let replacement = "[\(selected)](\(url))"
-            guard view.shouldChangeText(in: sel, replacementString: replacement) else { return true }
-            view.insertText(replacement, replacementRange: sel)   // undoable; fires textDidChange → refresh
+            guard view.insertTextUndoably(replacement, replacing: sel) else { return true }   // undoable; fires textDidChange → refresh
             // Place the caret just past the inserted link (after the closing paren), matching a paste.
             view.setSelectedRange(NSRange(location: sel.location + (replacement as NSString).length,
                                           length: 0))
@@ -166,8 +165,7 @@ extension MarkdownEditor.Coordinator {
         guard let plain = NSPasteboard.general.string(forType: .string), !plain.isEmpty else { return }
         let view = doc.textView
         let r = view.selectedRange()
-        guard view.shouldChangeText(in: r, replacementString: plain) else { return }
-        view.insertText(plain, replacementRange: r)   // replaces the selection, undoable, fires refresh
+        guard view.insertTextUndoably(plain, replacing: r) else { return }   // replaces the selection, undoable, fires refresh
         doc.revision &+= 1
     }
 
@@ -255,8 +253,7 @@ extension MarkdownEditor.Coordinator {
             if before != 10 { md = "\n" + md }
             if after != 10 { md += "\n" }
             let range = NSRange(location: caret, length: 0)
-            guard view.shouldChangeText(in: range, replacementString: md) else { continue }
-            view.insertText(md, replacementRange: range)   // undoable; fires textDidChange → vm.refresh()
+            guard view.insertTextUndoably(md, replacing: range) else { continue }   // undoable; fires textDidChange → vm.refresh()
             caret += (md as NSString).length
             view.setSelectedRange(NSRange(location: caret, length: 0))
             insertedAny = true

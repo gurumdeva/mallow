@@ -157,25 +157,17 @@ func confirmQuitIfDirty() -> Bool {
     let dirty = WindowRegistry.shared.dirtyDocuments()
     guard !dirty.isEmpty else { return true }   // nothing unsaved → quit freely
 
-    let alert = NSAlert()
-    alert.alertStyle = .warning
     // No dedicated quit-with-N-dirty key exists in the locale tables (only the single-document
-    // `dialog.discard.*`), so the quit-specific title/body are literal English per the task; the body
-    // names the count so the user knows the blast radius.
-    alert.messageText = dirty.count == 1
+    // `dialog.discard.*`), so the quit title/body are literal English; the title names the count so the
+    // user knows the blast radius. Quit Anyway is the destructive default (⏎); Cancel is the Esc action —
+    // same button ordering as WindowConfigurator.confirmDiscard (via the shared confirmDestructive helper).
+    let title = dirty.count == 1
         ? "You have 1 document with unsaved changes."
         : "You have \(dirty.count) documents with unsaved changes."
-    alert.informativeText = "If you quit now, those changes will be lost."
-
-    // Quit Anyway is first → it's the default (⏎) and gets destructive styling; Cancel is the Esc action
-    // so a stray ⌘Q that hits ⏎ still quits intentionally, while Esc keeps the app alive. Mirrors the
-    // button ordering of WindowConfigurator.confirmDiscard.
-    let quit = alert.addButton(withTitle: "Quit Anyway")     // .alertFirstButtonReturn
-    quit.hasDestructiveAction = true
-    let cancel = alert.addButton(withTitle: L.t("dialog.discard.cancel"))   // localized "Cancel"
-    cancel.keyEquivalent = "\u{1b}"   // Esc → Cancel (don't quit)
-
-    return alert.runModal() == .alertFirstButtonReturn
+    return NSAlert.confirmDestructive(title: title,
+                                      body: "If you quit now, those changes will be lost.",
+                                      confirm: "Quit Anyway",
+                                      cancel: L.t("dialog.discard.cancel"))
 }
 
 // MARK: - Guards 2 & 3: opening / saving onto a file already open elsewhere
@@ -209,9 +201,5 @@ func presentPathInUseAlert(path: String, anchor: NSWindow? = nil) {
     alert.informativeText = "Save there, or close that window first, to avoid overwriting "
         + "each other's changes."
     alert.addButton(withTitle: L.t("common.ok"))
-    if let anchor {
-        alert.beginSheetModal(for: anchor)   // non-blocking sheet when we have a window to hang it on
-    } else {
-        alert.runModal()
-    }
+    alert.present(anchoredTo: anchor)   // non-blocking sheet when we have a window to hang it on, else app-modal
 }

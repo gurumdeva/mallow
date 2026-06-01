@@ -61,3 +61,24 @@ func charToUTF16(_ s: String, _ ch: Int) -> Int {
           let si = i.samePosition(in: s) else { return s.utf16.count }
     return si.utf16Offset(in: s)
 }
+
+// MARK: Engine source-range → NSTextView UTF-16 — the bridge every render/hide pass needs.
+// A `PRange` carries the engine's source BYTE offsets; the AppKit layer wants a clamped UTF-16
+// NSRange (or its raw bounds for iteration). Centralized here so the parse → restyle / recompute-hidden
+// / table / outline passes stop re-implementing `byteToUTF16(...) + min(..., total)` at every block.
+
+extension PRange {
+    /// This byte range as a clamped UTF-16 `(lo, hi)` pair in `s` (hi ≤ `total`). Use when a pass needs
+    /// the raw bounds to iterate; `utf16Range` wraps the same pair as an NSRange.
+    func utf16Bounds(in s: String, clampedTo total: Int) -> (lo: Int, hi: Int) {
+        (byteToUTF16(s, start), min(byteToUTF16(s, end), total))
+    }
+
+    /// This byte range as a UTF-16 `NSRange` in `s`, clamped to `total`; nil when empty/inverted after
+    /// clamping (so callers can `guard let` instead of repeating the `hi > lo` check).
+    func utf16Range(in s: String, clampedTo total: Int) -> NSRange? {
+        let (lo, hi) = utf16Bounds(in: s, clampedTo: total)
+        guard hi > lo else { return nil }
+        return NSRange(location: lo, length: hi - lo)
+    }
+}

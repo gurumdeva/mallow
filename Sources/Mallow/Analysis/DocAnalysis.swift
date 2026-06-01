@@ -135,22 +135,18 @@ enum DocOutline {
             // Concatenate the inline-run substrings → rendered heading text (markers excluded).
             var text = ""
             for inline in block.inlines {
-                let lo = byteToUTF16(source, inline.range.start)
-                let hi = min(byteToUTF16(source, inline.range.end), nsLen)
-                if hi > lo { text += ns.substring(with: NSRange(location: lo, length: hi - lo)) }
+                if let r = inline.range.utf16Range(in: source, clampedTo: nsLen) {
+                    text += ns.substring(with: r)
+                }
             }
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
             // Fallback for headings with no inline runs (empty heading): strip the leading `#`s and
             // spaces off the block's own source so the row still shows *something* sensible.
-            if text.isEmpty {
-                let bLo = byteToUTF16(source, block.range.start)
-                let bHi = min(byteToUTF16(source, block.range.end), nsLen)
-                if bHi > bLo {
-                    let raw = ns.substring(with: NSRange(location: bLo, length: bHi - bLo))
-                    text = raw.drop { $0 == "#" || $0 == " " || $0 == "\t" }
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                }
+            if text.isEmpty, let r = block.range.utf16Range(in: source, clampedTo: nsLen) {
+                let raw = ns.substring(with: r)
+                text = raw.drop { $0 == "#" || $0 == " " || $0 == "\t" }
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
             }
 
             // Caret target: the first inline run's start (heading text start), else the block start.

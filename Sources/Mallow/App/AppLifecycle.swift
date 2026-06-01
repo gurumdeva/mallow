@@ -186,17 +186,10 @@ struct WindowConfigurator: NSViewRepresentable {
         /// destructive styling, while Cancel is the escape/`.cancel` action — so an accidental ⌘W that
         /// hits ⏎ still discards intentionally, but pressing Esc (or clicking Cancel) keeps the window.
         private func confirmDiscard(on window: NSWindow) -> Bool {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = L.t("dialog.discard.title")
-            alert.informativeText = L.t("dialog.discard.body")
-
-            let discard = alert.addButton(withTitle: L.t("dialog.discard.confirm")) // .alertFirstButtonReturn
-            discard.hasDestructiveAction = true
-            let cancel = alert.addButton(withTitle: L.t("dialog.discard.cancel"))   // .alertSecondButtonReturn
-            cancel.keyEquivalent = "\u{1b}"   // Esc → Cancel (keep the window)
-
-            return alert.runModal() == .alertFirstButtonReturn
+            NSAlert.confirmDestructive(title: L.t("dialog.discard.title"),
+                                       body: L.t("dialog.discard.body"),
+                                       confirm: L.t("dialog.discard.confirm"),
+                                       cancel: L.t("dialog.discard.cancel"))
         }
 
         // MARK: NSWindowDelegate — forwarding to a pre-existing delegate

@@ -44,12 +44,9 @@ enum TableRendering {
         let ns = storage.string as NSString
         let total = ns.length
 
-        // Block range, byte → UTF-16, clamped to the storage. (byteToUTF16 indexes `source`; storage and
+        // Block range, byte → UTF-16, clamped to the storage. (the range indexes `source`; storage and
         // source are the same buffer in restyle(), so the offsets line up.)
-        let lo = byteToUTF16(source, block.range.start)
-        let hi = min(byteToUTF16(source, block.range.end), total)
-        guard hi > lo else { return nil }
-        let blockRange = NSRange(location: lo, length: hi - lo)
+        guard let blockRange = block.range.utf16Range(in: source, clampedTo: total) else { return nil }
 
         // 1) Monospace + a tidy paragraph style across the whole table block. Equal-width glyphs make the
         //    `|` columns line up (best-effort). This is applied as a block attribute; the engine's inline
@@ -66,9 +63,8 @@ enum TableRendering {
         // those attributes.) Skips runs outside the block (defensive; the engine nests them inside).
         let fm = NSFontManager.shared
         for inline in block.inlines {
-            let ilo = byteToUTF16(source, inline.range.start)
-            let ihi = min(byteToUTF16(source, inline.range.end), total)
-            guard ihi > ilo, ilo >= lo, ihi <= hi else { continue }
+            let (ilo, ihi) = inline.range.utf16Bounds(in: source, clampedTo: total)
+            guard ihi > ilo, ilo >= blockRange.location, ihi <= blockRange.location + blockRange.length else { continue }
             let bold = inline.marks.contains("Strong")
             let italic = inline.marks.contains("Emphasis")
             guard bold || italic else { continue }   // plain cell text already has the mono base

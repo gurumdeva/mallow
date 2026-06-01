@@ -173,3 +173,32 @@ func configureTextView(_ textView: MarkdownTextView) {
     textView.defaultParagraphStyle = mallowBodyParagraphStyle
     textView.typingAttributes[.paragraphStyle] = mallowBodyParagraphStyle
 }
+
+// MARK: - Undoable mutation seam
+//
+// Every programmatic edit MUST go through the text view's undoable path so ⌘Z reverts it like typing
+// and the existing undo stack is preserved — NEVER `textView.string = …` (registers no undo AND wipes
+// the stack). Two idioms exist: a low-level `replaceCharacters` (engine commands, task toggle, reload)
+// and the high-level `insertText(_:replacementRange:)` (paste). Both are guarded by `shouldChangeText`
+// and centralized here so call sites stop re-implementing (and re-documenting) the contract.
+extension MarkdownTextView {
+    /// Replace `range` with `text` via shouldChangeText → `textStorage.replaceCharacters` → didChangeText.
+    /// Returns false if a delegate vetoed the change. The caller owns the post-edit caret / refresh /
+    /// revision bump.
+    @discardableResult
+    func replaceCharactersUndoably(in range: NSRange, with text: String) -> Bool {
+        guard shouldChangeText(in: range, replacementString: text) else { return false }
+        textStorage?.replaceCharacters(in: range, with: text)
+        didChangeText()
+        return true
+    }
+
+    /// Insert `text` over `range` via the high-level `insertText(_:replacementRange:)` (which registers
+    /// undo and fires textDidChange itself), guarded by shouldChangeText. Returns false if vetoed.
+    @discardableResult
+    func insertTextUndoably(_ text: String, replacing range: NSRange) -> Bool {
+        guard shouldChangeText(in: range, replacementString: text) else { return false }
+        insertText(text, replacementRange: range)
+        return true
+    }
+}

@@ -28,6 +28,11 @@ final class EditorDocument: Identifiable {
         self.vm.filePath = path
     }
 
+    /// The AppKit window hosting this document's editor — nil before the view enters a window hierarchy /
+    /// after teardown. The one accessor for window-level toggle, save-conflict alert anchor, reload
+    /// surfacing, and paste focus (DocumentActions / ExternalReload / RenameSheet / PasteHandlers).
+    var hostWindow: NSWindow? { textView.window }
+
     // Chrome-facing derived state (read through `revision` so SwiftUI tracks edits).
     var title: String { _ = revision; return vm.displayName }
     var isDirty: Bool { _ = revision; return vm.isDirty }

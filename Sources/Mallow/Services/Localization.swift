@@ -9,16 +9,14 @@
 // placeholders the same way the reference `interpolate()` does — unknown placeholders are left in
 // place so a missing value stands out instead of rendering "undefined".
 //
-// The string tables live in THIS file (per the task: keep the table here). The keys match the Tauri
+// The string tables live in THIS file. The keys match the Tauri
 // locale JSON 1:1 (menu.*, dialog.*, error.*, doc.*, editor.*, style.*, …) so the two stay in sync;
 // the only native-only additions are `format.*` (the AppKit Format menu, which the web build renders
 // as a Style popover instead) and `welcome.demo` (the launch document — the web build's welcome.ts).
 //
-// Wiring (see the returned sharedChanges): main.swift swaps its hard-coded English menu titles for
-// `L.t("menu.…")` / `L.t("format.…")` calls; AppDelegate's `demoText` becomes `L.t("welcome.demo")`;
-// and EditorController's alert strings become `L.t("dialog.…")` / `L.t("error.…")`. Because localizing
-// the Format menu's TITLE would break `showStyleMenu`'s `item(withTitle: "Format")` lookup, that one
-// call site moves to an index-based lookup (also in sharedChanges).
+// Wiring: the SwiftUI menu bar (`MallowCommands`) uses `L.t("menu.…")` / `L.t("format.…")` for its
+// titles; the launch document (`demoMarkdown`) is `L.t("welcome.demo")`; and the alert helpers use
+// `L.t("dialog.…")` / `L.t("error.…")`. The locale is resolved once at launch from the system language.
 
 import Foundation
 

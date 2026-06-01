@@ -121,9 +121,8 @@ extension EditorDocument {
 /// centre doesn't jitter. (Ported verbatim from TypewriterScroll.centerCaretLine; `textView` →
 /// `doc.textView`, the flag is `doc.vm.typewriterOn`.)
 ///
-/// `internal` (file-private would block the extension above from a separate type calling it, but the
-/// task asks the centring math to live in one shared func both call sites use; keeping it a free
-/// function at module scope lets both the class method and the EditorDocument extension reuse it).
+/// A free function at module scope (not file-private) so both call sites — the Coordinator's selection
+/// hook and the EditorDocument typewriter toggle — share this one centring implementation.
 func centerCaretLine(_ doc: EditorDocument) {
     let textView = doc.textView
     guard doc.vm.typewriterOn else { return }

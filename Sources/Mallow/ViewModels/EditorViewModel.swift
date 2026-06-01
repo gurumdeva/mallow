@@ -155,11 +155,7 @@ final class EditorViewModel {
         guard let storage = textView.textStorage else { return }
         let nsLen = (s as NSString).length
 
-        func nsRange(_ r: PRange) -> NSRange? {
-            let lo = byteToUTF16(s, r.start), hi = byteToUTF16(s, r.end)
-            guard hi > lo, hi <= nsLen else { return nil }
-            return NSRange(location: lo, length: hi - lo)
-        }
+        func nsRange(_ r: PRange) -> NSRange? { r.utf16Range(in: s, clampedTo: nsLen) }
 
         var quotes: [NSRange] = []   // blockquote ranges → 3px left bar drawn by the text view
         var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
@@ -285,8 +281,7 @@ final class EditorViewModel {
         var bullets = Set<Int>()
         let grammar = MarkerGrammar(ns: ns)
         for block in blocks where block.kindTag == "List" {
-            let bLo = byteToUTF16(s, block.range.start)
-            let bHi = min(byteToUTF16(s, block.range.end), total)
+            let (bLo, bHi) = block.range.utf16Bounds(in: s, clampedTo: total)
             for d in grammar.bulletDashes(bLo, bHi) { bullets.insert(d) }
         }
         bulletMarks = bullets
@@ -308,44 +303,12 @@ final class EditorViewModel {
         }
         taskBoxes = boxes
 
-        // GFM tables: a true grid needs engine cell ranges, but the philosophy is "no raw markers". So HIDE
-        // the delimiter row (`|---|---|`, pure structure) and render every other `|` as a SPACE — monospace
-        // keeps the columns aligned, the bars just don't show. Pipe indices feed the glyph delegate.
-        var pipes = Set<Int>()
-        for block in blocks where block.kindTag == "Table" {
-            let bLo = byteToUTF16(s, block.range.start)
-            let bHi = min(byteToUTF16(s, block.range.end), total)
-            var lineStart = bLo
-            var lineIndex = 0
-            while lineStart < bHi {
-                let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
-                let lineHi = min(line.location + line.length, bHi)
-                var linePipes: [Int] = []
-                var sawDash = false, onlySeparatorChars = true, sawNonSpace = false
-                var i = line.location
-                while i < lineHi {
-                    switch ns.character(at: i) {
-                    case 124: linePipes.append(i); sawNonSpace = true       // |
-                    case 45:  sawDash = true; sawNonSpace = true            // -
-                    case 58:  sawNonSpace = true                            // :
-                    case 32, 9, 10, 13: break                               // ws / line terminator
-                    default:  onlySeparatorChars = false; sawNonSpace = true
-                    }
-                    i += 1
-                }
-                // GFM delimiter row: the 2nd line, made of only `| - :` + ws with ≥1 dash → hide it whole.
-                if lineIndex == 1, sawDash, sawNonSpace, onlySeparatorChars {
-                    var j = line.location
-                    while j < lineHi { if ns.character(at: j) != 10 { collector.hidden.insert(j) }; j += 1 }
-                } else {
-                    for p in linePipes { pipes.insert(p) }
-                }
-                if line.length == 0 { break }
-                lineStart = line.location + line.length
-                lineIndex += 1
-            }
-        }
-        tablePipes = pipes
+        // GFM tables: a true grid needs engine cell ranges, but the philosophy is "no raw markers". So
+        // render every `|` as a space and hide the `|---|` delimiter row (see TablePipeScanner) — monospace
+        // keeps the columns aligned, the bars just don't show.
+        let table = TablePipeScanner(ns: ns, total: total).scan(blocks, source: s)
+        tablePipes = table.pipes
+        for h in table.hide { collector.hidden.insert(h) }
 
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {
@@ -417,10 +380,7 @@ final class EditorViewModel {
         // undo stack). Route through the text view's edit path so ⌘Z reverts an engine command (bold,
         // heading, list, …) like any typing, and prior typing-undo history is preserved.
         let full = NSRange(location: 0, length: (textView.string as NSString).length)
-        if textView.shouldChangeText(in: full, replacementString: edit.text) {
-            textView.textStorage?.replaceCharacters(in: full, with: edit.text)
-            textView.didChangeText()
-        }
+        textView.replaceCharactersUndoably(in: full, with: edit.text)
         let a = charToUTF16(edit.text, edit.selection.anchor)
         let h = charToUTF16(edit.text, edit.selection.head)
         textView.setSelectedRange(NSRange(location: min(a, h), length: abs(h - a)))
@@ -565,11 +525,10 @@ private struct HiddenSyntaxCollector {
     /// hide the `>` (the drawn bar replaces it); every other gap collapses.
     mutating func hideBlockGaps(_ blocks: [PBlock]) {
         for block in blocks where EditorViewModel.hideable(block.kindTag) {
-            let bLo = byteToUTF16(s, block.range.start)
-            let bHi = min(byteToUTF16(s, block.range.end), total)
+            let (bLo, bHi) = block.range.utf16Bounds(in: s, clampedTo: total)
             let covered = block.inlines
-                .map { (byteToUTF16(s, $0.range.start), byteToUTF16(s, $0.range.end)) }
-                .sorted { $0.0 < $1.0 }
+                .map { $0.range.utf16Bounds(in: s, clampedTo: total) }
+                .sorted { $0.lo < $1.lo }
             let keep = (block.kindTag == "List") ? grammar.leadingMarkers(bLo, bHi) : Set<Int>()
             var cursor = bLo
             for (lo, hi) in covered {
@@ -585,8 +544,7 @@ private struct HiddenSyntaxCollector {
     mutating func hideInlineCodeFences(_ blocks: [PBlock]) {
         for block in blocks {
             for inline in block.inlines where inline.kindTag == "Code" {
-                let lo = byteToUTF16(s, inline.range.start)
-                let hi = min(byteToUTF16(s, inline.range.end), total)
+                let (lo, hi) = inline.range.utf16Bounds(in: s, clampedTo: total)
                 var i = lo
                 while i < hi && ns.character(at: i) == 96 /* ` */ { hideChar(i); i += 1 }
                 var j = hi - 1
@@ -598,8 +556,7 @@ private struct HiddenSyntaxCollector {
     /// Thematic breaks: collapse the --- / *** / ___ source so only the drawn rule shows.
     mutating func hideThematicBreaks(_ blocks: [PBlock]) {
         for block in blocks where block.kindTag == "ThematicBreak" {
-            let lo = byteToUTF16(s, block.range.start)
-            let hi = min(byteToUTF16(s, block.range.end), total)
+            let (lo, hi) = block.range.utf16Bounds(in: s, clampedTo: total)
             var i = lo
             while i < hi { hideChar(i); i += 1 }
         }
@@ -609,8 +566,7 @@ private struct HiddenSyntaxCollector {
     /// tint (a rounded card is drawn instead). Code content is untouched.
     mutating func hideCodeBlockFences(_ blocks: [PBlock]) {
         for block in blocks where block.kindTag == "CodeBlock" {
-            let bLo = byteToUTF16(s, block.range.start)
-            let bHi = min(byteToUTF16(s, block.range.end), total)
+            let (bLo, bHi) = block.range.utf16Bounds(in: s, clampedTo: total)
             var lineStart = bLo
             while lineStart < bHi {
                 let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
@@ -624,5 +580,53 @@ private struct HiddenSyntaxCollector {
                 lineStart = line.location + line.length
             }
         }
+    }
+}
+
+/// The "no raw table markers" scan over GFM `Table` blocks (a true cell-bordered grid needs engine cell
+/// ranges, absent today). Pure over the NSString; for every table it collects the UTF-16 indices of each
+/// `|` bar on a content row (→ rendered as a space, keeping monospace columns aligned) and of every char
+/// on the `|---|` delimiter row (→ hidden). Mirrors `TaskBoxScanner`: detection only, no mutation.
+private struct TablePipeScanner {
+    let ns: NSString
+    let total: Int
+
+    /// `pipes` = bar indices to render as spaces; `hide` = delimiter-row chars to collapse. `source`
+    /// bridges each block's engine byte range to UTF-16.
+    func scan(_ blocks: [PBlock], source: String) -> (pipes: Set<Int>, hide: Set<Int>) {
+        var pipes = Set<Int>(), hide = Set<Int>()
+        for block in blocks where block.kindTag == "Table" {
+            let (bLo, bHi) = block.range.utf16Bounds(in: source, clampedTo: total)
+            var lineStart = bLo
+            var lineIndex = 0
+            while lineStart < bHi {
+                let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+                let lineHi = min(line.location + line.length, bHi)
+                var linePipes: [Int] = []
+                var sawDash = false, onlySeparatorChars = true, sawNonSpace = false
+                var i = line.location
+                while i < lineHi {
+                    switch ns.character(at: i) {
+                    case 124: linePipes.append(i); sawNonSpace = true       // |
+                    case 45:  sawDash = true; sawNonSpace = true            // -
+                    case 58:  sawNonSpace = true                            // :
+                    case 32, 9, 10, 13: break                               // ws / line terminator
+                    default:  onlySeparatorChars = false; sawNonSpace = true
+                    }
+                    i += 1
+                }
+                // GFM delimiter row: the 2nd line, made of only `| - :` + ws with ≥1 dash → hide it whole.
+                if lineIndex == 1, sawDash, sawNonSpace, onlySeparatorChars {
+                    var j = line.location
+                    while j < lineHi { if ns.character(at: j) != 10 { hide.insert(j) }; j += 1 }
+                } else {
+                    for p in linePipes { pipes.insert(p) }
+                }
+                if line.length == 0 { break }
+                lineStart = line.location + line.length
+                lineIndex += 1
+            }
+        }
+        return (pipes, hide)
     }
 }

@@ -6,8 +6,6 @@ import AppKit
 import UniformTypeIdentifiers
 
 extension EditorDocument {
-    private var window: NSWindow? { textView.window }
-
     // MARK: View toggles
 
     /// Focus mode: dim every block but the caret's. Restyle first (clears any prior dim), then re-apply
@@ -22,7 +20,7 @@ extension EditorDocument {
     /// Pin this window above other apps (per-window, transient). Sets the live NSWindow level.
     func toggleKeepOnTop() {
         vm.keepOnTop.toggle()
-        window?.level = vm.keepOnTop ? .floating : .normal
+        hostWindow?.level = vm.keepOnTop ? .floating : .normal
         revision &+= 1
     }
 
@@ -54,7 +52,7 @@ extension EditorDocument {
         // Refuse to write onto a file another window is already editing (its autosave would clobber this,
         // and vice-versa). Saving to OUR OWN current path is allowed (excluding: self).
         if pathOpenInOtherWindow(url.path, excluding: self) {
-            presentPathInUseAlert(path: url.path, anchor: window)
+            presentPathInUseAlert(path: url.path, anchor: hostWindow)
             return
         }
         let content = textView.string
@@ -62,7 +60,7 @@ extension EditorDocument {
             try content.write(to: url, atomically: true, encoding: .utf8)
             vm.markSaved(path: url.path, content: content)
             RecentFiles.add(url.path)
-            window?.title = vm.displayName
+            hostWindow?.title = vm.displayName
             revision &+= 1
         } catch {
             presentError(error)
@@ -73,28 +71,26 @@ extension EditorDocument {
 
     /// Export to PDF via the engine's HTML renderer + the WKWebView PDF exporter (the AppKit path).
     func exportPDF() {
-        let title = vm.baseName
-        let html = inkRenderHtml(textView.string, title)
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.nameFieldStringValue = "\(title).pdf"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        _ = PDFExporter(html: html, to: url)
+        guard let url = exportPanel(ext: "pdf", type: .pdf) else { return }
+        _ = PDFExporter(html: inkRenderHtml(textView.string, vm.baseName), to: url)
     }
 
     /// Export the engine-rendered standalone HTML.
     func exportHTML() {
-        let title = vm.baseName
-        let html = inkRenderHtml(textView.string, title)
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.html]
-        panel.nameFieldStringValue = "\(title).html"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = exportPanel(ext: "html", type: .html) else { return }
+        let html = inkRenderHtml(textView.string, vm.baseName)
         do { try html.write(to: url, atomically: true, encoding: .utf8) } catch { presentError(error) }
     }
 
+    /// A Save panel pre-filled with `<docName>.<ext>` for `type`; nil if the user cancels.
+    private func exportPanel(ext: String, type: UTType) -> URL? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [type]
+        panel.nameFieldStringValue = "\(vm.baseName).\(ext)"
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
     private func presentError(_ error: Error) {
-        let alert = NSAlert(error: error)
-        if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+        NSAlert(error: error).present(anchoredTo: hostWindow)
     }
 }

@@ -135,8 +135,7 @@ struct TaskBoxScanner {
     func allBoxes(_ blocks: [PBlock]) -> [Int: Bool] {
         var out: [Int: Bool] = [:]
         for block in blocks where block.kindTag == "List" {
-            let bLo = byteToUTF16(s, block.range.start)
-            let bHi = byteToUTF16(s, block.range.end)
+            let (bLo, bHi) = block.range.utf16Bounds(in: s, clampedTo: ns.length)
             for (inner, checked) in boxes(in: bLo, bHi) { out[inner] = checked }
         }
         return out
@@ -237,9 +236,7 @@ extension MarkdownEditor.Coordinator {
         // Undoable replace over just the inner char — same pattern as EditorViewModel.replace(with:):
         // go through shouldChangeText / replaceCharacters / didChangeText so ⌘Z reverts the toggle and
         // the existing undo stack is preserved (NEVER assign textView.string — that drops undo).
-        guard textView.shouldChangeText(in: editRange, replacementString: replacement) else { return false }
-        textView.textStorage?.replaceCharacters(in: editRange, with: replacement)
-        textView.didChangeText()
+        guard textView.replaceCharactersUndoably(in: editRange, with: replacement) else { return false }
 
         // Keep the caret stable next to the box (a 1:1 single-char swap doesn't shift later offsets).
         textView.setSelectedRange(NSRange(location: inner + 1, length: 0))

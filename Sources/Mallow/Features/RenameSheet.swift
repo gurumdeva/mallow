@@ -96,7 +96,7 @@ struct RenameSheet: View {
             }
 
             // Cancel (Escape) + Rename (default / Return). No good localization key exists for these in
-            // this context (menu.close would be wrong), so they stay literal per the task.
+            // this context (menu.close would be wrong), so they stay literal.
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
                 Button("Cancel") { dismiss() }
@@ -170,11 +170,6 @@ struct RenameSheet: View {
         }
         alert.addButton(withTitle: L.t("common.ok"))
         errorText = alert.informativeText   // also keep it visible in-sheet so the field stays editable
-        // Sheet-modal on the editor window when we can find it; otherwise a free-standing modal.
-        if let window = doc.textView.window {
-            alert.beginSheetModal(for: window)
-        } else {
-            alert.runModal()
-        }
+        alert.present(anchoredTo: doc.hostWindow)   // sheet on the editor window when present, else app-modal
     }
 }

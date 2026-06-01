@@ -13,9 +13,9 @@
 // it). Off-screen frames are clamped back onto a visible screen before use.
 //
 // Layering: `SessionStore` is the pure-ish persistence + geometry policy (atomic JSON, debounce, clamp,
-// the startup decision) with no window/menu plumbing; `track(window:controller:)` is the only AppKit
+// the startup decision) with no window/menu plumbing; `track(window:lastFile:)` is the only AppKit
 // seam — it observes the window's own move/resize/main notifications via NotificationCenter, so the
-// geometry-save + last-file capture need NO edits to EditorController/its delegate. Only the two genuine
+// geometry-save + last-file capture need NO NSWindowDelegate hook. Only the two genuine
 // call sites — applying the restored frame to the FIRST window, and choosing restore-vs-demo at launch —
 // live in shared files (see sharedChanges); everything else is self-contained here.
 
@@ -104,9 +104,9 @@ enum SessionStore {
     /// per window is not required — call once, right after the first window is built. Registers
     /// NotificationCenter observers scoped to THIS window so no NSWindowDelegate hook is needed:
     ///   • move / end-of-live-resize  → debounce-save the frame
-    ///   • became-main                → record the controller's document as the "last file"
-    /// `controller` is captured weakly so tracking never keeps a closed window alive.
-    /// Returns the registered observer tokens so the owning controller can remove them on close —
+    ///   • became-main                → record `lastFile()`'s path as the session "last file"
+    /// `lastFile` is a closure (not a captured object), so tracking never keeps a closed window alive.
+    /// Returns the registered observer tokens so the caller can remove them on close —
     /// block-based observers are NOT auto-removed when the observed window deallocs, so without this
     /// they accumulate for the app's lifetime (3 per window ever opened).
     @discardableResult

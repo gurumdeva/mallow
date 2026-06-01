@@ -45,10 +45,6 @@ extension EditorDocument {
     /// alert. Keyed by the document's identity so it's per-window and needs no stored property.
     private static var syncing = Set<ObjectIdentifier>()
 
-    /// The window hosting this document's editor — used to anchor the conflict alert (and to surface
-    /// which document is prompting). Same seam DocumentActions / RenameSheet use.
-    private var hostWindow: NSWindow? { textView.window }
-
     /// Re-read the file and reconcile the editor with disk; safe to call on every key event. No-op when
     /// there's no file path, the file can't be read, or the buffer already equals disk. Silently reloads
     /// when there are no local edits; otherwise prompts before discarding local edits.
@@ -109,10 +105,7 @@ extension EditorDocument {
     /// The caret is clamped to the new length first, since the old offset may now be out of range.
     private func applyReload(_ disk: String, path: String) {
         let full = NSRange(location: 0, length: (textView.string as NSString).length)
-        if textView.shouldChangeText(in: full, replacementString: disk) {
-            textView.textStorage?.replaceCharacters(in: full, with: disk)
-            textView.didChangeText()
-        }
+        textView.replaceCharactersUndoably(in: full, with: disk)
         let len = (disk as NSString).length
         let caret = min(textView.selectedRange().location, len)
         textView.setSelectedRange(NSRange(location: caret, length: 0))
