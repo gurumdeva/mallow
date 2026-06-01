@@ -250,25 +250,16 @@ final class EditorViewModel {
         textView.needsDisplay = true
     }
 
-    /// The UTF-16 range of a leading YAML frontmatter block (`---` on line 1 … a closing `---` line),
-    /// fences inclusive, or nil if the document doesn't open with one. Only a fence at the very start
-    /// counts (that's what YAML frontmatter is); a `---` elsewhere is a normal thematic break.
+    /// The UTF-16 range of a leading YAML frontmatter block (`---` … closing `---`), fences inclusive,
+    /// or nil if the document doesn't open with one. Detection is the ENGINE's
+    /// (`inkFrontmatterBodyStart`) — the same rule behind `document_title` and HTML-export stripping —
+    /// so the editor's dimming can never drift from what the engine treats as metadata (it used to:
+    /// the old Swift copy ignored the `key: value` requirement and broke on a blank line inside).
     private func frontmatterRange(_ s: String, nsLen: Int) -> NSRange? {
-        let ns = s as NSString
-        guard nsLen >= 3 else { return nil }
-        func isFence(_ r: NSRange) -> Bool {
-            ns.substring(with: r).trimmingCharacters(in: .whitespacesAndNewlines) == "---"
-        }
-        let first = ns.lineRange(for: NSRange(location: 0, length: 0))
-        guard first.location == 0, isFence(first) else { return nil }   // must open with `---`
-        var lineStart = first.location + first.length
-        while lineStart < nsLen {
-            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
-            if isFence(line) { return NSRange(location: 0, length: line.location + line.length) }
-            if line.length == 0 { break }
-            lineStart = line.location + line.length
-        }
-        return nil   // no closing fence → it's not a frontmatter block
+        let bodyStart = inkFrontmatterBodyStart(s)   // engine byte offset; 0 = no frontmatter
+        guard bodyStart > 0 else { return nil }
+        let end = min(byteToUTF16(s, bodyStart), nsLen)
+        return end > 0 ? NSRange(location: 0, length: end) : nil
     }
 
     /// Which block kinds have hideable syntax (the `**`, `#`, `- `, `> ` gaps collapsed by

@@ -128,8 +128,12 @@ enum DocOutline {
     static func extract(_ source: String, blocks: [PBlock]) -> [OutlineItem] {
         let ns = source as NSString
         let nsLen = ns.length
+        // Skip headings inside a leading YAML frontmatter block: the closing `---` makes the engine
+        // read the metadata as a setext heading, which must not show up as an outline row. Same engine
+        // detection the render pass dims it with — one source of truth (see `inkFrontmatterBodyStart`).
+        let fmBodyStart = inkFrontmatterBodyStart(source)
         var items: [OutlineItem] = []
-        for block in blocks where block.kindTag == "Heading" {
+        for block in blocks where block.kindTag == "Heading" && block.range.start >= fmBodyStart {
             let level = block.headingLevel ?? 1
 
             // Concatenate the inline-run substrings → rendered heading text (markers excluded).

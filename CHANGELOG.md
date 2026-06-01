@@ -14,6 +14,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 
 ### Fixed
 - Hardened the editor engine across many formatting edge cases: bold/italic/strikethrough/inline-code no longer leak literal markers or change a line's block structure; list-type switches (bullet ↔ ordered ↔ task, including nested/indented items) replace the marker cleanly instead of stacking; inserting a link escapes special characters in the selected text and never breaks block structure; and deeply-nested or pathological math no longer crashes export.
+- **Frontmatter no longer leaks into the title, outline, or word count.** When a note opens with a `---` … `---` metadata block, its keys are no longer mistaken for the document's title (the closing `---` had made them look like a heading), no longer appear as an outline / table-of-contents entry, and are kept out of the word / character / paragraph counts again — matching how HTML/PDF export already drops them. What counts as frontmatter is now decided in one place in the engine, so the title, outline, statistics, and export always agree.
 
 ## [0.29.0] - 2026-05-31
 

@@ -26,7 +26,7 @@ struct StatusBar: View {
     /// the ViewBuilder body, which the result builder rejects).
     private var currentStats: DocStats {
         _ = doc.revision
-        return DocStats(markdown: doc.textView.string)
+        return DocStats(markdown: bodyWithoutFrontmatter(doc.textView.string))  // count the body, not metadata
     }
 
     var body: some View {

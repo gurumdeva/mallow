@@ -32,6 +32,23 @@ func inkRenderHtml(_ s: String, _ title: String) -> String { inkTake(inkstone_re
 /// Drives the window/chrome title and the save-as default filename (falling back to the filename when
 /// empty) — Notion-style "the first heading is the title", so the user just types a heading at the top.
 func inkDocumentTitle(_ s: String) -> String { inkTake(inkstone_document_title(s)) }
+/// The byte offset where the body begins after a leading YAML frontmatter block (`---` … `---`), or
+/// 0 when the document doesn't open with frontmatter. One source of truth (the engine) for "what is
+/// frontmatter": the render pass dims `[0, body_start)` as quiet metadata and the outline skips
+/// headings inside it, rather than the app re-deriving the rule and drifting from `document_title` /
+/// HTML-export stripping.
+func inkFrontmatterBodyStart(_ s: String) -> Int { Int(inkstone_frontmatter_body_start(s)) }
+/// `s` with any leading YAML frontmatter block removed (the body only), or `s` unchanged when there's
+/// no frontmatter. For content statistics — words/characters/paragraphs count the body, not metadata —
+/// matching HTML export, the window title, and the outline, which all ignore frontmatter. `body_start`
+/// is a `\n`-aligned byte offset, so it always lands on a character boundary.
+func bodyWithoutFrontmatter(_ s: String) -> String {
+    let bs = inkFrontmatterBodyStart(s)
+    guard bs > 0,
+          let i = s.utf8.index(s.utf8.startIndex, offsetBy: bs, limitedBy: s.utf8.endIndex),
+          let si = i.samePosition(in: s) else { return s }
+    return String(s[si...])
+}
 /// Engine content-equality (NOT a debounced flag): true when `current` differs from `baseline`.
 /// Used by the dirty dot + external-reload's disk-vs-baseline check.
 func inkIsDirty(_ current: String, _ baseline: String) -> Bool { inkstone_is_dirty(current, baseline) }

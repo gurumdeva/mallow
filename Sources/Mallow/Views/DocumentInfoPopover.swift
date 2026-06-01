@@ -33,7 +33,7 @@ struct DocumentInfoPopover: View {
         // Recompute per render — cheap, and reflects the current buffer (mirrors the AppKit panel being
         // rebuilt on every open). `source` is read once and threaded through stats + outline.
         let source = doc.textView.string
-        let stats = DocStats(markdown: source)
+        let stats = DocStats(markdown: bodyWithoutFrontmatter(source))  // count the body, not metadata
         let outline = DocOutline.extract(source, blocks: inkParseBlocks(source))
 
         VStack(spacing: 12) {
