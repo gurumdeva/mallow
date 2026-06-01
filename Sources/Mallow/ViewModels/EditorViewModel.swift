@@ -38,6 +38,13 @@ final class EditorViewModel {
 
     var isDirty: Bool { inkIsDirty(textView?.string ?? "", baseline) }
     var displayName: String { (filePath as NSString?)?.lastPathComponent ?? L.t("doc.untitled") }
+    /// The title shown in the window/chrome: the document's frontmatter `title:` when it has one, else
+    /// the filename (`displayName`). Lets the user name a document with a single `title:` line at
+    /// near-zero cost. Note `displayName`/`baseName` stay the FILENAME — rename/save operate on the file.
+    var documentTitle: String {
+        let fmTitle = inkFrontmatterTitle(textView?.string ?? "")
+        return fmTitle.isEmpty ? displayName : fmTitle
+    }
     /// `displayName` without a trailing `.md` (export filename / document title). Suffix-only — a blind
     /// `.replacingOccurrences(of:".md")` would mangle names like "notes.md.md" or "a.md.txt".
     var baseName: String {

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [Unreleased]
+
+### Added
+- **Document title from frontmatter.** A document whose YAML frontmatter has a `title:` now shows that as its window/chrome title (falling back to the filename when absent) — name a document with a single `title:` line, at near-zero cost.
+
+### Fixed
+- Hardened the editor engine across many formatting edge cases: bold/italic/strikethrough/inline-code no longer leak literal markers or change a line's block structure; list-type switches (bullet ↔ ordered ↔ task, including nested/indented items) replace the marker cleanly instead of stacking; inserting a link escapes special characters in the selected text and never breaks block structure; and deeply-nested or pathological math no longer crashes export.
+
 ## [0.29.0] - 2026-05-31
 
 ### Changed

@@ -60,7 +60,7 @@ extension EditorDocument {
             try content.write(to: url, atomically: true, encoding: .utf8)
             vm.markSaved(path: url.path, content: content)
             RecentFiles.add(url.path)
-            hostWindow?.title = vm.displayName
+            hostWindow?.title = vm.documentTitle // frontmatter `title:` if present, else the filename
             revision &+= 1
         } catch {
             presentError(error)
