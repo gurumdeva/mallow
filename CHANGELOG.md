@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
-## [Unreleased]
+## [0.30.0] - 2026-06-02
 
 ### Added
 - **Document title from the first heading (Notion-style).** A document's first heading (`# …`) is now its title: it shows in the window/chrome title bar, and saving a new document offers that heading as the default filename (e.g. type `# Meeting notes` → Save suggests `Meeting notes.md`). Falls back to the filename when there's no heading. No extra syntax — just write a heading at the top.
