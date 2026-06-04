@@ -34,9 +34,7 @@ Mallow is for people who just want to *write*. It deliberately isn't a note data
 
 ## Install
 
-Download the latest **`Mallow_<version>_aarch64.dmg`** from the [Releases](../../releases/latest) page (Apple Silicon), open it, and drag **Mallow** into **Applications**.
-
-The build isn't code-signed yet, so on first launch macOS Gatekeeper will block a normal double-click. To open it once: right-click `Mallow.app` → **Open** → **Open**. Or from Terminal: `xattr -dr com.apple.quarantine /Applications/Mallow.app`.
+Download the latest **`Mallow_<version>_aarch64.dmg`** from the [Releases](../../releases/latest) page (Apple Silicon), open it, and drag **Mallow** into **Applications**. The app is signed with a Developer ID and notarized by Apple, so it opens with a normal double-click.
 
 ## Building from source
 
@@ -44,12 +42,9 @@ macOS 14+. Mallow builds against a small companion engine checked out as a sibli
 
 ```sh
 ./build.sh        # build + run
-./build-app.sh    # package an (unsigned) .app bundle → .build/Mallow.app
+./build-app.sh    # package a .app bundle → .build/Mallow.app
+                  # (auto-signs if a "Developer ID Application" cert is in the keychain)
 ```
-
-## Status
-
-The macOS app is the current and only build; the earlier web-view build has been superseded and archived locally (not tracked in git). Code signing / notarization for distributable releases is the remaining packaging step.
 
 ## License
 
