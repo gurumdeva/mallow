@@ -391,7 +391,9 @@ final class EditorViewModel {
         // Code-block ``` fence lines also collapse to zero height: their glyphs are already hidden, but the
         // line still occupied a row, so the card (drawn over the whole block range) showed empty tint above
         // the first/below the last code line. Merging them here reuses the same zero-height-fragment path.
-        foldedChars = fold.union(collector.fenceChars)
+        // Zero-height (collapse) both code-block ``` fence lines and the GFM table `|---|` delimiter row,
+        // so neither leaves a blank full-height row. (Their glyphs are already hidden; this removes the row.)
+        foldedChars = fold.union(collector.fenceChars).union(table.hide)
 
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {

@@ -149,11 +149,34 @@ final class MarkdownTextView: NSTextView {
             let card = NSRect(x: origin.x, y: origin.y + top, width: tc.size.width - 8, height: bottom - top)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
-        for r in tableCards {   // same elevated card as code; cells are monospaced + pipes dimmed by restyle
-            guard let a = decorationAnchors(forCharacterRange: r) else { continue }
-            let top = a.capTop - cardPadding, bottom = a.baseline + cardPadding
-            let card = NSRect(x: origin.x, y: origin.y + top, width: tc.size.width - 8, height: bottom - top)
+        // GFM tables: an elevated card + a 1px grid (outer border + a rule under each row). Rows are the
+        // line fragments (the `|---|` delimiter row is collapsed to zero height, so it's skipped). Column
+        // rules aren't drawn — the raw monospace flow doesn't align CJK cells into straight columns; true
+        // per-column borders need engine cell ranges (tracked as a separate task).
+        for r in tableCards {
+            let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+            guard gr.length > 0 else { continue }
+            var rows: [NSRect] = []
+            lm.enumerateLineFragments(forGlyphRange: gr) { frag, _, _, _, _ in
+                if frag.height > 0 { rows.append(frag) }   // skip the collapsed delimiter row
+            }
+            guard let first = rows.first, let last = rows.last else { continue }
+            let card = NSRect(x: origin.x, y: origin.y + first.minY,
+                              width: tc.size.width - 8, height: last.maxY - first.minY)
+            mallowElevated.setFill()
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
+            borderStrong.setStroke()   // table grid needs to be visible on the card (mallowBorderColor α0.08 is too faint)
+            let border = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+            border.lineWidth = 1
+            border.stroke()
+            let sep = NSBezierPath()
+            sep.lineWidth = 1
+            for i in 0 ..< (rows.count - 1) {   // a rule under every row but the last (header rule + row separators)
+                let y = (origin.y + rows[i].maxY).rounded() + 0.5
+                sep.move(to: NSPoint(x: card.minX, y: y))
+                sep.line(to: NSPoint(x: card.maxX, y: y))
+            }
+            sep.stroke()
         }
 
         // Blockquote: a 3pt left bar spanning cap line → baseline, i.e. the height of the quoted text.

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.30.3] - 2026-06-04
+
+### Changed
+- **Tables now render with a grid.** A GFM table draws as a ruled card — an outer border with a rule under the header and between each row — so rows read as distinct cells, and the `|---|` delimiter row no longer leaves a blank gap. (Per-column vertical borders aren't drawn yet: the raw text flow doesn't align CJK columns into straight lines, which needs engine cell-range support — tracked separately.)
+
 ## [0.30.2] - 2026-06-04
 
 ### Fixed
