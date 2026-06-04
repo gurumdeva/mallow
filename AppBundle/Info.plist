@@ -27,6 +27,22 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 
+	<!-- Declare the languages the app supports so AppKit localizes its STANDARD menus (the app menu —
+	     About/Hide/Quit; the standard Edit items — Undo/Cut/Copy/Paste/Select All; Window; Help; "Enter
+	     Full Screen"; and the standard menu titles File/Edit/View/Window/Help) to the device language,
+	     matching the app's own strings (L.t, which resolves from Locale.preferredLanguages). Without this
+	     the bundle's only localization is the development region (en) and AppKit renders all that chrome
+	     in English even on a Korean/Japanese system. The app's own UI strings are localized in code
+	     (Services/Localization.swift), so no per-language .lproj resources are needed. -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>ko</string>
+		<string>ja</string>
+	</array>
+
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
