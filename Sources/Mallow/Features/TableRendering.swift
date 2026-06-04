@@ -166,10 +166,12 @@ enum TableRendering {
 
     /// A tidy paragraph style for the table block: a small left inset (so it sits off the margin inside
     /// its card, matching code blocks) and tighter leading than body text (1.3 vs 1.5) so the grid reads
-    /// as a compact unit. Built once.
+    /// as a compact unit. Built once. NOTE: no `lineHeightMultiple` — table rows get their vertical
+    /// breathing room from the layout delegate (`shouldSetLineFragmentRect`), which pads each row TOP AND
+    /// BOTTOM and centers the text, so the cells aren't cramped against the row rules (an airy
+    /// `lineHeightMultiple` only adds space ABOVE the glyph, leaving the text low against the bottom rule).
     private static let tableParagraphStyle: NSParagraphStyle = {
         let p = NSMutableParagraphStyle()
-        p.lineHeightMultiple = 1.3
         p.firstLineHeadIndent = 12
         p.headIndent = 12
         return p

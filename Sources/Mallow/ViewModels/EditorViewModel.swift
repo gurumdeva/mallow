@@ -16,6 +16,7 @@ final class EditorViewModel {
     private(set) var bulletMarks = Set<Int>()   // UTF-16 indices of unordered `- ` dashes to render as `•` (glyph delegate)
     private(set) var taskBoxes = [Int: Bool]()  // UTF-16 index of a task `[ ]`/`[x]` inner char → isChecked (glyph delegate ☐/☑)
     private(set) var tablePipes = Set<Int>()    // UTF-16 indices of GFM table `|` to render as a space (glyph delegate)
+    private(set) var tableRowChars = Set<Int>() // UTF-16 line-start of each table CONTENT row → padded taller + centered (layout delegate)
     private(set) var foldedChars = Set<Int>()   // UTF-16 line-start indices → zero-height lines (collapsed sections + code-block ``` fence lines; layout delegate)
     var focusMode = false                        // dim every block but the caret's
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
@@ -364,6 +365,7 @@ final class EditorViewModel {
         // keeps the columns aligned, the bars just don't show.
         let table = TablePipeScanner(ns: cb, total: total).scan(blocks, map: map)
         tablePipes = table.pipes
+        tableRowChars = table.rowStarts
         for h in table.hide { collector.hidden.insert(h) }
 
         // Fold All Sections: collapse every heading's body (the content between a heading and the next
@@ -746,9 +748,11 @@ private struct TablePipeScanner {
     /// `pipes` = bar indices to render as spaces; `hide` = delimiter-row chars whose GLYPHS to drop (no
     /// newline — hiding a newline glyph would merge lines); `collapse` = the delimiter row's chars INCLUDING
     /// its newline, for the zero-height fold set (the row is all-hidden, so its fragment can report the
-    /// newline as the line start — that char must be in the fold set or the row won't collapse).
-    func scan(_ blocks: [PBlock], map: [Int]) -> (pipes: Set<Int>, hide: Set<Int>, collapse: Set<Int>) {
-        var pipes = Set<Int>(), hide = Set<Int>(), collapse = Set<Int>()
+    /// newline as the line start — that char must be in the fold set or the row won't collapse);
+    /// `rowStarts` = the line-start char of each CONTENT row (header + body, not the delimiter), so the
+    /// layout delegate can pad those rows vertically (cell breathing room around the grid rules).
+    func scan(_ blocks: [PBlock], map: [Int]) -> (pipes: Set<Int>, hide: Set<Int>, collapse: Set<Int>, rowStarts: Set<Int>) {
+        var pipes = Set<Int>(), hide = Set<Int>(), collapse = Set<Int>(), rowStarts = Set<Int>()
         for block in blocks where block.kindTag == "Table" {
             let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: total)
             var lineStart = bLo
@@ -780,13 +784,14 @@ private struct TablePipeScanner {
                         j += 1
                     }
                     foundDelimiter = true
-                } else {
+                } else if !linePipes.isEmpty {
                     for p in linePipes { pipes.insert(p) }
+                    rowStarts.insert(line.location)   // a content row (header / body) → pad it vertically
                 }
                 if line.length == 0 { break }
                 lineStart = line.location + line.length
             }
         }
-        return (pipes, hide, collapse)
+        return (pipes, hide, collapse, rowStarts)
     }
 }

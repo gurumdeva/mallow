@@ -158,23 +158,37 @@ struct MarkdownEditor: NSViewRepresentable {
             return glyphRange.length
         }
 
-        /// Zero-height lines: a line fragment whose first character is in `vm.foldedChars` is given zero
-        /// height. Two sources feed that set — (1) Fold All / Fold Section collapse a heading's body so the
-        /// document reads as an outline, and (2) code-block ``` fence lines collapse so the code card hugs
-        /// the code. In both cases the line's glyphs are already hidden, so nothing draws in the zero row.
+        /// Custom line-fragment geometry for two cases, keyed by the line's first character:
+        ///  (1) `vm.foldedChars` → zero height: Fold All / Fold Section collapse a heading's body to an
+        ///      outline, and code-block ``` fences + the table `|---|` delimiter collapse so their cards
+        ///      hug the content. The glyphs are already hidden, so nothing draws in the zero row.
+        ///  (2) `vm.tableRowChars` → taller + centered: a GFM table content row gets `tableRowPad` of space
+        ///      ABOVE and BELOW its text (and the text centered), so cells aren't cramped against the grid
+        ///      rules. The table paragraph style carries no `lineHeightMultiple` precisely so this is the
+        ///      only source of row height — and unlike a multiple (which only adds space above the glyph),
+        ///      this pads both sides evenly.
         func layoutManager(_ lm: NSLayoutManager,
                            shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
                            lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
                            baselineOffset: UnsafeMutablePointer<CGFloat>,
                            in textContainer: NSTextContainer,
                            forGlyphRange glyphRange: NSRange) -> Bool {
-            guard !vm.foldedChars.isEmpty else { return false }
+            guard !vm.foldedChars.isEmpty || !vm.tableRowChars.isEmpty else { return false }
             let charStart = lm.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil).location
-            guard vm.foldedChars.contains(charStart) else { return false }
-            lineFragmentRect.pointee.size.height = 0
-            lineFragmentUsedRect.pointee.size.height = 0
-            baselineOffset.pointee = 0
-            return true
+            if vm.foldedChars.contains(charStart) {
+                lineFragmentRect.pointee.size.height = 0
+                lineFragmentUsedRect.pointee.size.height = 0
+                baselineOffset.pointee = 0
+                return true
+            }
+            if vm.tableRowChars.contains(charStart) {
+                let pad: CGFloat = 6
+                lineFragmentRect.pointee.size.height += 2 * pad
+                lineFragmentUsedRect.pointee.size.height += 2 * pad
+                baselineOffset.pointee += pad
+                return true
+            }
+            return false
         }
 
         /// The `•` (U+2022) glyph id for `font`, or 0 if the font lacks it (→ keep the literal dash).
