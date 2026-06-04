@@ -1,6 +1,9 @@
 # SwiftPM build output
 .build/
 
+# Release artifacts (DMGs are uploaded to GitHub Releases, not tracked in git)
+*.dmg
+
 # Local-only notes (manual-test logs, scratch) — never committed
 *.local
 *.local.md
