@@ -158,10 +158,10 @@ struct MarkdownEditor: NSViewRepresentable {
             return glyphRange.length
         }
 
-        /// Fold All Sections: a line fragment whose first character sits inside a collapsed section
-        /// (`vm.foldedChars`) is given zero height, so the section's body disappears and the document
-        /// reads as an outline of its headings. The glyphs in that range are already hidden (the fold
-        /// chars join the hidden set), so nothing draws in the zero-height line.
+        /// Zero-height lines: a line fragment whose first character is in `vm.foldedChars` is given zero
+        /// height. Two sources feed that set — (1) Fold All / Fold Section collapse a heading's body so the
+        /// document reads as an outline, and (2) code-block ``` fence lines collapse so the code card hugs
+        /// the code. In both cases the line's glyphs are already hidden, so nothing draws in the zero row.
         func layoutManager(_ lm: NSLayoutManager,
                            shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
                            lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,

@@ -16,7 +16,7 @@ final class EditorViewModel {
     private(set) var bulletMarks = Set<Int>()   // UTF-16 indices of unordered `- ` dashes to render as `•` (glyph delegate)
     private(set) var taskBoxes = [Int: Bool]()  // UTF-16 index of a task `[ ]`/`[x]` inner char → isChecked (glyph delegate ☐/☑)
     private(set) var tablePipes = Set<Int>()    // UTF-16 indices of GFM table `|` to render as a space (glyph delegate)
-    private(set) var foldedChars = Set<Int>()   // UTF-16 indices inside collapsed sections → zero-height lines (layout delegate)
+    private(set) var foldedChars = Set<Int>()   // UTF-16 line-start indices → zero-height lines (collapsed sections + code-block ``` fence lines; layout delegate)
     var focusMode = false                        // dim every block but the caret's
     var keepOnTop = false                         // pin this window above other apps (transient, per-window)
     var typewriterOn = false                      // View ▸ Typewriter Scrolling: keep the caret line centered (per-window)
@@ -355,7 +355,10 @@ final class EditorViewModel {
                 }
             }
         }
-        foldedChars = fold
+        // Code-block ``` fence lines also collapse to zero height: their glyphs are already hidden, but the
+        // line still occupied a row, so the card (drawn over the whole block range) showed empty tint above
+        // the first/below the last code line. Merging them here reuses the same zero-height-fragment path.
+        foldedChars = fold.union(collector.fenceLineStarts)
 
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {
@@ -596,6 +599,7 @@ private struct HiddenSyntaxCollector {
     let total: Int
     let grammar: MarkerGrammar
     var hidden = Set<Int>()
+    var fenceLineStarts = Set<Int>()   // first char of each ``` fence line → zero-height (code card hugs the code)
 
     init(ns: CharBuffer, map: [Int], total: Int) {
         self.ns = ns
@@ -675,7 +679,12 @@ private struct HiddenSyntaxCollector {
                 while i < lineHi && grammar.isMarkerSpace(ns.character(at: i)) { i += 1 }   // skip indent
                 let isFence = i + 2 < lineHi
                     && ns.character(at: i) == 96 && ns.character(at: i + 1) == 96 && ns.character(at: i + 2) == 96
-                if isFence { var j = line.location; while j < lineHi { hideChar(j); j += 1 } }
+                if isFence {
+                    // Zero-height this fence line so the code card (drawn over the whole block range) hugs
+                    // the code instead of trailing empty tint where the hidden ``` line still took a row.
+                    fenceLineStarts.insert(line.location)
+                    var j = line.location; while j < lineHi { hideChar(j); j += 1 }
+                }
                 if line.length == 0 { break }
                 lineStart = line.location + line.length
             }

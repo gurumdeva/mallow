@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [0.30.1] - 2026-06-04
+
+### Fixed
+- **Code blocks no longer have an empty band inside their background.** A fenced code block's rounded background card stretched over the (hidden) ``` ``` ``` opening and closing fence lines, leaving an empty grey strip above the first line of code and below the last. The fence lines now collapse to zero height, so the card hugs the code exactly.
+
 ## [0.30.0] - 2026-06-02
 
 ### Added
