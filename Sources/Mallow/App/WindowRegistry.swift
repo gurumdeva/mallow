@@ -197,9 +197,8 @@ func presentPathInUseAlert(path: String, anchor: NSWindow? = nil) {
     }
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = "“\((path as NSString).lastPathComponent)” is open in another window."
-    alert.informativeText = "Save there, or close that window first, to avoid overwriting "
-        + "each other's changes."
+    alert.messageText = L.t("conflict.inUse.title", ["name": (path as NSString).lastPathComponent])
+    alert.informativeText = L.t("conflict.inUse.body")
     alert.addButton(withTitle: L.t("common.ok"))
     alert.present(anchoredTo: anchor)   // non-blocking sheet when we have a window to hang it on, else app-modal
 }

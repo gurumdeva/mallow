@@ -139,6 +139,11 @@ enum L {
         "dialog.discard.cancel": "Cancel",
         // common buttons
         "common.ok": "OK",
+        "common.cancel": "Cancel",
+        "rename.confirm": "Rename",
+        // cross-window save-conflict alert (the same file open in two windows)
+        "conflict.inUse.title": "“{name}” is open in another window.",
+        "conflict.inUse.body": "Save there, or close that window first, to avoid overwriting each other's changes.",
         // error — alert titles surfaced from the controller's catch blocks
         "error.save": "Save",
         "error.exportPdf": "PDF Export",
@@ -251,6 +256,10 @@ enum L {
         "dialog.discard.confirm": "무시",
         "dialog.discard.cancel": "취소",
         "common.ok": "확인",
+        "common.cancel": "취소",
+        "rename.confirm": "이름 변경",
+        "conflict.inUse.title": "“{name}”이(가) 다른 윈도우에서 열려 있습니다.",
+        "conflict.inUse.body": "서로의 변경 사항을 덮어쓰지 않도록, 그 윈도우에서 저장하거나 먼저 닫으세요.",
         "error.save": "저장",
         "error.exportPdf": "PDF 내보내기",
         "error.exportHtml": "HTML 내보내기",
@@ -357,6 +366,10 @@ enum L {
         "dialog.discard.confirm": "破棄",
         "dialog.discard.cancel": "キャンセル",
         "common.ok": "OK",
+        "common.cancel": "キャンセル",
+        "rename.confirm": "名称変更",
+        "conflict.inUse.title": "「{name}」は別のウインドウで開いています。",
+        "conflict.inUse.body": "互いの変更を上書きしないよう、そのウインドウで保存するか、先に閉じてください。",
         "error.save": "保存",
         "error.exportPdf": "PDF書き出し",
         "error.exportHtml": "HTML書き出し",

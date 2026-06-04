@@ -95,13 +95,12 @@ struct RenameSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Cancel (Escape) + Rename (default / Return). No good localization key exists for these in
-            // this context (menu.close would be wrong), so they stay literal.
+            // Cancel (Escape) + Rename (default / Return), localized like the rest of the UI.
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                Button("Cancel") { dismiss() }
+                Button(L.t("common.cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Rename", action: commit)
+                Button(L.t("rename.confirm"), action: commit)
                     .keyboardShortcut(.defaultAction)   // Return + the highlighted default button
             }
         }
