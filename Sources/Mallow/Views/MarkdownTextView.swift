@@ -100,15 +100,22 @@ final class MarkdownTextView: NSTextView {
         var lastBaseline = -CGFloat.greatestFiniteMagnitude
         var descBottom = -CGFloat.greatestFiniteMagnitude
         lm.enumerateLineFragments(forGlyphRange: gr) { fragRect, _, _, lineGlyphRange, _ in
-            let g = max(lineGlyphRange.location, gr.location)
+            guard fragRect.height > 0 else { return }   // skip folded / collapsed-fence (zero-height) lines
+            // Measure from the first VISIBLE glyph on the line, skipping leading hidden (`.null`,
+            // zero-width) glyphs. A blockquote line starts with a hidden `>` marker, and
+            // `location(forGlyphAt:)` for a `.null` glyph reports the line-fragment TOP as the baseline —
+            // not the real text baseline — which pushed `capTop` a whole line-leading above the text and
+            // made the quote bar run tall. The first non-null glyph gives the true baseline.
+            let lineEnd = lineGlyphRange.location + lineGlyphRange.length
+            var g = max(lineGlyphRange.location, gr.location)
+            while g < lineEnd, lm.propertyForGlyph(at: g).contains(.null) { g += 1 }
+            guard g < lineEnd else { return }                              // wholly-hidden line
             let ci = lm.characterIndexForGlyph(at: g)
             // Only measure lines whose text is INSIDE `cr`. When a block's range starts with hidden,
             // zero-width glyphs (a code block's collapsed opening ``` fence), `glyphRange(forCharacterRange:)`
             // can snap back to the previous visible glyph — the preceding paragraph's line — and that line
-            // must not be folded into the card. (Without this guard, a code block placed directly under a
-            // paragraph, with no blank line between, drew its card up over that paragraph line.)
+            // must not be folded into the card.
             guard ci >= cr.location, ci < cr.location + cr.length else { return }
-            guard fragRect.height > 0 else { return }   // skip folded / collapsed-fence (zero-height) lines
             let font = (ci < ts.length ? ts.attribute(.font, at: ci, effectiveRange: nil) as? NSFont : nil)
                 ?? self.font ?? NSFont.systemFont(ofSize: 16)
             let baseline = fragRect.minY + lm.location(forGlyphAt: g).y   // baseline in container coords
