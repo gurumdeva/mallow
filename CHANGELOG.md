@@ -9,6 +9,8 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 
 ## [1.0.0] - 2026-06-05
 
+First stable release — **signed with a Developer ID and notarized by Apple**, so it installs with a normal double-click (no more right-click → Open or `xattr` workaround).
+
 ### Changed
 - **Tables now render as a grid.** A GFM table draws as a ruled card — an outer border, a rule under the header and between each row, and a vertical rule between columns. The columns are aligned (each cell is padded to its column's width) so the rules stay straight even with Korean/CJK text, the cells have even padding on all sides (the rows are no longer cramped against the rules), and the `|---|` delimiter row no longer leaves a blank gap. The alignment is display-only; the source bytes are untouched.
 
