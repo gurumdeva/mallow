@@ -78,7 +78,11 @@ final class MallowAppDelegate: NSObject, NSApplicationDelegate {
     /// Confirm before quitting if any window has unsaved changes (⌘Q closes all windows at once, which
     /// would otherwise bypass the per-window close prompt). Mirrors the Tauri app's dirty-window guard.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        confirmQuitIfDirty() ? .terminateNow : .terminateCancel
+        guard confirmQuitIfDirty() else { return .terminateCancel }
+        // Force the debounced session write (window geometry + last-edited file) before we exit, so
+        // quitting within the ~0.4s save-debounce window doesn't drop the final state on the floor.
+        SessionStore.flushNow()
+        return .terminateNow
     }
 
     /// Drop the automatic window-tab affordances (Show Tab Bar / Show All Tabs) — this is a single-window-
@@ -102,6 +106,11 @@ final class MallowAppDelegate: NSObject, NSApplicationDelegate {
 struct WindowConfigurator: NSViewRepresentable {
     /// This window's document — read for the dirty check on close and the last-file path for the session.
     let doc: EditorDocument
+
+    /// Latched once the launch's FIRST editor window has had the saved geometry applied, so the restore
+    /// targets exactly one window — later windows keep SwiftUI's cascade instead of all stacking onto the
+    /// one restored frame. Main-thread-only (every `attach` runs on main), like the rest of this file.
+    static var didApplyRestoredFrame = false
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
@@ -159,6 +168,17 @@ struct WindowConfigurator: NSViewRepresentable {
                 previousDelegate = existing
             }
             window.delegate = self
+
+            // Restore the last session's window geometry — but only for the FIRST editor window of the
+            // launch (the latch ensures later windows keep their cascade rather than all snapping onto the
+            // saved frame). Done before session tracking starts so tracking's initial capture records this
+            // restored frame, not the transient default size.
+            if !WindowConfigurator.didApplyRestoredFrame {
+                WindowConfigurator.didApplyRestoredFrame = true
+                if let frame = SessionStore.restoredFrame() {
+                    window.setFrame(frame, display: true)
+                }
+            }
 
             // Persist geometry + last-edited file for this window. The closure reads the live path each
             // time the window becomes main, so renames/saves are reflected without re-registration.

@@ -69,6 +69,11 @@ final class EditorBehaviors {
         guard !isSaving else { return }
         guard let path = doc.vm.filePath, doc.vm.isDirty else { return }
 
+        // Don't let a background autosave clobber a file another window now owns (the manual Save path in
+        // DocumentActions.write guards this the same way). Skip silently — the other window is the live
+        // writer; a later edit reschedules, and a manual ⌘S would surface the conflict via an alert.
+        if pathOpenInOtherWindow(path, excluding: doc) { return }
+
         isSaving = true
         defer { isSaving = false }
 

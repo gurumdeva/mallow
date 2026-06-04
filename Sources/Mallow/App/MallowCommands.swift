@@ -9,8 +9,14 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct MallowCommands: Commands {
-    /// The front editor window's document, resolved at the moment a command fires.
-    private var doc: EditorDocument? { AppState.shared.activeDoc }
+    /// The front editor window's document, resolved at the moment a command fires — guarded on a LIVE
+    /// window. A just-closed window's document can briefly linger in `activeDoc` (focus moving to another
+    /// app, or before its `onDisappear` clears it); acting on one would target a torn-down editor, so a
+    /// document whose NSWindow is gone reads as "no active document" and the command simply no-ops.
+    private var doc: EditorDocument? {
+        guard let d = AppState.shared.activeDoc, d.textView.window != nil else { return nil }
+        return d
+    }
     /// The editor coordinator behind that document (for paste/clipboard commands that act on the text view).
     private var coordinator: MarkdownEditor.Coordinator? { doc?.textView.delegate as? MarkdownEditor.Coordinator }
     @Environment(\.openWindow) private var openWindow

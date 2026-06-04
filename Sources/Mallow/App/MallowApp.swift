@@ -52,12 +52,23 @@ struct EditorWindow: View {
         }
         .ignoresSafeArea(edges: .top)   // chrome flush at the very top of the window
         .frame(minWidth: 480, minHeight: 360)
+        // The macOS window title — what the Window menu, Mission Control, and ⌘` cycling show. Bound to
+        // this window's OWN document so every window is named for its file/heading instead of all reading
+        // "Mallow". `doc.title` reads `revision` (bumped on edit/save/rename/reload/open), so it tracks the
+        // chrome live. `.hiddenTitleBar` hides the title-bar TEXT, but this still drives the title string.
+        .navigationTitle(doc.title)
         .background(Theme.bg)
         .background(WindowActiveTracker(doc: doc))   // report this window active to AppState for the menu commands
         .background(WindowConfigurator(doc: doc))    // close-confirm on unsaved edits + session geometry persistence
         .sheet(isPresented: $showRename) { RenameSheet(doc: doc) }
         .onAppear { WindowRegistry.shared.register(doc) }
-        .onDisappear { WindowRegistry.shared.unregister(doc) }
+        .onDisappear {
+            WindowRegistry.shared.unregister(doc)
+            // Drop the app-wide active-doc pointer if it was us, so a menu command fired after this window
+            // closes can't act on — or strongly retain (leak) — a torn-down document + its NSTextView. A
+            // surviving window re-asserts itself active via WindowActiveTracker when it next becomes key.
+            if AppState.shared.activeDoc === doc { AppState.shared.activeDoc = nil }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .mallowOpenFile)) { note in
             guard let path = note.userInfo?["path"] as? String, claimFileOpen(path) else { return }
             // Focus an already-open window for this file instead of opening a duplicate (data-safety).
