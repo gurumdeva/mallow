@@ -99,6 +99,32 @@ else
   echo "   inkstone:   statically linked (no dylib to vendor — bundle is self-contained)"
 fi
 
+# ---- 3.5. code sign (only when a Developer ID Application cert is available) -
+# Signing + notarization let the .app install with a normal double-click (no
+# right-click → Open). This needs the PAID Apple Developer Program — a
+# "Developer ID Application" certificate in the keychain. Until one exists this
+# step is skipped automatically and the bundle stays unsigned (unchanged
+# behaviour). Override the identity with SIGN_IDENTITY=… if auto-detect picks
+# the wrong one. After this, notarize the DMG with ./notarize-dmg.sh.
+SIGN_IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
+  | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
+SIGNED=0
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+  echo "== code signing (hardened runtime) as: $SIGN_IDENTITY =="
+  # Inside-out: sign nested dylibs first, then the bundle. Hardened runtime
+  # (--options runtime) is required for notarization; the same-identity dylib
+  # signature satisfies its library validation (no disable-library-validation).
+  while IFS= read -r -d '' lib; do
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$lib"
+  done < <(find "$FRAMEWORKS_DIR" -name '*.dylib' -print0 2>/dev/null)
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+  codesign --verify --deep --strict --verbose=2 "$APP"
+  SIGNED=1
+  echo "   signed + verified ✓"
+else
+  echo "   signing:    (no 'Developer ID Application' cert in keychain — bundle left UNSIGNED)"
+fi
+
 # ---- 4. report -------------------------------------------------------------
 APP_ABS="$(cd "$BUILD_DIR" && pwd)/$APP_NAME.app"
 echo
@@ -107,11 +133,18 @@ echo
 echo "  Verify linkage is bundle-relative (only @rpath + system frameworks):"
 echo "    otool -L \"$APP_ABS/Contents/MacOS/$APP_NAME\" | grep -iv /System/Library"
 echo
-echo "  This bundle is UNSIGNED (no code signing / notarization)."
-echo "  Gatekeeper will block a double-click on first launch. To open it:"
-echo "    • right-click the .app in Finder → Open → Open  (one-time per machine), or"
-echo "    • strip the quarantine flag:"
-echo "        xattr -dr com.apple.quarantine \"$APP_ABS\""
+if [ "$SIGNED" = "1" ]; then
+  echo "  This bundle is SIGNED (Developer ID, hardened runtime). Next: notarize the DMG so"
+  echo "  it installs with a plain double-click —"
+  echo "    hdiutil create -volname Mallow -srcfolder <stage> -format UDZO Mallow_<ver>_aarch64.dmg"
+  echo "    ./notarize-dmg.sh Mallow_<ver>_aarch64.dmg"
+else
+  echo "  This bundle is UNSIGNED (no code signing / notarization)."
+  echo "  Gatekeeper will block a double-click on first launch. To open it:"
+  echo "    • right-click the .app in Finder → Open → Open  (one-time per machine), or"
+  echo "    • strip the quarantine flag:"
+  echo "        xattr -dr com.apple.quarantine \"$APP_ABS\""
+fi
 echo
 echo "  Test Finder-style open (passes a file to the app):"
 echo "    open -a \"$APP_ABS\" /path/to/file.md"

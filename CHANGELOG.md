@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
-## [0.30.3] - 2026-06-04
+## [1.0.0] - 2026-06-05
 
 ### Changed
 - **Tables now render as a grid.** A GFM table draws as a ruled card — an outer border, a rule under the header and between each row, and a vertical rule between columns. The columns are aligned (each cell is padded to its column's width) so the rules stay straight even with Korean/CJK text, the cells have even padding on all sides (the rows are no longer cramped against the rules), and the `|---|` delimiter row no longer leaves a blank gap. The alignment is display-only; the source bytes are untouched.

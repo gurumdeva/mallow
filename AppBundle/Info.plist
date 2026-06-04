@@ -28,9 +28,9 @@
 	<string>6.0</string>
 
 	<key>CFBundleShortVersionString</key>
-	<string>0.30.2</string>
+	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>5</string>
 
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
