@@ -13,6 +13,7 @@ final class MarkdownTextView: NSTextView {
     var tableCards: [NSRange] = [] { didSet { needsDisplay = true } }   // GFM table → rounded surface card
     var quoteBars: [NSRange] = [] { didSet { needsDisplay = true } }
     var ruleLines: [NSRange] = [] { didSet { needsDisplay = true } }
+    var inlineCodeRuns: [NSRange] = [] { didSet { needsDisplay = true } }   // `code` spans → rounded pill
 
     // Defeat "Add period with double-space" — a global text-input default (NSAutomaticPeriodSubstitution-
     // Enabled) with no per-view or app-domain override. On the 2nd space the system calls
@@ -101,21 +102,22 @@ final class MarkdownTextView: NSTextView {
         var descBottom = -CGFloat.greatestFiniteMagnitude
         lm.enumerateLineFragments(forGlyphRange: gr) { fragRect, _, _, lineGlyphRange, _ in
             guard fragRect.height > 0 else { return }   // skip folded / collapsed-fence (zero-height) lines
-            // Measure from the first VISIBLE glyph on the line, skipping leading hidden (`.null`,
-            // zero-width) glyphs. A blockquote line starts with a hidden `>` marker, and
-            // `location(forGlyphAt:)` for a `.null` glyph reports the line-fragment TOP as the baseline —
-            // not the real text baseline — which pushed `capTop` a whole line-leading above the text and
-            // made the quote bar run tall. The first non-null glyph gives the true baseline.
+            // Measure from the first glyph that is BOTH inside `cr` AND visible. Two reasons it may not be
+            // `gr`'s first glyph: (1) `glyphRange(forCharacterRange:)` snaps a range that starts on a hidden
+            // (`.null`, zero-width) glyph — a blockquote's `>` marker, an inline-code backtick — back to the
+            // previous visible glyph, which can be the char (or whole line) BEFORE `cr`; (2) a `.null` glyph's
+            // `location(forGlyphAt:)` reports the line-fragment TOP as the baseline, not the real text
+            // baseline, which would push `capTop` a line-leading above the text. Advancing past both gives
+            // the true first-letter baseline, so the bar/pill hugs the text instead of towering above it.
             let lineEnd = lineGlyphRange.location + lineGlyphRange.length
             var g = max(lineGlyphRange.location, gr.location)
-            while g < lineEnd, lm.propertyForGlyph(at: g).contains(.null) { g += 1 }
-            guard g < lineEnd else { return }                              // wholly-hidden line
+            while g < lineEnd,
+                  lm.characterIndexForGlyph(at: g) < cr.location || lm.propertyForGlyph(at: g).contains(.null) {
+                g += 1
+            }
+            guard g < lineEnd else { return }                              // nothing visible inside cr on this line
             let ci = lm.characterIndexForGlyph(at: g)
-            // Only measure lines whose text is INSIDE `cr`. When a block's range starts with hidden,
-            // zero-width glyphs (a code block's collapsed opening ``` fence), `glyphRange(forCharacterRange:)`
-            // can snap back to the previous visible glyph — the preceding paragraph's line — and that line
-            // must not be folded into the card.
-            guard ci >= cr.location, ci < cr.location + cr.length else { return }
+            guard ci < cr.location + cr.length else { return }             // first visible glyph is past cr
             let font = (ci < ts.length ? ts.attribute(.font, at: ci, effectiveRange: nil) as? NSFont : nil)
                 ?? self.font ?? NSFont.systemFont(ofSize: 16)
             let baseline = fragRect.minY + lm.location(forGlyphAt: g).y   // baseline in container coords
@@ -161,6 +163,19 @@ final class MarkdownTextView: NSTextView {
             let bar = NSRect(x: origin.x + 6, y: origin.y + a.capTop,
                              width: 3, height: max(1, a.baseline - a.capTop))
             NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
+        }
+
+        // Inline `code`: a small rounded pill hugging the run (cap → baseline + 2pt), drawn here rather than
+        // via a `.backgroundColor` attribute — that fills the whole airy line fragment, leaving a tall gap
+        // above the text. boundingRect gives the horizontal extent; decorationAnchors the tight vertical.
+        mallowElevated.setFill()
+        for r in inlineCodeRuns {
+            let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+            guard gr.length > 0, let a = decorationAnchors(forCharacterRange: r) else { continue }
+            let box = lm.boundingRect(forGlyphRange: gr, in: tc)
+            let pill = NSRect(x: origin.x + box.minX - 2, y: origin.y + a.capTop - 2,
+                              width: box.width + 4, height: (a.baseline - a.capTop) + 4)
+            NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
         }
 
         mallowBorderColor.setFill()

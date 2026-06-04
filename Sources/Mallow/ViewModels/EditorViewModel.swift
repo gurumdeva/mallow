@@ -216,6 +216,7 @@ final class EditorViewModel {
         var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
         var codeCards: [NSRange] = [] // code-block ranges → rounded elevated card drawn by the text view
         var tableCards: [NSRange] = [] // GFM table ranges → rounded surface card (monospace cells, dimmed pipes)
+        var inlineCode: [NSRange] = [] // inline `code` ranges → rounded pill drawn by the text view (tight)
 
         storage.beginEditing()
         storage.setAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor,
@@ -264,7 +265,8 @@ final class EditorViewModel {
                                          value: NSUnderlineStyle.single.rawValue, range: nr)
                 }
                 if inline.marks.contains("Code") {
-                    storage.addAttribute(.backgroundColor, value: mallowElevated, range: nr)   // solid #2c2c2e pill
+                    inlineCode.append(nr)   // pill drawn by the text view (tight cap→baseline; a .backgroundColor
+                                            // attribute would fill the whole airy line fragment → tall top gap)
                 }
                 if inline.kindTag == "Link" {
                     storage.addAttribute(.foregroundColor, value: NSColor.linkColor, range: nr)
@@ -289,6 +291,7 @@ final class EditorViewModel {
         textView.tableCards = tableCards
         textView.quoteBars = quotes
         textView.ruleLines = rules
+        textView.inlineCodeRuns = inlineCode
         textView.needsDisplay = true
     }
 
