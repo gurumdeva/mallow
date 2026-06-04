@@ -79,8 +79,11 @@ final class EditorViewModel {
     func refresh() {
         guard let textView else { return }
         blocks = inkParseBlocks(textView.string)
-        restyle()
+        // Hidden set FIRST: restyle's table pass measures each cell's VISIBLE width (markers dropped) to
+        // size the grid columns, so it needs `hiddenChars` already computed. The two passes are otherwise
+        // independent (recomputeHidden reads only the parse + string; restyle reads the parse + hidden set).
         recomputeHidden()
+        restyle()
         applyFocus()
     }
 
@@ -216,7 +219,7 @@ final class EditorViewModel {
         var quotes: [NSRange] = []   // blockquote ranges → 3px left bar drawn by the text view
         var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
         var codeCards: [NSRange] = [] // code-block ranges → rounded elevated card drawn by the text view
-        var tableCards: [NSRange] = [] // GFM table ranges → rounded surface card (monospace cells, dimmed pipes)
+        var tableGrids: [TableGrid] = [] // GFM tables → card + aligned grid (block range + column-rule offsets)
         var inlineCode: [NSRange] = [] // inline `code` ranges → rounded pill drawn by the text view (tight)
 
         storage.beginEditing()
@@ -253,8 +256,10 @@ final class EditorViewModel {
             case "ThematicBreak":
                 if let nr = nsRange(block.range) { rules.append(nr) }   // dashes hidden; a rule is drawn instead
             case "Table":
-                if let nr = TableRendering.style(block, map: map, storage: storage) { tableCards.append(nr) }
-                continue   // TableRendering owns the cell font + dimmed pipes; skip the generic inline pass
+                if let grid = TableRendering.style(block, map: map, storage: storage, hidden: hiddenChars) {
+                    tableGrids.append(grid)
+                }
+                continue   // TableRendering owns the cell font + column kern; skip the generic inline pass
             default:
                 break
             }
@@ -289,7 +294,7 @@ final class EditorViewModel {
 
         storage.endEditing()
         textView.codeCards = codeCards     // hand the decoration ranges to the view's draw pass
-        textView.tableCards = tableCards
+        textView.tableGrids = tableGrids
         textView.quoteBars = quotes
         textView.ruleLines = rules
         textView.inlineCodeRuns = inlineCode

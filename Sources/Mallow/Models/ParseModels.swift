@@ -46,16 +46,31 @@ extension KeyedDecodingContainer {
     }
 }
 
+/// One GFM table cell from the engine: its grid position, source BYTE range (the content between the
+/// pipes, GFM padding spaces included), and the column's alignment. Present only on `Table` blocks; the
+/// header is row 0, body rows follow, and a short body row is padded with empty (`range.length == 0`)
+/// cells so every row has the header's column count. Drives the aligned-grid layout in TableRendering.
+struct PTableCell: Decodable {
+    let row: Int
+    let col: Int
+    let range: PRange
+    let align: String   // "None" / "Left" / "Center" / "Right" (serde unit-variant → bare string)
+}
+
 struct PBlock: Decodable {
     let range: PRange
     let inlines: [PInline]
+    let cells: [PTableCell]   // GFM table cells (empty for every non-Table block — key omitted by serde)
     let kindTag: String     // "Paragraph" / "Heading" / "List" / "BlockQuote" / "CodeBlock" / …
     let headingLevel: Int?
-    enum CodingKeys: String, CodingKey { case kind, range, inlines }
+    enum CodingKeys: String, CodingKey { case kind, range, inlines, cells }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         range = try c.decode(PRange.self, forKey: .range)
         inlines = try c.decode([PInline].self, forKey: .inlines)
+        // `cells` is serialized only for tables (skip_serializing_if on the Rust side), so decode it as
+        // optional and default to empty — a paragraph/heading/etc. simply has no cells.
+        cells = (try? c.decode([PTableCell].self, forKey: .cells)) ?? []
         // serde encodes BlockKind: unit variants as a string ("Paragraph"), data variants as a
         // single-key object ({"Heading": 2} / {"CodeBlock": {…}}). Pull the tag (+ heading level).
         let (tag, obj, dataKey) = c.serdeTag(forKey: .kind, default: "Other")

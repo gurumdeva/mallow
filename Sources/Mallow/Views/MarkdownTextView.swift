@@ -10,7 +10,7 @@ final class MarkdownTextView: NSTextView {
     // left bar; thematic-break ranges get a 1px horizontal rule (their source dashes are hidden), the
     // two block decorations NSTextView can't express as text attributes. Redraw when they change.
     var codeCards: [NSRange] = [] { didSet { needsDisplay = true } }
-    var tableCards: [NSRange] = [] { didSet { needsDisplay = true } }   // GFM table → rounded surface card
+    var tableGrids: [TableGrid] = [] { didSet { needsDisplay = true } }   // GFM tables → card + aligned grid
     var quoteBars: [NSRange] = [] { didSet { needsDisplay = true } }
     var ruleLines: [NSRange] = [] { didSet { needsDisplay = true } }
     var inlineCodeRuns: [NSRange] = [] { didSet { needsDisplay = true } }   // `code` spans → rounded pill
@@ -149,12 +149,14 @@ final class MarkdownTextView: NSTextView {
             let card = NSRect(x: origin.x, y: origin.y + top, width: tc.size.width - 8, height: bottom - top)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
-        // GFM tables: an elevated card + a full 1px grid (outer border + a rule under each row + a rule at
-        // each column boundary). Rows are the line fragments (the `|---|` delimiter row is collapsed to zero
-        // height, so it's skipped). Columns are aligned by TableRendering's `.kern` pass, so the first row's
-        // `|` positions match every row's — draw a vertical rule at each interior `|`.
-        let tableNS = textStorage?.string as NSString?
-        for r in tableCards {
+        // GFM tables: an elevated card + a 1px grid (outer border + a rule under each row + a rule at each
+        // interior column boundary). Rows are the line fragments (the `|---|` delimiter row is collapsed to
+        // zero height, so it's skipped). The column rules come from TableRendering's computed
+        // `interiorEdges` — x-offsets from the table's left text edge that share the SAME column-width model
+        // the cell kern uses, so rules and text can't drift (the old per-row `|`-glyph probe was ragged for
+        // CJK). They're anchored to the table's first glyph (its probed left edge).
+        for grid in tableGrids {
+            let r = grid.blockRange
             let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
             guard gr.length > 0 else { continue }
             var rows: [NSRect] = []
@@ -162,39 +164,35 @@ final class MarkdownTextView: NSTextView {
                 if frag.height > 0 { rows.append(frag) }   // skip the collapsed delimiter row
             }
             guard let first = rows.first, let last = rows.last else { continue }
-            let card = NSRect(x: origin.x, y: origin.y + first.minY,
-                              width: tc.size.width - 8, height: last.maxY - first.minY)
+            // The table's left edge, probed from its first glyph — anchors the card AND the column rules,
+            // so both absorb the container/line insets and share one column model (no drift).
+            let leftGlyph = lm.glyphRange(forCharacterRange: NSRange(location: r.location, length: 1),
+                                          actualCharacterRange: nil)
+            let leftX = origin.x + lm.boundingRect(forGlyphRange: leftGlyph, in: tc).minX
+            // Card hugs the table's actual width (not the page width), so a narrow table doesn't trail a
+            // wide empty card. Clamp the width so it can't overrun the text container.
+            let width = min(grid.totalWidth, tc.size.width - (leftX - origin.x) - 4)
+            let card = NSRect(x: leftX, y: origin.y + first.minY, width: width, height: last.maxY - first.minY)
             mallowElevated.setFill()
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
-            borderStrong.setStroke()   // table grid needs to be visible on the card (mallowBorderColor α0.08 is too faint)
+            mallowBorderColor.setStroke()
             let border = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
             border.lineWidth = 1
             border.stroke()
-            let grid = NSBezierPath()
-            grid.lineWidth = 1
+            let rules = NSBezierPath()
+            rules.lineWidth = 1
             for i in 0 ..< (rows.count - 1) {   // a rule under every row but the last (header rule + row separators)
                 let y = (origin.y + rows[i].maxY).rounded() + 0.5
-                grid.move(to: NSPoint(x: card.minX, y: y))
-                grid.line(to: NSPoint(x: card.maxX, y: y))
+                rules.move(to: NSPoint(x: card.minX, y: y))
+                rules.line(to: NSPoint(x: card.maxX, y: y))
             }
-            // Vertical column rules at the interior `|` of the first row (its outer two `|` are the border).
-            if let ns = tableNS {
-                let firstLine = ns.lineRange(for: NSRange(location: r.location, length: 0))
-                let lineHi = min(firstLine.location + firstLine.length, r.location + r.length)
-                var pipes: [Int] = []
-                var i = firstLine.location
-                while i < lineHi { if ns.character(at: i) == 124 { pipes.append(i) }; i += 1 }   // |
-                if pipes.count >= 3 {
-                    for p in pipes[1 ..< (pipes.count - 1)] {
-                        let pg = lm.glyphRange(forCharacterRange: NSRange(location: p, length: 1), actualCharacterRange: nil)
-                        let x = (origin.x + lm.boundingRect(forGlyphRange: pg, in: tc).minX).rounded() + 0.5
-                        guard x > card.minX + 1, x < card.maxX - 1 else { continue }
-                        grid.move(to: NSPoint(x: x, y: card.minY))
-                        grid.line(to: NSPoint(x: x, y: card.maxY))
-                    }
-                }
+            for edge in grid.interiorEdges {   // vertical column rules at the computed interior offsets
+                let x = (leftX + edge).rounded() + 0.5
+                guard x > card.minX + 1, x < card.maxX - 1 else { continue }
+                rules.move(to: NSPoint(x: x, y: card.minY))
+                rules.line(to: NSPoint(x: x, y: card.maxY))
             }
-            grid.stroke()
+            rules.stroke()
         }
 
         // Blockquote: a 3pt left bar spanning cap line → baseline, i.e. the height of the quoted text.

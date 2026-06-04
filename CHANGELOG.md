@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.0.1] - 2026-06-05
+
+### Fixed
+- **Table columns now line up correctly with Korean/CJK text.** A table's column widths are now derived from the engine's actual cell boundaries and measured from the rendered glyphs, so the vertical rules stay straight even when cells mix Hangul, symbols, and Latin — the 1.0.0 grid padded by a monospace approximation that drifted on CJK (the column rules looked ragged). The table also honors each column's left / center / right alignment, and its card now hugs the table's width instead of spanning the page. Still display-only; your source bytes are untouched.
+
 ## [1.0.0] - 2026-06-05
 
 First stable release — **signed with a Developer ID and notarized by Apple**, so it installs with a normal double-click (no more right-click → Open or `xattr` workaround).
