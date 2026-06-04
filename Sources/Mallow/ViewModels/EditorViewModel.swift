@@ -393,7 +393,9 @@ final class EditorViewModel {
         // the first/below the last code line. Merging them here reuses the same zero-height-fragment path.
         // Zero-height (collapse) both code-block ``` fence lines and the GFM table `|---|` delimiter row,
         // so neither leaves a blank full-height row. (Their glyphs are already hidden; this removes the row.)
-        foldedChars = fold.union(collector.fenceChars).union(table.hide)
+        // `table.collapse` (not `table.hide`) includes the delimiter row's newline — needed because the
+        // all-hidden row's fragment can report the newline as its start char.
+        foldedChars = fold.union(collector.fenceChars).union(table.collapse)
 
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {
@@ -741,10 +743,12 @@ private struct TablePipeScanner {
     let ns: CharBuffer
     let total: Int
 
-    /// `pipes` = bar indices to render as spaces; `hide` = delimiter-row chars to collapse. `source`
-    /// bridges each block's engine byte range to UTF-16.
-    func scan(_ blocks: [PBlock], map: [Int]) -> (pipes: Set<Int>, hide: Set<Int>) {
-        var pipes = Set<Int>(), hide = Set<Int>()
+    /// `pipes` = bar indices to render as spaces; `hide` = delimiter-row chars whose GLYPHS to drop (no
+    /// newline — hiding a newline glyph would merge lines); `collapse` = the delimiter row's chars INCLUDING
+    /// its newline, for the zero-height fold set (the row is all-hidden, so its fragment can report the
+    /// newline as the line start — that char must be in the fold set or the row won't collapse).
+    func scan(_ blocks: [PBlock], map: [Int]) -> (pipes: Set<Int>, hide: Set<Int>, collapse: Set<Int>) {
+        var pipes = Set<Int>(), hide = Set<Int>(), collapse = Set<Int>()
         for block in blocks where block.kindTag == "Table" {
             let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: total)
             var lineStart = bLo
@@ -770,7 +774,11 @@ private struct TablePipeScanner {
                 // index, so a stray leading line in the block range can't throw it off; hide that row whole.
                 if !foundDelimiter, sawDash, sawNonSpace, onlySeparatorChars {
                     var j = line.location
-                    while j < lineHi { if ns.character(at: j) != 10 { hide.insert(j) }; j += 1 }
+                    while j < lineHi {
+                        if ns.character(at: j) != 10 { hide.insert(j) }   // drop the glyph (not the newline)
+                        collapse.insert(j)                                // fold the whole line incl. newline
+                        j += 1
+                    }
                     foundDelimiter = true
                 } else {
                     for p in linePipes { pipes.insert(p) }
@@ -779,6 +787,6 @@ private struct TablePipeScanner {
                 lineStart = line.location + line.length
             }
         }
-        return (pipes, hide)
+        return (pipes, hide, collapse)
     }
 }

@@ -76,12 +76,81 @@ enum TableRendering {
 
         // 2) Structure (the `|` bars + the `|---|` delimiter row) is NOT styled here anymore — the
         //    view-model's hide pass renders every `|` as a space and collapses the delimiter row, so the
-        //    raw table markers never show (the app's markdown-as-truth-but-no-visible-markers rule). The
-        //    monospace font above keeps the now-bar-less columns aligned.
+        //    raw table markers never show (the app's markdown-as-truth-but-no-visible-markers rule).
+
+        // 3) Column alignment: pad each cell to its column's widest cell via `.kern` on the cell's last
+        //    char, so the (now-bar-less) `|` separators line up into straight columns and the text view can
+        //    rule them. Monospace alone can't align CJK (Hangul glyphs aren't one cell wide). `.kern` is a
+        //    display attribute, so the source bytes stay untouched (markdown-as-truth) and editing is normal.
+        alignColumns(blockRange, ns: ns, storage: storage)
 
         // The block's NSRange — the caller appends it to the table-card decoration list (see file footer /
         // integration notes), which MarkdownTextView.drawBackground renders as a subtle elevated card.
         return blockRange
+    }
+
+    /// Pad each table cell to its column's widest cell (via `.kern` on the cell's last character) so the
+    /// `|` separators line up vertically across rows — the precondition for the text view drawing straight
+    /// column rules. Best-effort: handles well-formed `|`-delimited rows (the GFM-with-outer-pipes shape);
+    /// escaped `\|` and code-span pipes aren't special-cased (rare). The `|---|` delimiter row is skipped.
+    private static func alignColumns(_ blockRange: NSRange, ns: NSString, storage: NSTextStorage) {
+        let bHi = blockRange.location + blockRange.length
+        // Per row, the cell content ranges (the text BETWEEN consecutive pipes). Delimiter row excluded.
+        var rows: [[NSRange]] = []
+        var lineStart = blockRange.location
+        while lineStart < bHi {
+            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+            let lineHi = min(line.location + line.length, bHi)
+            var pipes: [Int] = []
+            var sawDash = false, sawNonSpace = false, onlySeparator = true
+            var i = line.location
+            while i < lineHi {
+                switch ns.character(at: i) {
+                case 124: pipes.append(i); sawNonSpace = true          // |
+                case 45:  sawDash = true; sawNonSpace = true           // -
+                case 58:  sawNonSpace = true                           // :
+                case 32, 9, 10, 13: break                              // ws / terminators
+                default:  onlySeparator = false; sawNonSpace = true
+                }
+                i += 1
+            }
+            let isDelimiter = sawDash && sawNonSpace && onlySeparator
+            if !isDelimiter, pipes.count >= 2 {
+                var cells: [NSRange] = []
+                for k in 0 ..< (pipes.count - 1) {
+                    let lo = pipes[k] + 1, hi = pipes[k + 1]
+                    cells.append(NSRange(location: lo, length: max(0, hi - lo)))
+                }
+                rows.append(cells)
+            }
+            if line.length == 0 { break }
+            lineStart = line.location + line.length
+        }
+        let colCount = rows.map(\.count).max() ?? 0
+        guard colCount > 0 else { return }
+
+        // Widest cell per column.
+        var colWidth = [CGFloat](repeating: 0, count: colCount)
+        var cellWidth: [[CGFloat]] = []
+        for cells in rows {
+            var ws = [CGFloat](repeating: 0, count: cells.count)
+            for (c, range) in cells.enumerated() where c < colCount {
+                let w = range.length > 0 ? storage.attributedSubstring(from: range).size().width : 0
+                ws[c] = w
+                colWidth[c] = max(colWidth[c], w)
+            }
+            cellWidth.append(ws)
+        }
+        // Pad each cell to its column width: kern AFTER the cell's last char adds the slack, so the next
+        // `|` lands at the column boundary (same x in every row).
+        for (r, cells) in rows.enumerated() {
+            for (c, range) in cells.enumerated() where c < colCount {
+                let pad = colWidth[c] - cellWidth[r][c]
+                guard pad > 0.5, range.length > 0 else { continue }
+                let last = NSRange(location: range.location + range.length - 1, length: 1)
+                storage.addAttribute(.kern, value: pad, range: last)
+            }
+        }
     }
 
     // MARK: - metrics

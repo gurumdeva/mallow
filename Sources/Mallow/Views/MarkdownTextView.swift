@@ -149,10 +149,11 @@ final class MarkdownTextView: NSTextView {
             let card = NSRect(x: origin.x, y: origin.y + top, width: tc.size.width - 8, height: bottom - top)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
-        // GFM tables: an elevated card + a 1px grid (outer border + a rule under each row). Rows are the
-        // line fragments (the `|---|` delimiter row is collapsed to zero height, so it's skipped). Column
-        // rules aren't drawn — the raw monospace flow doesn't align CJK cells into straight columns; true
-        // per-column borders need engine cell ranges (tracked as a separate task).
+        // GFM tables: an elevated card + a full 1px grid (outer border + a rule under each row + a rule at
+        // each column boundary). Rows are the line fragments (the `|---|` delimiter row is collapsed to zero
+        // height, so it's skipped). Columns are aligned by TableRendering's `.kern` pass, so the first row's
+        // `|` positions match every row's — draw a vertical rule at each interior `|`.
+        let tableNS = textStorage?.string as NSString?
         for r in tableCards {
             let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
             guard gr.length > 0 else { continue }
@@ -169,14 +170,31 @@ final class MarkdownTextView: NSTextView {
             let border = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
             border.lineWidth = 1
             border.stroke()
-            let sep = NSBezierPath()
-            sep.lineWidth = 1
+            let grid = NSBezierPath()
+            grid.lineWidth = 1
             for i in 0 ..< (rows.count - 1) {   // a rule under every row but the last (header rule + row separators)
                 let y = (origin.y + rows[i].maxY).rounded() + 0.5
-                sep.move(to: NSPoint(x: card.minX, y: y))
-                sep.line(to: NSPoint(x: card.maxX, y: y))
+                grid.move(to: NSPoint(x: card.minX, y: y))
+                grid.line(to: NSPoint(x: card.maxX, y: y))
             }
-            sep.stroke()
+            // Vertical column rules at the interior `|` of the first row (its outer two `|` are the border).
+            if let ns = tableNS {
+                let firstLine = ns.lineRange(for: NSRange(location: r.location, length: 0))
+                let lineHi = min(firstLine.location + firstLine.length, r.location + r.length)
+                var pipes: [Int] = []
+                var i = firstLine.location
+                while i < lineHi { if ns.character(at: i) == 124 { pipes.append(i) }; i += 1 }   // |
+                if pipes.count >= 3 {
+                    for p in pipes[1 ..< (pipes.count - 1)] {
+                        let pg = lm.glyphRange(forCharacterRange: NSRange(location: p, length: 1), actualCharacterRange: nil)
+                        let x = (origin.x + lm.boundingRect(forGlyphRange: pg, in: tc).minX).rounded() + 0.5
+                        guard x > card.minX + 1, x < card.maxX - 1 else { continue }
+                        grid.move(to: NSPoint(x: x, y: card.minY))
+                        grid.line(to: NSPoint(x: x, y: card.maxY))
+                    }
+                }
+            }
+            grid.stroke()
         }
 
         // Blockquote: a 3pt left bar spanning cap line → baseline, i.e. the height of the quoted text.

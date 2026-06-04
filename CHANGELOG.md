@@ -10,7 +10,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 ## [0.30.3] - 2026-06-04
 
 ### Changed
-- **Tables now render with a grid.** A GFM table draws as a ruled card — an outer border with a rule under the header and between each row — so rows read as distinct cells, and the `|---|` delimiter row no longer leaves a blank gap. (Per-column vertical borders aren't drawn yet: the raw text flow doesn't align CJK columns into straight lines, which needs engine cell-range support — tracked separately.)
+- **Tables now render as a grid.** A GFM table draws as a ruled card — an outer border, a rule under the header and between each row, and a vertical rule between columns. The columns are aligned (each cell is padded to its column's width) so the rules stay straight even with Korean/CJK text, and the `|---|` delimiter row no longer leaves a blank gap. The alignment is display-only; the source bytes are untouched.
 
 ## [0.30.2] - 2026-06-04
 
