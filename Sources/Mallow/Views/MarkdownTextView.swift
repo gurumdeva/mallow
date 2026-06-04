@@ -86,32 +86,40 @@ final class MarkdownTextView: NSTextView {
         registerForDraggedTypes([.fileURL, .png, .tiff])
     }
 
-    /// Vertically-tight bounds (in text-container coords) for a block decoration spanning `cr`.
-    /// `boundingRect(forGlyphRange:)` returns full LINE-FRAGMENT rects, and the airy `lineHeightMultiple`
-    /// adds its extra leading ABOVE each glyph — so a card/bar drawn from that rect floats above the text
-    /// (a gap at the top) and a left bar runs taller than its text. This walks the fragments and measures
-    /// from the first content line's glyph ascent to the last content line's descent, so decorations hug
-    /// the glyphs. Zero-height lines (folded sections + the hidden ``` fence lines) are skipped, so the
-    /// top is taken from the first REAL code line, not the collapsed opening fence.
-    private func tightDecorationBox(forCharacterRange cr: NSRange) -> NSRect? {
-        guard let lm = layoutManager, let tc = textContainer, let ts = textStorage else { return nil }
+    /// Vertical anchors (text-container coords) for a block decoration spanning `cr`, measured from the
+    /// actual glyphs — NOT from `boundingRect`, whose full LINE-FRAGMENT rects include the airy
+    /// `lineHeightMultiple` leading above each line AND the font's ascent/descent slack. Returns the
+    /// first content line's CAP top (the visible letter tops, not the much-higher font ascender), the
+    /// last content line's BASELINE, and the last line's descender bottom. Zero-height lines (folded
+    /// sections + the hidden ``` fence lines) are skipped, so the top is the first REAL code line.
+    private func decorationAnchors(forCharacterRange cr: NSRange) -> (capTop: CGFloat, baseline: CGFloat, descBottom: CGFloat)? {
+        guard let lm = layoutManager, let ts = textStorage else { return nil }
         let gr = lm.glyphRange(forCharacterRange: cr, actualCharacterRange: nil)
         guard gr.length > 0 else { return nil }
-        let outer = lm.boundingRect(forGlyphRange: gr, in: tc)   // horizontal extent + fallback
-        var topY = CGFloat.greatestFiniteMagnitude
-        var botY = -CGFloat.greatestFiniteMagnitude
+        var capTop = CGFloat.greatestFiniteMagnitude
+        var lastBaseline = -CGFloat.greatestFiniteMagnitude
+        var descBottom = -CGFloat.greatestFiniteMagnitude
         lm.enumerateLineFragments(forGlyphRange: gr) { fragRect, _, _, lineGlyphRange, _ in
-            guard fragRect.height > 0 else { return }   // skip folded / collapsed-fence (zero-height) lines
             let g = max(lineGlyphRange.location, gr.location)
             let ci = lm.characterIndexForGlyph(at: g)
+            // Only measure lines whose text is INSIDE `cr`. When a block's range starts with hidden,
+            // zero-width glyphs (a code block's collapsed opening ``` fence), `glyphRange(forCharacterRange:)`
+            // can snap back to the previous visible glyph — the preceding paragraph's line — and that line
+            // must not be folded into the card. (Without this guard, a code block placed directly under a
+            // paragraph, with no blank line between, drew its card up over that paragraph line.)
+            guard ci >= cr.location, ci < cr.location + cr.length else { return }
+            guard fragRect.height > 0 else { return }   // skip folded / collapsed-fence (zero-height) lines
             let font = (ci < ts.length ? ts.attribute(.font, at: ci, effectiveRange: nil) as? NSFont : nil)
                 ?? self.font ?? NSFont.systemFont(ofSize: 16)
             let baseline = fragRect.minY + lm.location(forGlyphAt: g).y   // baseline in container coords
-            topY = min(topY, baseline - font.ascender)
-            botY = max(botY, baseline - font.descender)   // descender is negative → adds |descent|
+            capTop = min(capTop, baseline - font.capHeight)               // visible letter tops
+            if baseline > lastBaseline {
+                lastBaseline = baseline
+                descBottom = baseline - font.descender                    // descender < 0 → adds |descent|
+            }
         }
-        guard topY < botY else { return outer }   // no measurable content line → old behaviour
-        return NSRect(x: outer.minX, y: topY, width: outer.width, height: botY - topY)
+        guard capTop < lastBaseline else { return nil }   // no measurable content line
+        return (capTop, lastBaseline, descBottom)
     }
 
     // Draw the block decorations under the text: the blockquote bar and the thematic-break rule.
@@ -121,28 +129,28 @@ final class MarkdownTextView: NSTextView {
         let origin = textContainerOrigin
 
         // Code blocks: a rounded elevated card behind the code (corners + a right inset the
-        // text-attribute background can't give). Full content width minus the rule inset. The card hugs
-        // the code via tightDecorationBox (no floating gap above the first line); 2pt of breathing room.
+        // text-attribute background can't give). Full content width minus the rule inset. Top at the cap
+        // line + 3pt, bottom at the descender + 3pt — so it hugs the code with even, small padding.
         mallowElevated.setFill()
         for r in codeCards {
-            guard let box = tightDecorationBox(forCharacterRange: r) else { continue }
-            let card = NSRect(x: origin.x, y: origin.y + box.minY - 2,
-                              width: tc.size.width - 8, height: box.height + 4)
+            guard let a = decorationAnchors(forCharacterRange: r) else { continue }
+            let card = NSRect(x: origin.x, y: origin.y + a.capTop - 3,
+                              width: tc.size.width - 8, height: (a.descBottom - a.capTop) + 6)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
         for r in tableCards {   // same elevated card as code; cells are monospaced + pipes dimmed by restyle
-            guard let box = tightDecorationBox(forCharacterRange: r) else { continue }
-            let card = NSRect(x: origin.x, y: origin.y + box.minY - 2,
-                              width: tc.size.width - 8, height: box.height + 4)
+            guard let a = decorationAnchors(forCharacterRange: r) else { continue }
+            let card = NSRect(x: origin.x, y: origin.y + a.capTop - 3,
+                              width: tc.size.width - 8, height: (a.descBottom - a.capTop) + 6)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
 
-        // Blockquote: a 3pt left bar the height of the quoted text (tight box → no over-tall bar).
+        // Blockquote: a 3pt left bar spanning cap line → baseline, i.e. the height of the quoted text.
         mallowFaint.setFill()
         for r in quoteBars {
-            guard let box = tightDecorationBox(forCharacterRange: r) else { continue }
-            let bar = NSRect(x: origin.x + 6, y: origin.y + box.minY,
-                             width: 3, height: max(1, box.height))
+            guard let a = decorationAnchors(forCharacterRange: r) else { continue }
+            let bar = NSRect(x: origin.x + 6, y: origin.y + a.capTop,
+                             width: 3, height: max(1, a.baseline - a.capTop))
             NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
         }
 

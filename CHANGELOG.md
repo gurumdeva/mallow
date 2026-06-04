@@ -10,7 +10,8 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 ## [0.30.2] - 2026-06-04
 
 ### Fixed
-- **Code blocks and quote bars now hug their text vertically.** The rounded background behind a fenced code block left an empty gap above the first line of code, and the bar beside a block quote ran taller than the quoted text — both because the airy line spacing adds its extra leading *above* each line, and the decorations were measured from the full line boxes. They're now measured from the text's actual top and bottom, so the card and the bar fit snugly.
+- **Code blocks and quote bars now hug their text vertically.** The rounded background behind a fenced code block left an empty gap above the first line of code, and the bar beside a block quote ran taller than the quoted text — both because the airy line spacing adds its extra leading *above* each line. The decorations are now measured from the text's real top (the letter cap line) and bottom (the baseline), so the card and the bar fit snugly.
+- **A code block placed right under a paragraph no longer pulls its background over that line.** With no blank line between a paragraph and the code block beneath it, the card was drawn up over the paragraph's last line (and could show an empty row where the hidden ``` ``` ``` fence sat). The card now spans only the code's own lines.
 
 ## [0.30.1] - 2026-06-04
 

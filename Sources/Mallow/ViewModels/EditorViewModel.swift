@@ -178,6 +178,31 @@ final class EditorViewModel {
         return f
     }
 
+    /// A fenced code block's range minus its opening/closing ``` fence lines — the rows the background
+    /// card should hug. (Indented code blocks have no fence lines, so the range is returned unchanged.)
+    private func codeContentRange(_ block: NSRange, in ns: NSString) -> NSRange {
+        func isFence(_ lineLo: Int, _ lineHi: Int) -> Bool {
+            var i = lineLo
+            while i < lineHi, ns.character(at: i) == 32 || ns.character(at: i) == 9 { i += 1 }   // skip indent
+            return i + 2 < lineHi
+                && ns.character(at: i) == 96 && ns.character(at: i + 1) == 96 && ns.character(at: i + 2) == 96
+        }
+        guard block.length > 0 else { return block }
+        var lo = block.location
+        var hi = block.location + block.length
+        let first = ns.lineRange(for: NSRange(location: lo, length: 0))
+        if isFence(first.location, min(first.location + first.length, hi)) {
+            lo = min(first.location + first.length, hi)          // drop the opening fence line
+        }
+        if hi > lo {
+            let last = ns.lineRange(for: NSRange(location: hi - 1, length: 0))
+            if last.location >= lo, isFence(last.location, hi) {
+                hi = max(lo, last.location)                      // drop the closing fence line
+            }
+        }
+        return NSRange(location: lo, length: max(0, hi - lo))
+    }
+
     func restyle() {
         guard let textView else { return }
         let s = textView.string
@@ -209,7 +234,12 @@ final class EditorViewModel {
                     storage.addAttribute(.font,   // code is uniform monospace
                         value: NSFont.monospacedSystemFont(ofSize: baseSize * zoomFactor, weight: .regular), range: nr)
                     storage.addAttribute(.paragraphStyle, value: mallowCodeParagraphStyle, range: nr)
-                    codeCards.append(nr)   // drawn as a rounded elevated card (corners + right inset the attribute can't give)
+                    // The card hugs the CONTENT lines (range minus the ``` fence lines), not the whole
+                    // block: a zero-height opening fence directly under a paragraph (no blank line between)
+                    // merges into that paragraph's line fragment, which would pull a block-range card up
+                    // over the paragraph. Drawing over content only sidesteps that.
+                    let content = codeContentRange(nr, in: s as NSString)
+                    if content.length > 0 { codeCards.append(content) }
                 }
                 continue  // uniform mono — no inline pass
             case "BlockQuote":
@@ -358,7 +388,7 @@ final class EditorViewModel {
         // Code-block ``` fence lines also collapse to zero height: their glyphs are already hidden, but the
         // line still occupied a row, so the card (drawn over the whole block range) showed empty tint above
         // the first/below the last code line. Merging them here reuses the same zero-height-fragment path.
-        foldedChars = fold.union(collector.fenceLineStarts)
+        foldedChars = fold.union(collector.fenceChars)
 
         hiddenChars = collector.hidden
         if let lm = textView.layoutManager {
@@ -599,7 +629,10 @@ private struct HiddenSyntaxCollector {
     let total: Int
     let grammar: MarkerGrammar
     var hidden = Set<Int>()
-    var fenceLineStarts = Set<Int>()   // first char of each ``` fence line → zero-height (code card hugs the code)
+    var fenceChars = Set<Int>()   // ALL chars of each ``` fence line → zero-height (so the code card hugs the code).
+                                  // Must be every char, not just the line start: the layout reports a hidden-`.null`-
+                                  // glyph fence line's fragment char-start PAST the hidden ``` (at the newline), so a
+                                  // line-start-only set misses it in the shouldSetLineFragmentRect match.
 
     init(ns: CharBuffer, map: [Int], total: Int) {
         self.ns = ns
@@ -682,8 +715,11 @@ private struct HiddenSyntaxCollector {
                 if isFence {
                     // Zero-height this fence line so the code card (drawn over the whole block range) hugs
                     // the code instead of trailing empty tint where the hidden ``` line still took a row.
-                    fenceLineStarts.insert(line.location)
-                    var j = line.location; while j < lineHi { hideChar(j); j += 1 }
+                    // Record EVERY char of the line (incl. its newline) so the zero-height match in
+                    // shouldSetLineFragmentRect lands regardless of which char the layout reports as the
+                    // fragment start (the hidden ``` glyphs push it past the line start).
+                    var j = line.location
+                    while j < lineHi { fenceChars.insert(j); hideChar(j); j += 1 }
                 }
                 if line.length == 0 { break }
                 lineStart = line.location + line.length
