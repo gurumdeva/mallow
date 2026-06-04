@@ -129,19 +129,21 @@ final class MarkdownTextView: NSTextView {
         let origin = textContainerOrigin
 
         // Code blocks: a rounded elevated card behind the code (corners + a right inset the
-        // text-attribute background can't give). Full content width minus the rule inset. Top at the cap
-        // line + 3pt, bottom at the descender + 3pt — so it hugs the code with even, small padding.
+        // text-attribute background can't give). The card's vertical padding (cap line → top edge,
+        // baseline → bottom edge) matches the text's horizontal inset, so the breathing room is even on
+        // all four sides. `cardPadding` == the code paragraph style's left head-indent.
+        let cardPadding = mallowCodeParagraphStyle.headIndent   // = the 12pt left text inset
         mallowElevated.setFill()
         for r in codeCards {
             guard let a = decorationAnchors(forCharacterRange: r) else { continue }
-            let card = NSRect(x: origin.x, y: origin.y + a.capTop - 3,
-                              width: tc.size.width - 8, height: (a.descBottom - a.capTop) + 6)
+            let top = a.capTop - cardPadding, bottom = a.baseline + cardPadding
+            let card = NSRect(x: origin.x, y: origin.y + top, width: tc.size.width - 8, height: bottom - top)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
         for r in tableCards {   // same elevated card as code; cells are monospaced + pipes dimmed by restyle
             guard let a = decorationAnchors(forCharacterRange: r) else { continue }
-            let card = NSRect(x: origin.x, y: origin.y + a.capTop - 3,
-                              width: tc.size.width - 8, height: (a.descBottom - a.capTop) + 6)
+            let top = a.capTop - cardPadding, bottom = a.baseline + cardPadding
+            let card = NSRect(x: origin.x, y: origin.y + top, width: tc.size.width - 8, height: bottom - top)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
 
