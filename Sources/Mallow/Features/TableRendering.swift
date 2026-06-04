@@ -141,11 +141,14 @@ enum TableRendering {
             }
             cellWidth.append(ws)
         }
-        // Pad each cell to its column width: kern AFTER the cell's last char adds the slack, so the next
-        // `|` lands at the column boundary (same x in every row).
+        // Pad each cell to its column width PLUS one space, via kern AFTER the cell's last char: the extra
+        // space keeps even the widest cell (whose natural pad is ~0) from touching the right divider, so
+        // the gap before the divider ≈ the gap after it (the next cell's `|`-space + leading space).
+        let mono = NSFont.monospacedSystemFont(ofSize: tableFontSize, weight: .regular)
+        let cellPad = (" " as NSString).size(withAttributes: [.font: mono]).width
         for (r, cells) in rows.enumerated() {
             for (c, range) in cells.enumerated() where c < colCount {
-                let pad = colWidth[c] - cellWidth[r][c]
+                let pad = colWidth[c] + cellPad - cellWidth[r][c]
                 guard pad > 0.5, range.length > 0 else { continue }
                 let last = NSRange(location: range.location + range.length - 1, length: 1)
                 storage.addAttribute(.kern, value: pad, range: last)
