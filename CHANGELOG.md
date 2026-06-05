@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [Unreleased]
+
+Fixes landed on `main` since 1.0.1 — found and verified through a continuous review pass.
+
+### Fixed
+- **Opening a file that isn't valid UTF-8 can no longer destroy it** (data-safety). A UTF-16 / Latin-1 / binary file (or one that can't be read) now opens as an *untitled* buffer instead of a blank document still bound to the file — so the 1.5-second autosave can no longer overwrite the original with an empty buffer.
+- **Exported HTML/PDF no longer executes scripts embedded in a document** (security). Link/image URLs using `javascript:`, `vbscript:`, or `data:text/html` are neutralized on export, and the PDF renderer runs with JavaScript disabled — so exporting a Markdown file you received from someone else can't run embedded code. (Image `data:image/…` URLs are preserved.)
+- **No more crash when running a command mid-composition in Korean/Japanese.** Bold/heading/list commands, the task-checkbox toggle, and the on-focus file reload no longer rewrite the buffer while an IME syllable is still being composed (which could raise an exception or mangle the input).
+- **A UTF-8 BOM is preserved** across an open → save round-trip (files from Windows / PowerShell keep their byte-order mark instead of silently losing it).
+- **Fold All no longer hides the cursor.** Collapsing every section with the caret inside a body now parks it on the enclosing heading instead of stranding it on an invisible zero-height line.
+- **Typing a quote over selected text now replaces the selection** (it used to leave the text in place and merely prepend the quote).
+- **Pasting an image over a selection now replaces it** (it used to leave the selected text behind).
+- **A paragraph placed directly under a table** (no blank line) is no longer pulled into the table grid — it renders as ordinary body text below the table.
+- **Multi-window:** a background or restored window can no longer steal the menu-command target from the front window.
+- **Inline `code` that wraps to the next line** now draws a pill on each visual line instead of one tall box bleeding across the lines between.
+- **PDF export** now surfaces a save error instead of silently failing, and no longer leaks resources when a render fails.
+
 ## [1.0.1] - 2026-06-05
 
 ### Fixed
