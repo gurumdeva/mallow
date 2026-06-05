@@ -30,7 +30,8 @@ extension EditorDocument {
     func toggleFoldAll() {
         vm.allSectionsFolded.toggle()
         vm.refresh()
-        vm.selectionChanged()   // snaps the caret out of a collapsed (hidden) run if it landed in one
+        vm.parkCaretOutOfFold()   // park on the enclosing heading if the caret landed in a now-folded body
+        vm.selectionChanged()     // snaps the caret out of a collapsed (hidden) inline run if it landed in one
         revision &+= 1
     }
 
