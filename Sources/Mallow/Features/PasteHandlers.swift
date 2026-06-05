@@ -104,7 +104,7 @@ extension MarkdownEditor.Coordinator {
         // (1) Image embed — takes precedence over URL-wrap (an image on the clipboard is the intent).
         let images = pendingImages(from: NSPasteboard.general)
         if !images.isEmpty {
-            embed(images, at: doc.textView.selectedRange().location)
+            embed(images, replacing: doc.textView.selectedRange())   // a paste REPLACES the selection
             return true
         }
 
@@ -139,7 +139,8 @@ extension MarkdownEditor.Coordinator {
         let view = doc.textView
         let local = view.convert(sender.draggingLocation, from: nil)
         let dropIndex = view.characterIndexForInsertion(at: local)
-        embed(images, at: dropIndex)
+        // A drop inserts AT the drop point and must NOT replace a selection elsewhere → length 0.
+        embed(images, replacing: NSRange(location: dropIndex, length: 0))
         view.window?.makeKeyAndOrderFront(nil)
         view.window?.makeFirstResponder(view)
         return true
@@ -232,30 +233,37 @@ extension MarkdownEditor.Coordinator {
 
     // MARK: insert — embed each image's markdown at a char location
 
-    /// Encode + insert each image's markdown at `location` (subsequent images follow the previous
-    /// insertion). Goes through the text view's undoable insertion path so ⌘Z removes it and
-    /// textDidChange re-runs the view-model pipeline — the buffer is only ever changed as plain markdown
-    /// text, never styled in place (markdown-as-truth). Un-embeddable images (too large / unreadable)
-    /// are skipped silently here, since the new SwiftUI coordinator has no window/alert seam; if at
-    /// least one image inserts we still report handled. Bumps `doc.revision` once for the chrome.
-    private func embed(_ images: [PendingImage], at location: Int) {
+    /// Encode + insert each image's markdown, REPLACING `initial` on the first image (so a paste over a
+    /// selection replaces it like a normal paste; a drop passes a length-0 range so it inserts at the drop
+    /// point without touching any selection). Subsequent images follow the previous insertion. Goes through
+    /// the text view's undoable insertion path so ⌘Z removes it and textDidChange re-runs the view-model
+    /// pipeline — the buffer is only ever changed as plain markdown text, never styled in place
+    /// (markdown-as-truth). Un-embeddable images (too large / unreadable) are skipped silently here, since
+    /// the new SwiftUI coordinator has no window/alert seam; if at least one image inserts we still report
+    /// handled. Bumps `doc.revision` once for the chrome.
+    private func embed(_ images: [PendingImage], replacing initial: NSRange) {
         let view = doc.textView
-        var caret = max(0, min(location, (view.string as NSString).length))
+        let total = (view.string as NSString).length
+        // Clamp the initial (selection / drop) range into the live buffer; the first insert replaces it,
+        // then `range` collapses to a length-0 caret so later images insert after the previous one.
+        let loc = max(0, min(initial.location, total))
+        var range = NSRange(location: loc, length: max(0, min(initial.length, total - loc)))
         var insertedAny = false
 
         for image in images {
             guard case .success(var md) = image.markdown() else { continue }   // skip tooLarge / failed
             // Standalone image → put it on its own line(s) so it isn't glued to adjacent text and
-            // parses as an image. Only pad where there isn't already a line break.
+            // parses as an image. Pad only where the chars bracketing the range aren't already breaks.
             let ns = view.string as NSString
-            let before = caret > 0 ? ns.character(at: caret - 1) : 10            // 10 = \n
-            let after = caret < ns.length ? ns.character(at: caret) : 10
+            let before = range.location > 0 ? ns.character(at: range.location - 1) : 10   // 10 = \n
+            let afterIdx = range.location + range.length
+            let after = afterIdx < ns.length ? ns.character(at: afterIdx) : 10
             if before != 10 { md = "\n" + md }
             if after != 10 { md += "\n" }
-            let range = NSRange(location: caret, length: 0)
             guard view.insertTextUndoably(md, replacing: range) else { continue }   // undoable; fires textDidChange → vm.refresh()
-            caret += (md as NSString).length
+            let caret = range.location + (md as NSString).length
             view.setSelectedRange(NSRange(location: caret, length: 0))
+            range = NSRange(location: caret, length: 0)   // next image inserts after this one (no replace)
             insertedAny = true
         }
 
