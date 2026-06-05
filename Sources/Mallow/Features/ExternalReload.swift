@@ -104,6 +104,10 @@ extension EditorDocument {
     /// engine commands; DocumentActions warns that `string =` registers no undo and wipes the stack).
     /// The caret is clamped to the new length first, since the old offset may now be out of range.
     private func applyReload(_ disk: String, path: String) {
+        // If focus returned while an IME composition is still marked, replacing the whole buffer now would
+        // desync the input context (crash / mangled composition). Skip — reloadFromDiskIfChanged runs again
+        // on the next focus, by which point the composition has committed.
+        guard !textView.hasMarkedText() else { return }
         let full = NSRange(location: 0, length: (textView.string as NSString).length)
         textView.replaceCharactersUndoably(in: full, with: disk)
         let len = (disk as NSString).length

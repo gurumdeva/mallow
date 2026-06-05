@@ -198,6 +198,9 @@ extension MarkdownEditor.Coordinator {
     @discardableResult
     func toggleTaskBoxAt(_ charIndex: Int) -> Bool {
         let textView = doc.textView
+        // Don't mutate the buffer mid-IME-composition: a programmatic replaceCharacters while the input
+        // context holds a marked range can crash (NSRangeException) or mangle the half-typed syllable.
+        guard !textView.hasMarkedText() else { return false }
         let s = textView.string
         let ns = s as NSString
         let total = ns.length

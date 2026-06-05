@@ -501,7 +501,11 @@ final class EditorViewModel {
     }
 
     private func replace(with edit: IEditResult) {
-        guard let textView else { return }
+        // Never replace the buffer out from under a live IME composition (marked text): the input context
+        // still holds the old marked range, so the next keystroke would replace against a now-resized
+        // buffer (NSRangeException) or commit a mangled syllable. Bail mid-composition — the user finishes
+        // the syllable, then re-issues the command. (Same IME guard refresh()/the caret-snap already use.)
+        guard let textView, !textView.hasMarkedText() else { return }
         // Undoable replace — NOT `textView.string = …` (that registers no undo AND wipes the existing
         // undo stack). Route through the text view's edit path so ⌘Z reverts an engine command (bold,
         // heading, list, …) like any typing, and prior typing-undo history is preserved.
