@@ -25,13 +25,10 @@ extension EditorDocument {
             // would then write it over the original, silently destroying it. Instead recover the content via
             // the file's own encoding and open it UNTITLED (path: nil → autosave off, Save prompts), so the
             // original is never touched.
-            if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
-                let hadBOM = data.starts(with: [0xEF, 0xBB, 0xBF])
-                let body = hadBOM ? data.dropFirst(3) : data
-                if let text = String(data: body, encoding: .utf8) {
-                    RecentFiles.add(path)
-                    return EditorDocument(text: text, path: path, hadBOM: hadBOM)
-                }
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+               let decoded = EditorDocument.decodeUTF8(data) {
+                RecentFiles.add(path)
+                return EditorDocument(text: decoded.text, path: path, hadBOM: decoded.hadBOM)
             }
             var usedEncoding = String.Encoding.utf8
             let recovered = (try? String(contentsOf: URL(fileURLWithPath: path), usedEncoding: &usedEncoding)) ?? ""
@@ -50,5 +47,16 @@ extension EditorDocument {
                 return EditorDocument(text: "", path: nil)
             }
         }
+    }
+
+    /// Decode raw file bytes as UTF-8, stripping (and remembering) a leading UTF-8 BOM (EF BB BF). Returns
+    /// nil when the bytes aren't valid UTF-8 — the caller (`make(for:)`) then refuses to bind the path, so a
+    /// non-UTF-8 file is opened untitled and can't be clobbered. Pure + unit-tested: the data-safety guard
+    /// and the BOM-preservation guarantee both ride on this.
+    static func decodeUTF8(_ data: Data) -> (text: String, hadBOM: Bool)? {
+        let hadBOM = data.starts(with: [0xEF, 0xBB, 0xBF])
+        let body = hadBOM ? data.dropFirst(3) : data
+        guard let text = String(data: body, encoding: .utf8) else { return nil }
+        return (text, hadBOM)
     }
 }

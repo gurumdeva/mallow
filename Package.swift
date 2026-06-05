@@ -27,5 +27,16 @@ let package = Package(
                 .unsafeFlags(["-L../inkstone/target/release", "-linkstone"])
             ]
         ),
+        // Unit tests for the app's pure logic (`@testable import Mallow`). Mallow is an executable target
+        // that links the engine staticlib, so the test bundle needs the same `-L`/`-l` flags to resolve
+        // those symbols. UI/rendering isn't unit-testable; these lock in the pure helpers (encoding/BOM
+        // open guard, filename validation, URL detection, image embed, path canonicalization, offsets).
+        .testTarget(
+            name: "MallowTests",
+            dependencies: ["Mallow"],
+            linkerSettings: [
+                .unsafeFlags(["-L../inkstone/target/release", "-linkstone"])
+            ]
+        ),
     ]
 )
