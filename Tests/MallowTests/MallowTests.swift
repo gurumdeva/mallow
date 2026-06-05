@@ -133,4 +133,52 @@ final class MallowTests: XCTestCase {
         // round-trip on a scalar boundary
         XCTAssertEqual(charToUTF16(s, utf16ToChar(s, 2)), 2)
     }
+
+    // MARK: Local image assets (sidecar-file save: naming, extension, relative ref)
+
+    func testImageAsset_assetsDirName() {
+        XCTAssertEqual(ImageAsset.assetsDirName(forDocFileName: "draft.md"), "draft.assets")
+        XCTAssertEqual(ImageAsset.assetsDirName(forDocFileName: "My Notes.md"), "My Notes.assets")
+        XCTAssertEqual(ImageAsset.assetsDirName(forDocFileName: "noext"), "noext.assets")
+    }
+
+    func testImageAsset_ext() {
+        XCTAssertEqual(ImageAsset.ext(forMime: "image/png"), "png")
+        XCTAssertEqual(ImageAsset.ext(forMime: "image/jpeg"), "jpg")
+        XCTAssertEqual(ImageAsset.ext(forMime: "image/gif"), "gif")
+        XCTAssertEqual(ImageAsset.ext(forMime: "image/svg+xml"), "svg")
+        XCTAssertEqual(ImageAsset.ext(forMime: "garbage"), "png")
+    }
+
+    func testImageAsset_nextFileNameIsCollisionFree() {
+        XCTAssertEqual(ImageAsset.nextFileName(existing: [], ext: "png"), "image-1.png")
+        XCTAssertEqual(ImageAsset.nextFileName(existing: ["image-1.png"], ext: "png"), "image-2.png")
+        XCTAssertEqual(ImageAsset.nextFileName(existing: ["image-1.png", "image-2.png", "image-3.png"], ext: "png"), "image-4.png")
+        XCTAssertEqual(ImageAsset.nextFileName(existing: ["image-1.png"], ext: "jpg"), "image-1.jpg")  // ext-independent
+    }
+
+    func testImageAsset_markdownRefWrapsSpacesInAngles() {
+        XCTAssertEqual(ImageAsset.markdownRef(alt: "x", relativePath: "draft.assets/image-1.png"),
+                       "![x](draft.assets/image-1.png)")
+        XCTAssertEqual(ImageAsset.markdownRef(alt: "", relativePath: "My Notes.assets/image-1.png"),
+                       "![](<My Notes.assets/image-1.png>)")
+    }
+
+    func testImageAsset_saveWritesSidecarFileAndReturnsRelativeRef() throws {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("mallow-asset-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let docPath = tmp.appendingPathComponent("draft.md").path
+
+        let ref = ImageAsset.save(Data("PNGBYTES".utf8), mime: "image/png", alt: "pic", nextToDocAt: docPath)
+        XCTAssertEqual(ref, "![pic](draft.assets/image-1.png)")
+        let saved = tmp.appendingPathComponent("draft.assets/image-1.png")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: saved.path), "the image file must be written")
+        XCTAssertEqual(try Data(contentsOf: saved), Data("PNGBYTES".utf8))
+
+        // a second save into the same doc collision-increments the filename
+        let ref2 = ImageAsset.save(Data("X".utf8), mime: "image/png", alt: "", nextToDocAt: docPath)
+        XCTAssertEqual(ref2, "![](draft.assets/image-2.png)")
+    }
 }

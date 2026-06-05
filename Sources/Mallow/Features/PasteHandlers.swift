@@ -68,6 +68,65 @@ enum ImageEmbed {
     }
 }
 
+// MARK: - Local image asset (save next to the doc instead of an inline data-URI)
+
+/// Saves a pasted/dropped image as a SIDECAR file next to the document — `<docfolder>/<docname>.assets/
+/// image-<N>.<ext>` — and returns the markdown `![alt](<relative-path>)`. Far smaller than an inline
+/// `data:` base64 URI, which bloats both the `.md` AND the editor view (the source string is what shows).
+/// The naming / extension / relative-path math is factored into pure helpers so it's unit-tested; only
+/// `save` touches the filesystem.
+enum ImageAsset {
+    /// The sidecar directory name for a document file: "draft.md" → "draft.assets" (Typora-style).
+    static func assetsDirName(forDocFileName name: String) -> String {
+        let base = (name as NSString).deletingPathExtension
+        return (base.isEmpty ? name : base) + ".assets"
+    }
+
+    /// A file extension for an image MIME: "image/jpeg" → "jpg", "image/svg+xml" → "svg", else the
+    /// subtype (alphanumerics only), defaulting to "png".
+    static func ext(forMime mime: String) -> String {
+        let lower = mime.lowercased()
+        guard lower.hasPrefix("image/") else { return "png" }   // not an image MIME → default to png
+        let sub = String(lower.dropFirst(6))
+        switch sub {
+        case "jpeg": return "jpg"
+        case "svg+xml": return "svg"
+        default:
+            let clean = String(sub.filter { $0.isLetter || $0.isNumber })
+            return clean.isEmpty ? "png" : clean
+        }
+    }
+
+    /// The first `image-<N>.<ext>` (N from 1) not already present in `existing` — collision-free naming.
+    static func nextFileName(existing: Set<String>, ext: String) -> String {
+        var n = 1
+        while existing.contains("image-\(n).\(ext)") { n += 1 }
+        return "image-\(n).\(ext)"
+    }
+
+    /// A markdown image link to a relative path, wrapping the destination in `<…>` when it contains a
+    /// space or paren (which would otherwise break the link) so a doc name with spaces still resolves.
+    static func markdownRef(alt: String, relativePath: String) -> String {
+        let needsAngles = relativePath.contains(where: { $0 == " " || $0 == "(" || $0 == ")" })
+        let dest = needsAngles ? "<\(relativePath)>" : relativePath
+        return "![\(alt)](\(dest))"
+    }
+
+    /// Write `data` into the document's sidecar `.assets` folder (created if needed) and return the
+    /// `![alt](relpath)` markdown, or nil on any IO failure (the caller then falls back to a data-URI).
+    static func save(_ data: Data, mime: String, alt: String, nextToDocAt docPath: String) -> String? {
+        let docURL = URL(fileURLWithPath: docPath)
+        let dirName = assetsDirName(forDocFileName: docURL.lastPathComponent)
+        let assetsDir = docURL.deletingLastPathComponent().appendingPathComponent(dirName)
+        let fm = FileManager.default
+        guard (try? fm.createDirectory(at: assetsDir, withIntermediateDirectories: true)) != nil else { return nil }
+        let existing = Set((try? fm.contentsOfDirectory(atPath: assetsDir.path)) ?? [])
+        let fileName = nextFileName(existing: existing, ext: ext(forMime: mime))
+        guard (try? data.write(to: assetsDir.appendingPathComponent(fileName), options: .atomic)) != nil else { return nil }
+        return markdownRef(alt: alt, relativePath: dirName + "/" + fileName)
+    }
+}
+
 // MARK: - bare-URL test (mirrors the Tauri reference's isBareUrl) — copied verbatim from ClipboardExtras.swift
 
 /// True iff `text` is a single http(s) URL: after trimming, it starts with http:// or https:// and
@@ -81,11 +140,13 @@ func isBareURL(_ text: String) -> Bool {
 
 // MARK: - One embeddable image gathered from a pasteboard or a drag
 
-/// A single image resolved from the pasteboard / drag: either original file bytes (preferred — keeps
-/// the source format) or a bitmap to PNG-encode. The closure defers the (potentially large) byte read
-/// + base64 until insertion time. Carries the alt text derived from the filename inside the closure.
+/// A single image resolved from the pasteboard / drag: its alt text + MIME, plus a closure that defers
+/// the (potentially large) byte read — original file bytes (preferred, keeps the source format) or a
+/// PNG-encoded clipboard bitmap — until insertion time, where `embed` decides sidecar-file vs data-URI.
 private struct PendingImage {
-    let markdown: () -> Result<String, ImageEmbed.Failure>
+    let alt: String
+    let mime: String
+    let bytes: () -> Data?
 }
 
 // MARK: - Coordinator seam: read the paste/drop, insert, copy out
@@ -205,14 +266,9 @@ extension MarkdownEditor.Coordinator {
             for url in urls {
                 let type = UTType(filenameExtension: url.pathExtension)
                 guard type?.conforms(to: .image) == true else { continue }   // images only
-                let alt = ImageEmbed.altFromFileName(url.lastPathComponent)
-                out.append(PendingImage(markdown: {
-                    guard let data = try? Data(contentsOf: url) else {
-                        return .failure(ImageEmbed.Failure.failed)
-                    }
-                    return ImageEmbed.markdown(forImageData: data,
-                                               mime: ImageEmbed.mime(for: type), alt: alt)
-                }))
+                out.append(PendingImage(alt: ImageEmbed.altFromFileName(url.lastPathComponent),
+                                        mime: ImageEmbed.mime(for: type),
+                                        bytes: { try? Data(contentsOf: url) }))
             }
         }
 
@@ -221,12 +277,7 @@ extension MarkdownEditor.Coordinator {
         if out.isEmpty,
            pb.canReadItem(withDataConformingToTypes: [UTType.image.identifier]),
            let image = NSImage(pasteboard: pb) {
-            out.append(PendingImage(markdown: {
-                guard let png = ImageEmbed.pngData(from: image) else {
-                    return .failure(ImageEmbed.Failure.failed)
-                }
-                return ImageEmbed.markdown(forImageData: png, mime: "image/png", alt: "")
-            }))
+            out.append(PendingImage(alt: "", mime: "image/png", bytes: { ImageEmbed.pngData(from: image) }))
         }
         return out
     }
@@ -251,7 +302,20 @@ extension MarkdownEditor.Coordinator {
         var insertedAny = false
 
         for image in images {
-            guard case .success(var md) = image.markdown() else { continue }   // skip tooLarge / failed
+            guard let data = image.bytes() else { continue }   // unreadable
+            // A SAVED document → write the image as a sidecar file and reference it with a short relative
+            // path (no giant `data:` base64 bloating the .md + the editor view). An UNTITLED document has
+            // no folder to save beside, so fall back to an inline data-URI (size-capped). A failed save
+            // also falls back, so an image is never silently dropped.
+            var md: String
+            if let docPath = doc.vm.filePath,
+               let ref = ImageAsset.save(data, mime: image.mime, alt: image.alt, nextToDocAt: docPath) {
+                md = ref
+            } else if case .success(let dataURI) = ImageEmbed.markdown(forImageData: data, mime: image.mime, alt: image.alt) {
+                md = dataURI
+            } else {
+                continue   // too large for a data-URI and no doc folder to save into
+            }
             // Standalone image → put it on its own line(s) so it isn't glued to adjacent text and
             // parses as an image. Pad only where the chars bracketing the range aren't already breaks.
             let ns = view.string as NSString
