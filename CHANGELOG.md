@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
-## [Unreleased]
+## [1.0.2] - 2026-06-05
 
-Fixes landed on `main` since 1.0.1 — found and verified through a continuous review pass.
+A correctness + safety release — every fix below was found and verified through a continuous review pass over the editor, engine, and export paths. Signed with a Developer ID and notarized by Apple.
 
 ### Fixed
 - **Opening a file that isn't valid UTF-8 can no longer destroy it** (data-safety). A UTF-16 / Latin-1 / binary file (or one that can't be read) now opens as an *untitled* buffer instead of a blank document still bound to the file — so the 1.5-second autosave can no longer overwrite the original with an empty buffer.
