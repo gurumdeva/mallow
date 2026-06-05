@@ -19,13 +19,14 @@ final class EditorDocument: Identifiable {
     /// on the NSTextView's contents — state SwiftUI can't observe directly.
     var revision = 0
 
-    init(text: String = "", path: String? = nil) {
+    init(text: String = "", path: String? = nil, hadBOM: Bool = false) {
         let tv = MarkdownTextView()
         configureTextView(tv)
         tv.string = text
         self.textView = tv
         self.vm = EditorViewModel(textView: tv)
         self.vm.filePath = path
+        self.vm.hadBOM = hadBOM   // re-emitted on save so a BOM-prefixed file isn't silently de-BOM'd
     }
 
     /// The AppKit window hosting this document's editor — nil before the view enters a window hierarchy /

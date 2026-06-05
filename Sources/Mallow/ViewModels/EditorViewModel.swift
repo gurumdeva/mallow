@@ -11,6 +11,9 @@ final class EditorViewModel {
 
     var filePath: String?
     private(set) var baseline = ""
+    /// True iff the file opened with a leading UTF-8 BOM (EF BB BF). The buffer text is BOM-free (Foundation
+    /// strips it on read), so the save paths re-prepend it to preserve the file's exact bytes on disk.
+    var hadBOM = false
     private var blocks: [PBlock] = []           // cached parse (one parse per text change)
     private(set) var hiddenChars = Set<Int>()   // UTF-16 indices of collapsed syntax glyphs (read by the layout-manager delegate)
     private(set) var bulletMarks = Set<Int>()   // UTF-16 indices of unordered `- ` dashes to render as `•` (glyph delegate)

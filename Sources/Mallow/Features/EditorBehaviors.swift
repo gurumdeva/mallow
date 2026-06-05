@@ -79,7 +79,9 @@ final class EditorBehaviors {
 
         let content = doc.textView.string
         do {
-            try content.write(to: URL(fileURLWithPath: path), atomically: true, encoding: .utf8)
+            // Preserve a leading UTF-8 BOM the file opened with (buffer text is BOM-free); baseline stays BOM-free.
+            let onDisk = doc.vm.hadBOM ? "\u{FEFF}" + content : content
+            try onDisk.write(to: URL(fileURLWithPath: path), atomically: true, encoding: .utf8)
             doc.vm.markSaved(path: path, content: content)
             doc.revision &+= 1   // chrome re-renders the ● dirty dot now that the baseline matches
         } catch {

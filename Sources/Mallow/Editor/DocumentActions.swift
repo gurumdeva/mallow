@@ -83,7 +83,10 @@ extension EditorDocument {
         }
         let content = textView.string
         do {
-            try content.write(to: url, atomically: true, encoding: .utf8)
+            // Re-prepend the UTF-8 BOM if the file opened with one (the buffer text is BOM-free), so the
+            // file's exact bytes are preserved; the saved baseline is the BOM-free buffer text.
+            let onDisk = vm.hadBOM ? "\u{FEFF}" + content : content
+            try onDisk.write(to: url, atomically: true, encoding: .utf8)
             vm.markSaved(path: url.path, content: content)
             RecentFiles.add(url.path)
             revision &+= 1   // .navigationTitle(doc.title) re-renders the window title + chrome dirty dot

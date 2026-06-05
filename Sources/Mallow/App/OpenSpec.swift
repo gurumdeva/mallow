@@ -17,16 +17,21 @@ extension EditorDocument {
     static func make(for spec: OpenSpec?) -> EditorDocument {
         switch spec {
         case .file(let path):
-            // Read as UTF-8 (the common case + the encoding we save as). CRITICAL data-safety guard: if the
-            // file is NOT valid UTF-8 (UTF-16, Latin-1, binary) or can't be read, do NOT open an empty
-            // buffer bound to `path` — the 1.5s autosave (or a ⌘S) would then write that empty buffer over
-            // the original, silently destroying it. Instead recover the content via the file's own encoding
-            // and open it UNTITLED (path: nil → autosave is disabled and Save prompts for a location), so
-            // the original is never touched. (Round-tripping in the source encoding is a follow-up; the
-            // invariant enforced here is simply: never clobber a file we couldn't read as UTF-8.)
-            if let text = try? String(contentsOfFile: path, encoding: .utf8) {
-                RecentFiles.add(path)
-                return EditorDocument(text: text, path: path)
+            // Read the raw bytes once. Strip a leading UTF-8 BOM (EF BB BF) before decoding (Foundation
+            // would consume it anyway) but REMEMBER it (`hadBOM`) so save re-prepends it — a Windows /
+            // PowerShell BOM file isn't silently de-BOM'd on an open→save round-trip.
+            // CRITICAL data-safety guard: if the bytes aren't valid UTF-8 (UTF-16, Latin-1, binary) or the
+            // file can't be read, do NOT open an empty buffer bound to `path` — the 1.5s autosave (or a ⌘S)
+            // would then write it over the original, silently destroying it. Instead recover the content via
+            // the file's own encoding and open it UNTITLED (path: nil → autosave off, Save prompts), so the
+            // original is never touched.
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+                let hadBOM = data.starts(with: [0xEF, 0xBB, 0xBF])
+                let body = hadBOM ? data.dropFirst(3) : data
+                if let text = String(data: body, encoding: .utf8) {
+                    RecentFiles.add(path)
+                    return EditorDocument(text: text, path: path, hadBOM: hadBOM)
+                }
             }
             var usedEncoding = String.Encoding.utf8
             let recovered = (try? String(contentsOf: URL(fileURLWithPath: path), usedEncoding: &usedEncoding)) ?? ""
