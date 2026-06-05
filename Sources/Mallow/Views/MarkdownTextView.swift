@@ -222,11 +222,20 @@ final class MarkdownTextView: NSTextView {
         mallowElevated.setFill()
         for r in inlineCodeRuns {
             let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
-            guard gr.length > 0, let a = decorationAnchors(forCharacterRange: r) else { continue }
-            let box = lm.boundingRect(forGlyphRange: gr, in: tc)
-            let pill = NSRect(x: origin.x + box.minX - 2, y: origin.y + a.capTop - 2,
-                              width: box.width + 4, height: (a.baseline - a.capTop) + 4)
-            NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
+            guard gr.length > 0 else { continue }
+            // Draw one pill PER line fragment the run occupies. A long inline-code span that WRAPS must get
+            // a pill on each visual line; the old single `boundingRect` union spanned the whole wrap as one
+            // tall rectangle that bled over the lines between. Each fragment hugs its own cap→baseline.
+            lm.enumerateLineFragments(forGlyphRange: gr) { _, _, _, fragGlyphRange, _ in
+                let lineGlyphs = NSIntersectionRange(gr, fragGlyphRange)
+                guard lineGlyphs.length > 0 else { return }
+                let lineChars = lm.characterRange(forGlyphRange: lineGlyphs, actualGlyphRange: nil)
+                guard let a = self.decorationAnchors(forCharacterRange: lineChars) else { return }
+                let box = lm.boundingRect(forGlyphRange: lineGlyphs, in: tc)
+                let pill = NSRect(x: origin.x + box.minX - 2, y: origin.y + a.capTop - 2,
+                                  width: box.width + 4, height: (a.baseline - a.capTop) + 4)
+                NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
+            }
         }
 
         mallowBorderColor.setFill()
