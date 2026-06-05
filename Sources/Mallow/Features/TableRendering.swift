@@ -54,20 +54,57 @@ enum TableRendering {
         let ns = storage.string as NSString
         let total = ns.length
         guard let blockRange = block.range.utf16Range(map: map, clampedTo: total) else { return nil }
-        let bHi = blockRange.location + blockRange.length
 
-        // 1) Mono font + tidy paragraph style across the whole block. Equal-width digits/Latin plus the
-        //    per-cell kern below give straight columns; the engine's inline runs are re-asserted on top.
+        // 1) Build the cell grid from the engine's cells (UTF-16). Each row has the header's column count
+        //    (the engine pads short rows with empty cells), so this is a rectangular [row][col] table.
+        let colCount = (block.cells.map(\.col).max() ?? -1) + 1
+        let fullRowCount = (block.cells.map(\.row).max() ?? -1) + 1
+        guard colCount > 0, fullRowCount > 0 else {
+            return TableGrid(blockRange: blockRange, interiorEdges: [], totalWidth: 0)
+        }
+
+        var cell = Array(repeating: Array(repeating: NSRange(location: blockRange.location, length: 0),
+                                          count: colCount), count: fullRowCount)
+        var align = [String](repeating: "None", count: colCount)
+        for c in block.cells where c.row < fullRowCount && c.col < colCount {
+            let (lo, hi) = c.range.utf16Bounds(map: map, clampedTo: total)
+            cell[c.row][c.col] = NSRange(location: lo, length: max(0, hi - lo))
+            align[c.col] = c.align   // per-column (every cell in the column shares the delimiter alignment)
+        }
+
+        // 2) Drop trailing "phantom" rows. A paragraph line directly under a table (no blank line between)
+        //    is folded by the GFM parser into the SAME table block as extra cell-rows whose source line has
+        //    NO pipe (e.g. a following line "para here" → a row c0="para here", c1=""). Left in, it stretches
+        //    a column to the paragraph's width and draws the card + grid straight through the prose. A real
+        //    GFM row always has pipes on its source line, so keep only the leading run of pipe-bearing rows
+        //    and shrink the styled/drawn range to that last real row's line — the trailing paragraph then
+        //    renders as ordinary body text below the table.
+        var rowCount = fullRowCount
+        while rowCount > 1, !lineHasPipe(ns, rowProbe(cell, rowCount - 1, total)) {
+            rowCount -= 1
+        }
+        var tableRange = blockRange
+        if rowCount < fullRowCount {
+            let lastLine = ns.lineRange(for: rowProbe(cell, rowCount - 1, total))
+            let end = min(lastLine.location + lastLine.length, blockRange.location + blockRange.length)
+            if end > blockRange.location {
+                tableRange = NSRange(location: blockRange.location, length: end - blockRange.location)
+            }
+        }
+        let bHi = tableRange.location + tableRange.length
+
+        // 3) Mono font + tidy paragraph style across the (real) table range. Equal-width digits/Latin plus
+        //    the per-cell kern below give straight columns; the engine's inline runs are re-asserted on top.
         let mono = NSFont.monospacedSystemFont(ofSize: tableFontSize, weight: .regular)
-        storage.addAttribute(.paragraphStyle, value: tableParagraphStyle, range: blockRange)
-        storage.addAttribute(.font, value: mono, range: blockRange)
+        storage.addAttribute(.paragraphStyle, value: tableParagraphStyle, range: tableRange)
+        storage.addAttribute(.font, value: mono, range: tableRange)
 
         // Re-assert inline emphasis on top of the mono base (setting one .font over the block wiped the
         // base pass's bold/italic). Inline code/link keep their colour/background from the base pass.
         let fm = NSFontManager.shared
         for inline in block.inlines {
             let (ilo, ihi) = inline.range.utf16Bounds(map: map, clampedTo: total)
-            guard ihi > ilo, ilo >= blockRange.location, ihi <= bHi else { continue }
+            guard ihi > ilo, ilo >= tableRange.location, ihi <= bHi else { continue }
             let bold = inline.marks.contains("Strong"), italic = inline.marks.contains("Emphasis")
             guard bold || italic else { continue }
             var f = mono
@@ -76,24 +113,7 @@ enum TableRendering {
             storage.addAttribute(.font, value: f, range: NSRange(location: ilo, length: ihi - ilo))
         }
 
-        // 2) Build the cell grid from the engine's cells (UTF-16). Each row has the header's column count
-        //    (the engine pads short rows with empty cells), so this is a rectangular [row][col] table.
-        let colCount = (block.cells.map(\.col).max() ?? -1) + 1
-        let rowCount = (block.cells.map(\.row).max() ?? -1) + 1
-        guard colCount > 0, rowCount > 0 else {
-            return TableGrid(blockRange: blockRange, interiorEdges: [], totalWidth: 0)
-        }
-
-        var cell = Array(repeating: Array(repeating: NSRange(location: blockRange.location, length: 0),
-                                          count: colCount), count: rowCount)
-        var align = [String](repeating: "None", count: colCount)
-        for c in block.cells where c.row < rowCount && c.col < colCount {
-            let (lo, hi) = c.range.utf16Bounds(map: map, clampedTo: total)
-            cell[c.row][c.col] = NSRange(location: lo, length: max(0, hi - lo))
-            align[c.col] = c.align   // per-column (every cell in the column shares the delimiter alignment)
-        }
-
-        // 3) Column widths: the widest VISIBLE cell per column, plus a uniform gap so content never kisses
+        // 4) Column widths: the widest VISIBLE cell per column, plus a uniform gap so content never kisses
         //    a rule. Width is measured (CTLine typographic bounds) so it matches what the layout lays out.
         var width = Array(repeating: [CGFloat](repeating: 0, count: colCount), count: rowCount)
         var colSlot = [CGFloat](repeating: 0, count: colCount)
@@ -107,7 +127,7 @@ enum TableRendering {
         let gap = (" " as NSString).size(withAttributes: [.font: mono]).width   // one mono space of breathing room
         for c in 0 ..< colCount { colSlot[c] += gap }
 
-        // 4) Pad each cell to its column width via `.kern`, distributed by the column's alignment so the
+        // 5) Pad each cell to its column width via `.kern`, distributed by the column's alignment so the
         //    separators land at one x per column. Left/None → pad after the last char; right → after the
         //    first char (pushes content right); center → split. Empty (padded short-row) cells are skipped.
         for r in 0 ..< rowCount {
@@ -130,12 +150,12 @@ enum TableRendering {
             }
         }
 
-        // 5) Interior column-rule offsets + total width, from the table's left text edge. A separator `|`
+        // 6) Interior column-rule offsets + total width, from the table's left text edge. A separator `|`
         //    (rendered as a space of width `gap`) sits between consecutive columns; OUTER leading/trailing
         //    `|` (when present, the common GFM shape) shift/extend the table by one space each. The view
         //    anchors the rules and the card to the probed left edge.
-        let hasLeadingPipe = blockRange.location < total && ns.character(at: blockRange.location) == 124  // |
-        let hasTrailingPipe = lastContentChar(ns, blockRange) == 124
+        let hasLeadingPipe = tableRange.location < total && ns.character(at: tableRange.location) == 124  // |
+        let hasTrailingPipe = lastContentChar(ns, tableRange) == 124
         var edges: [CGFloat] = []
         var x: CGFloat = hasLeadingPipe ? gap : 0   // left edge of cell 0's slot
         for c in 0 ..< colCount {
@@ -146,7 +166,20 @@ enum TableRendering {
             }
         }
         let totalWidth = x + (hasTrailingPipe ? gap : 0)
-        return TableGrid(blockRange: blockRange, interiorEdges: edges, totalWidth: totalWidth)
+        return TableGrid(blockRange: tableRange, interiorEdges: edges, totalWidth: totalWidth)
+    }
+
+    /// A zero-length probe range at the start of row `r`'s first cell (clamped in-bounds) — used to ask,
+    /// via `lineHasPipe`, which source line that row sits on.
+    private static func rowProbe(_ cell: [[NSRange]], _ r: Int, _ total: Int) -> NSRange {
+        NSRange(location: min(max(0, cell[r][0].location), total), length: 0)
+    }
+
+    /// True if the source LINE containing `probe` has a `|` — i.e. it's a genuine GFM table row, not a
+    /// paragraph the parser lazily folded into the table block (those have no pipe on their line).
+    private static func lineHasPipe(_ ns: NSString, _ probe: NSRange) -> Bool {
+        let line = ns.lineRange(for: probe)
+        return ns.range(of: "|", options: [], range: line).location != NSNotFound
     }
 
     /// The last non-whitespace character code in `range` (skipping trailing spaces/tabs/newlines), or 0
