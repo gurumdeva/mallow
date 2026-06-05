@@ -34,7 +34,19 @@ final class MarkdownTextView: NSTextView {
                 case "\u{2013}", "\u{2014}": extra = 1     // – / — consumed one preceding hyphen / en-dash
                 default: extra = 0                          // “ ” ‘ ’
                 }
-                if loc - extra >= 0 {
+                // Typing over a non-empty selection must still REPLACE it. For a plain quote (extra == 0)
+                // keep the original `replacementRange` (NSNotFound when typed → AppKit replaces the
+                // selection with the curly quote); inserting at a length-0 range would leave the selected
+                // text in place and just prepend the quote. The backward-consuming glyphs (… – —) only make
+                // sense mid-word, so with a selection active fall through to the normal selection-replacing
+                // insert below rather than consume chars behind the selection.
+                if selectedRange().length > 0 {
+                    if extra == 0 {
+                        super.insertText(replacement, replacementRange: replacementRange)
+                        return
+                    }
+                    // extra > 0 with a selection → fall through to the normal insert below.
+                } else if loc - extra >= 0 {
                     super.insertText(replacement, replacementRange: NSRange(location: loc - extra, length: extra))
                     return
                 }
