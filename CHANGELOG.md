@@ -11,6 +11,7 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 
 ### Fixed
 - **Table columns now line up correctly with Korean/CJK text.** A table's column widths are now derived from the engine's actual cell boundaries and measured from the rendered glyphs, so the vertical rules stay straight even when cells mix Hangul, symbols, and Latin — the 1.0.0 grid padded by a monospace approximation that drifted on CJK (the column rules looked ragged). The table also honors each column's left / center / right alignment, and its card now hugs the table's width instead of spanning the page. Still display-only; your source bytes are untouched.
+- **Multi-window polish.** Each window's title now shows its own document's name — live — in the Window menu, Mission Control, and ⌘\` cycling (windows used to all read "Mallow" until the file was saved). The app reopens at its last size and position; quitting no longer drops the final window state if you quit right after a change; closing a window no longer leaves menu commands pointing at it (or holding it in memory); and a background autosave won't overwrite a file another window is editing.
 
 ## [1.0.0] - 2026-06-05
 
