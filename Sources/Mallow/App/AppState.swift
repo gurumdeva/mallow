@@ -26,7 +26,12 @@ struct WindowActiveTracker: NSViewRepresentable {
         let doc = self.doc
         DispatchQueue.main.async { [weak view] in
             guard let window = view?.window else { return }
-            AppState.shared.activeDoc = doc   // this window is up — make it active now
+            // Only claim "active" if this window is actually key. A restored or background window can
+            // mount (and run this deferred block) while another window is frontmost; setting activeDoc
+            // here unconditionally let a non-key window hijack the menu-command target (so the next ⌘S /
+            // Format hit the wrong document). The didBecomeKey observer below still claims it the instant
+            // this window does become key.
+            if window.isKeyWindow { AppState.shared.activeDoc = doc }
             context.coordinator.token = NotificationCenter.default.addObserver(
                 forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
             ) { _ in
