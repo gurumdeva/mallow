@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
-## [Unreleased]
+## [1.1.1] - 2026-06-06
+
+A polish + reliability patch from an adversarial review of the 1.1.0 additions: IME-composition data-safety hardening and Check-for-Updates fixes. Signed with a Developer ID and notarized by Apple.
 
 ### Fixed
 - **IME composition hardening (Korean / CJK)** — three follow-ups, found by an adversarial review of the composition-flicker fix: the background autosave no longer writes a half-composed clause to disk (it waits for the text to settle); styling now recovers even when a composition is finalized without changing any text (e.g. by switching apps mid-clause); and a character being composed right next to hidden syntax can no longer briefly disappear.
