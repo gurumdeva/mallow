@@ -100,8 +100,17 @@ struct MarkdownEditor: NSViewRepresentable {
         }
 
         func textDidChange(_ notification: Notification) {
-            vm.clearSectionFolds()   // per-section fold offsets would go stale against the edit; drop them
-            vm.refresh()
+            // Never restyle / re-hide WHILE an IME composition is live. refresh() runs a full-document
+            // setAttributes — which strips the marked-text underline AppKit draws on the composing clause —
+            // plus a full-document glyph+layout invalidate that stutters the candidate window on a large
+            // note and re-hides syntax around the half-typed text (markers flickering in/out per jamo).
+            // Every other buffer-touching path already guards on hasMarkedText(); this hot path was the gap.
+            // Committing the composition fires textDidChange again with no marked text, so the final settled
+            // text is styled and re-hidden then. Dirty flag + autosave still tick so nothing is lost.
+            if !doc.textView.hasMarkedText() {
+                vm.clearSectionFolds()   // per-section fold offsets would go stale against the edit; drop them
+                vm.refresh()
+            }
             doc.revision &+= 1   // chrome re-renders title/dirty
             behaviors.textChanged(doc)   // schedule debounced autosave
         }
@@ -113,7 +122,7 @@ struct MarkdownEditor: NSViewRepresentable {
 
         /// Mark hidden-syntax glyphs as `.null` (zero-width) and substitute a `•` glyph for unordered-list
         /// dashes — both read from the view-model's sets. 1:1 char↔glyph so caret/selection offsets stay
-        /// exact. (Ported verbatim from the old EditorController so the live-preview behaviour is identical.)
+        /// exact. Markers are hidden unconditionally (no caret-line reveal); the sets are caret-independent.
         func layoutManager(_ lm: NSLayoutManager,
                            shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
                            properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,

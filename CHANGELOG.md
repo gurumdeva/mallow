@@ -11,6 +11,10 @@ Categories: **Added** (new features) · **Changed** (changes to existing behavio
 
 ### Fixed
 - **Blank lines no longer show stray "ghost" marks.** After typing a line, pressing Enter twice, then moving the cursor up through the empty lines, faint vertical marks (left-over cursor pixels) could linger on the blank lines — they looked like stray commas or apostrophes even though no such characters exist in the document. The custom insertion-point caret was being drawn just outside the line region the system repaints when the cursor moves, so the old caret was never erased. The caret is now always clamped inside that region, so a moved cursor never leaves a ghost behind.
+- **Korean / CJK input no longer flickers while composing.** Each in-progress jamo (or kana) used to trigger a full-document restyle that wiped the system's composing-clause underline and re-hid every syntax marker mid-composition, so the composition indicator and nearby markers could flicker and large documents could stutter. The editor now leaves a live composition untouched and applies styling once the text is committed — matching how every other edit path already treated in-progress input.
+
+### Changed
+- Internal hardening (no visible change): the insertion-point caret is clamped underflow-safe against future line-height settings, and a layout reflow of hidden/collapsed syntax now always requests the matching decoration repaint, so block decorations (code cards, quote bars, inline-code pills, rules, table grids) can never lag behind an edit.
 
 ## [1.0.3] - 2026-06-06
 

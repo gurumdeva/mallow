@@ -91,7 +91,10 @@ final class MarkdownTextView: NSTextView {
             // fragment differs from this `rect`, so the baseline math escapes `rect` and the caret is drawn
             // outside it. A move then never erases that out-of-rect caret → a stale "ghost" caret stacked on
             // the blank lines (reported after typing, Enter↵↵, then ↑↑). Clamping keeps every caret erasable.
-            r.origin.y = min(max(newY, rect.minY), rect.maxY - glyphHeight)
+            // The upper bound can't fall below rect.minY today (the branch guard ensures glyphHeight <
+            // rect.height), but max(rect.minY, …) keeps the clamp correct — never above rect.minY — even if
+            // a future line-height multiple < 1 ever made the fragment shorter than the glyph box.
+            r.origin.y = min(max(newY, rect.minY), max(rect.minY, rect.maxY - glyphHeight))
             r.size.height = glyphHeight
         }
         super.drawInsertionPoint(in: r, color: color, turnedOn: flag)

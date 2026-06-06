@@ -412,6 +412,13 @@ final class EditorViewModel {
             let full = NSRange(location: 0, length: total)
             lm.invalidateGlyphs(forCharacterRange: full, changeInLength: 0, actualCharacterRange: nil)
             lm.invalidateLayout(forCharacterRange: full, actualCharacterRange: nil)
+            // We just reflowed layout — hidden/collapsed glyphs moved — so the block decorations drawn in
+            // drawBackground (code cards, quote bars, inline-code pills, rules, table grids) must repaint at
+            // the new geometry. restyle() also sets needsDisplay (it always follows in refresh()), but
+            // requesting the redraw here keeps recomputeHidden self-consistent: never invalidate layout
+            // without asking for the matching repaint, so decorations can't go stale if restyle ever
+            // short-circuits (e.g. a teardown race where textStorage is briefly nil).
+            textView.needsDisplay = true
         }
     }
 

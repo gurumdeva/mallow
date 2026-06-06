@@ -18,8 +18,9 @@
 //        • SUBSTITUTING the inner char (boxStart+1) with ☐ U+2610 / ☑ U+2611 — like the bullet glyph
 //      That is 3 source chars → 2 hidden + 1 substituted = a 1:1 char↔glyph mapping with NO collapse
 //      of count, so every caret/selection offset downstream stays byte-exact (the same invariant the
-//      `•` substitution relies on). Off the caret's own line only: on the caret line the raw `[ ]`
-//      shows for editing, identical to how bullets/`#`/`**` reveal there.
+//      `•` substitution relies on). The box is hidden UNCONDITIONALLY — like every marker, the raw `[ ]`
+//      never shows in the edit surface (on the caret line or anywhere): the old caret-line reveal was
+//      removed in favour of "markers always hidden".
 //
 //   3. Click toggle (`Coordinator.toggleTaskBoxAt`): given a clicked character index, if it lands on
 //      (or adjacent to) a checkbox, flip the inner char ` ` ↔ `x` through the SAME undoable text path
