@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
-## [Unreleased]
+## [1.1.0] - 2026-06-06
+
+A small feature release: Mallow can now tell you when a newer version is available. Signed with a Developer ID and notarized by Apple.
 
 ### Added
 - **Check for updates.** A new **Mallow ▸ Check for Updates…** menu item asks GitHub for the latest release and tells you whether a newer version is out, offering to open the Releases page. Mallow also checks quietly in the background once a day and only speaks up when an update is actually available. No telemetry and no auto-install — it reads the public releases list and never sends anything about you; the only page it can open is Mallow's own Releases page.
