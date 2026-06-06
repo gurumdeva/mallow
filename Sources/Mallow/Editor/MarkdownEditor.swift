@@ -99,15 +99,24 @@ struct MarkdownEditor: NSViewRepresentable {
             _ = toggleTaskBoxAt(idx)
         }
 
+        /// Set when `textDidChange` skipped styling because a composition was live, so the caret handler
+        /// below runs the deferred refresh once the composition ends — covering a commit that changes no
+        /// bytes (IME finalize-on-app-switch / click-away), where textDidChange never fires again.
+        private var deferredComposingRefresh = false
+
         func textDidChange(_ notification: Notification) {
             // Never restyle / re-hide WHILE an IME composition is live. refresh() runs a full-document
             // setAttributes — which strips the marked-text underline AppKit draws on the composing clause —
             // plus a full-document glyph+layout invalidate that stutters the candidate window on a large
             // note and re-hides syntax around the half-typed text (markers flickering in/out per jamo).
             // Every other buffer-touching path already guards on hasMarkedText(); this hot path was the gap.
-            // Committing the composition fires textDidChange again with no marked text, so the final settled
-            // text is styled and re-hidden then. Dirty flag + autosave still tick so nothing is lost.
-            if !doc.textView.hasMarkedText() {
+            // Committing the composition normally fires textDidChange again with no marked text, so the final
+            // settled text is styled then; `deferredComposingRefresh` + textViewDidChangeSelection cover the
+            // case where the commit changes no bytes. Dirty flag + autosave still tick so nothing is lost.
+            if doc.textView.hasMarkedText() {
+                deferredComposingRefresh = true
+            } else {
+                deferredComposingRefresh = false
                 vm.clearSectionFolds()   // per-section fold offsets would go stale against the edit; drop them
                 vm.refresh()
             }
@@ -116,6 +125,14 @@ struct MarkdownEditor: NSViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
+            // If styling was deferred during a composition that has now ended (no marked text), run it now —
+            // catches a commit that changed no bytes (IME finalizing on click-away / app-switch), where
+            // textDidChange never re-fired to restyle.
+            if deferredComposingRefresh, !doc.textView.hasMarkedText() {
+                deferredComposingRefresh = false
+                vm.clearSectionFolds()
+                vm.refresh()
+            }
             vm.selectionChanged()
             behaviors.selectionChanged(doc)   // recenter the caret line when typewriter mode is on
         }
@@ -140,9 +157,17 @@ struct MarkdownEditor: NSViewRepresentable {
             var newGlyphs = [CGGlyph](repeating: 0, count: glyphRange.length)
             var newProps = [NSLayoutManager.GlyphProperty](repeating: .null, count: glyphRange.length)
             var changed = false
+            // During a live IME composition the hidden/bullet/task/pipe sets are FROZEN at pre-composition
+            // offsets (refresh is skipped to avoid flicker), so they no longer align with indices at/after the
+            // inserted marked text. Render everything from the marked-range start onward LITERALLY, so a
+            // composing glyph can't be mis-hidden (`.null`) by a stale index that used to name a real marker
+            // — its text would otherwise vanish until commit. NSNotFound when not composing → a no-op.
+            let markedLo = doc.textView.hasMarkedText() ? doc.textView.markedRange().location : NSNotFound
             for i in 0 ..< glyphRange.length {
                 let ch = characterIndexes[i]
-                if hidden.contains(ch) {
+                if ch >= markedLo {
+                    newGlyphs[i] = glyphs[i]; newProps[i] = props[i]   // composing region: render as typed
+                } else if hidden.contains(ch) {
                     newGlyphs[i] = glyphs[i]; newProps[i] = .null; changed = true
                 } else if let tg = taskGlyphs, let checked = taskBoxes[ch] {
                     // Substitute ☐/☑ — or, if the font lacks the glyph (0), HIDE the inner char (.null)

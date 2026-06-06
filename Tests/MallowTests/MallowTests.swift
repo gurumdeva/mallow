@@ -255,5 +255,10 @@ final class MallowTests: XCTestCase {
         XCTAssertTrue(UpdateChecker.isNewer("v1.0.1", than: "1.0"))
         // tolerant of an absent current version (e.g. no app bundle under `swift test` → "0")
         XCTAssertTrue(UpdateChecker.isNewer("v1.0.0", than: "0"))
+        // a prerelease / build-metadata tag is NOT a stable upgrade (don't prompt for an rc / beta)
+        XCTAssertFalse(UpdateChecker.isNewer("v1.2.0-rc1", than: "1.1.0"))
+        XCTAssertFalse(UpdateChecker.isNewer("v2.0.0-beta", than: "1.1.0"))
+        XCTAssertFalse(UpdateChecker.isNewer("1.2.0+build5", than: "1.1.0"))
+        XCTAssertTrue(UpdateChecker.isNewer("v1.2.0", than: "1.1.0"))   // a clean stable tag still upgrades
     }
 }

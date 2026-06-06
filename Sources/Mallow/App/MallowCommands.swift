@@ -25,7 +25,9 @@ struct MallowCommands: Commands {
         // App ▸ Check for Updates… — slotted right under "About Mallow", the conventional spot. Asks
         // GitHub Releases whether a newer build exists and offers to open the Releases page.
         CommandGroup(after: .appInfo) {
-            Button(L.t("menu.checkUpdates")) { UpdateChecker.checkNow() }
+            Button { UpdateChecker.checkNow() } label: {
+                Label(L.t("menu.checkUpdates"), systemImage: "arrow.triangle.2.circlepath")
+            }
         }
 
         // File ▸ New / Open / Open Recent (replaces the default "New Window"). New opens a blank window;

@@ -68,6 +68,11 @@ final class EditorBehaviors {
         autosaveTimer = nil
         guard !isSaving else { return }
         guard let path = doc.vm.filePath, doc.vm.isDirty else { return }
+        // Never persist a live IME composition: marked (composing) text IS part of textView.string, so a
+        // mid-composition write would put half-typed jamo on disk and re-baseline `markSaved` to it. The doc
+        // stays dirty; the commit (or next keystroke) reschedules, so the settled text is what gets written.
+        // (Mirrors the hasMarkedText guard every other buffer-touching path already has.)
+        guard !doc.textView.hasMarkedText() else { return }
 
         // Don't let a background autosave clobber a file another window now owns (the manual Save path in
         // DocumentActions.write guards this the same way). Skip silently — the other window is the live

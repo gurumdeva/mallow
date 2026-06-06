@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [Unreleased]
+
+### Fixed
+- **IME composition hardening (Korean / CJK)** — three follow-ups, found by an adversarial review of the composition-flicker fix: the background autosave no longer writes a half-composed clause to disk (it waits for the text to settle); styling now recovers even when a composition is finalized without changing any text (e.g. by switching apps mid-clause); and a character being composed right next to hidden syntax can no longer briefly disappear.
+
+### Changed
+- **Check for Updates polish** — the menu item now has an icon; the check runs one-at-a-time (a double-click can't stack dialogs); a failed check retries on the next launch instead of going quiet for a day; and a prerelease tag is never offered as an update.
+
 ## [1.1.0] - 2026-06-06
 
 A small feature release: Mallow can now tell you when a newer version is available. Signed with a Developer ID and notarized by Apple.

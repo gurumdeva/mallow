@@ -40,25 +40,29 @@ enum UpdateChecker {
     static func checkOnLaunchIfDue() {
         let now = Date().timeIntervalSince1970
         guard now - UserDefaults.standard.double(forKey: lastCheckKey) >= autoInterval else { return }
-        UserDefaults.standard.set(now, forKey: lastCheckKey)
         fetchLatest { result in
-            if case .success(let tag) = result, isNewer(tag, than: currentVersion) {
-                presentAvailable(latestTag: tag)
-            }
-            // up-to-date or failure → stay silent on the automatic path
+            // Stamp "checked today" only on SUCCESS, so a launch with no network retries next launch instead
+            // of going quiet for a full day. The in-flight guard + once-per-launch firing keep this from
+            // hammering the API even if every launch fails.
+            guard case .success(let tag) = result else { return }
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastCheckKey)
+            if isNewer(tag, than: currentVersion) { presentAvailable(latestTag: tag) }
+            // up to date → stay silent on the automatic path
         }
     }
 
     /// The explicit menu command — always reports an outcome to the user.
     static func checkNow() {
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastCheckKey)
         fetchLatest { result in
             switch result {
-            case .success(let tag) where isNewer(tag, than: currentVersion):
-                presentAvailable(latestTag: tag)
-            case .success:
-                info(L.t("update.upToDate.title"),
-                     L.t("update.upToDate.body", ["current": currentVersion]))
+            case .success(let tag):
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastCheckKey)
+                if isNewer(tag, than: currentVersion) {
+                    presentAvailable(latestTag: tag)
+                } else {
+                    info(L.t("update.upToDate.title"),
+                         L.t("update.upToDate.body", ["current": currentVersion]))
+                }
             case .failure:
                 info(L.t("update.failed.title"), L.t("update.failed.body"))
             }
@@ -71,6 +75,11 @@ enum UpdateChecker {
     /// Tolerant + NUMERIC (so 1.0.10 > 1.0.9, which a string compare gets wrong): strip a leading "v",
     /// split on ".", compare integer components, treating a missing trailing component as 0.
     static func isNewer(_ tag: String, than current: String) -> Bool {
+        // A prerelease / build-metadata tag (v1.2.0-rc1, 1.2.0+exp) is never a stable upgrade — don't prompt.
+        // (/releases/latest already excludes prereleases; this also guards a release mis-marked as "latest".)
+        if tag.drop(while: { $0 == "v" || $0 == "V" }).contains(where: { $0 == "-" || $0 == "+" }) {
+            return false
+        }
         func parts(_ s: String) -> [Int] {
             s.drop(while: { $0 == "v" || $0 == "V" })
                 .split(separator: ".")
@@ -87,7 +96,16 @@ enum UpdateChecker {
 
     // MARK: - Networking
 
+    /// Main-thread-only re-entrancy guard: one check at a time. Without it, a double-click (or the launch
+    /// auto-check overlapping a manual check) starts two requests whose completions BOTH call NSAlert.runModal
+    /// — and runModal spins a nested runloop that services main-queue blocks, so the second alert STACKS on
+    /// the first. Cleared only AFTER `done` returns (i.e. after any modal is dismissed), so a click during the
+    /// alert is ignored, not stacked. Touched only on main (callers + the completion hop), so no lock needed.
+    private static var isChecking = false
+
     private static func fetchLatest(_ done: @escaping (Result<String, Error>) -> Void) {
+        guard !isChecking else { return }
+        isChecking = true
         var req = URLRequest(url: apiURL, timeoutInterval: 15)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         req.setValue("Mallow/\(currentVersion)", forHTTPHeaderField: "User-Agent")   // GitHub API requires a UA
@@ -98,7 +116,10 @@ enum UpdateChecker {
             } else {
                 result = .failure(err ?? URLError(.badServerResponse))
             }
-            DispatchQueue.main.async { done(result) }   // all UI / UserDefaults follow-up on the main thread
+            DispatchQueue.main.async {   // all UI / UserDefaults follow-up on the main thread
+                done(result)
+                isChecking = false       // after done() — including a blocking runModal — returns; no stacking
+            }
         }.resume()
     }
 
