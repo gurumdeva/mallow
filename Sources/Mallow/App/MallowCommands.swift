@@ -22,6 +22,12 @@ struct MallowCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        // App ▸ Check for Updates… — slotted right under "About Mallow", the conventional spot. Asks
+        // GitHub Releases whether a newer build exists and offers to open the Releases page.
+        CommandGroup(after: .appInfo) {
+            Button(L.t("menu.checkUpdates")) { UpdateChecker.checkNow() }
+        }
+
         // File ▸ New / Open / Open Recent (replaces the default "New Window"). New opens a blank window;
         // Open / Recent open a window onto a file via the OpenSpec value.
         CommandGroup(replacing: .newItem) {

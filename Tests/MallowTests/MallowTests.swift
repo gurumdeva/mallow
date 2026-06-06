@@ -236,4 +236,24 @@ final class MallowTests: XCTestCase {
         // stays a gap, the `<div>` shows. (Previously the whole div line vanished on screen.)
         XCTAssertEqual(visibleConcatenation("> <div>x</div>"), "<div>x</div>")
     }
+
+    // MARK: - Update check (GitHub release version comparison)
+
+    func testUpdateChecker_isNewer_numericSemverCompare() {
+        // strictly newer (with/without the "v" tag prefix)
+        XCTAssertTrue(UpdateChecker.isNewer("v1.0.4", than: "1.0.3"))
+        XCTAssertTrue(UpdateChecker.isNewer("2.0.0", than: "1.9.9"))
+        // NUMERIC, not lexical: 1.0.10 > 1.0.9 (a string compare would wrongly say "10" < "9")
+        XCTAssertTrue(UpdateChecker.isNewer("v1.0.10", than: "1.0.9"))
+        // equal → not newer
+        XCTAssertFalse(UpdateChecker.isNewer("v1.0.4", than: "1.0.4"))
+        // older → not newer
+        XCTAssertFalse(UpdateChecker.isNewer("v1.0.3", than: "1.0.4"))
+        XCTAssertFalse(UpdateChecker.isNewer("v0.30.2", than: "1.0.0"))
+        // a missing trailing component counts as 0: 1.0 == 1.0.0, and 1.0.1 > 1.0
+        XCTAssertFalse(UpdateChecker.isNewer("v1.0", than: "1.0.0"))
+        XCTAssertTrue(UpdateChecker.isNewer("v1.0.1", than: "1.0"))
+        // tolerant of an absent current version (e.g. no app bundle under `swift test` → "0")
+        XCTAssertTrue(UpdateChecker.isNewer("v1.0.0", than: "0"))
+    }
 }

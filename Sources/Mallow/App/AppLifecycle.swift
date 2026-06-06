@@ -90,6 +90,10 @@ final class MallowAppDelegate: NSObject, NSApplicationDelegate {
     /// app's own 보기/View menu.
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        // Quietly ask GitHub Releases whether a newer build is out (throttled to once/day; only surfaces
+        // a prompt when an update actually exists). The explicit “Check for Updates…” menu item is the
+        // manual counterpart. Network call is async, so this doesn't delay launch.
+        UpdateChecker.checkOnLaunchIfDue()
     }
 }
 
