@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.0.3] - 2026-06-06
+
+### Changed
+- **Pasted or dropped images are now saved as files, not embedded inline.** When you paste or drop an image into a *saved* document, Mallow writes it to a sidecar folder next to the file — `<docname>.assets/image-1.png`, `image-2.png`, … — and inserts a short relative reference instead of a multi-megabyte `data:` base64 string that bloated both the `.md` file and the editor view. Your images stay on disk as ordinary files, and the document text stays readable. An untitled document (no folder to save beside) still falls back to an inline data-URI.
+
+_Internally, this release also adds the project's first app-level unit-test suite (`swift test`) — locking the data-safety, encoding, filename, URL, and image-asset logic in against regression._
+
 ## [1.0.2] - 2026-06-05
 
 A correctness + safety release — every fix below was found and verified through a continuous review pass over the editor, engine, and export paths. Signed with a Developer ID and notarized by Apple.
