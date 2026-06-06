@@ -211,4 +211,26 @@ final class MallowTests: XCTestCase {
         let afterRule = ("hello\n---\n" as NSString).length
         XCTAssertEqual(SmartTypography.substitution(for: "\"", in: notFm, at: afterRule), "\u{201C}")
     }
+
+    // MARK: - Inline raw HTML coverage (engine data-safety regression, end-to-end through the FFI bridge)
+
+    func testInlineHTML_isCoveredByInlineRuns_notDropped() {
+        // The engine used to DROP inline raw HTML (`<br>`, `<span>`, …). The app hides syntax by the
+        // COMPLEMENT of the engine's inline runs, so the dropped markup got zero-width-hidden — e.g.
+        // `line<br>wrap` rendered on screen as `linewrap` (the bytes only vanished visually; the file
+        // stayed byte-exact). The engine now emits a content run for inline HTML. This asserts the fix
+        // travels through `inkParseBlocks` (FFI + JSON decode) and that the paragraph's inline runs
+        // concatenate back to the full literal text — no on-screen content dropped. ASCII → byte == UTF-16.
+        func visibleConcatenation(_ s: String) -> String {
+            let u8 = Array(s.utf8)
+            return inkParseBlocks(s).flatMap { $0.inlines }.map { inl -> String in
+                let lo = max(0, min(inl.range.start, u8.count))
+                let hi = max(lo, min(inl.range.end, u8.count))
+                return String(decoding: u8[lo ..< hi], as: UTF8.self)
+            }.joined()
+        }
+        XCTAssertEqual(visibleConcatenation("line<br>wrap"), "line<br>wrap")
+        XCTAssertEqual(visibleConcatenation("H<sub>2</sub>O"), "H<sub>2</sub>O")
+        XCTAssertEqual(visibleConcatenation("a <span>b</span> c"), "a <span>b</span> c")
+    }
 }
