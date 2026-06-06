@@ -181,4 +181,34 @@ final class MallowTests: XCTestCase {
         let ref2 = ImageAsset.save(Data("X".utf8), mime: "image/png", alt: "", nextToDocAt: docPath)
         XCTAssertEqual(ref2, "![](draft.assets/image-2.png)")
     }
+
+    // MARK: Smart typography — context suppression (don't curl quotes where it corrupts structure)
+
+    func testSmartTypography_curlsInProse() {
+        // A straight double quote typed in prose becomes an opening curly quote.
+        XCTAssertEqual(SmartTypography.substitution(for: "\"", in: "say ", at: 4), "\u{201C}")
+        // `--` (a hyphen after a hyphen) becomes an en dash.
+        XCTAssertEqual(SmartTypography.substitution(for: "-", in: "a-", at: 2), "\u{2013}")
+    }
+
+    func testSmartTypography_suppressedInCode() {
+        // Inside an inline backtick span (odd backticks before the caret), no curling.
+        XCTAssertNil(SmartTypography.substitution(for: "\"", in: "a `code ", at: 8))
+        // Inside a fenced code block.
+        XCTAssertNil(SmartTypography.substitution(for: "\"", in: "```\ncode ", at: 9))
+    }
+
+    func testSmartTypography_suppressedInLeadingFrontmatter() {
+        let fm = "---\ntitle: \n---\n\nbody"
+        let inTitle = ("---\ntitle: " as NSString).length          // caret right after "title: "
+        XCTAssertNil(SmartTypography.substitution(for: "\"", in: fm, at: inTitle),
+                     "a quote inside YAML frontmatter must NOT be curled (would corrupt the YAML)")
+        // After the closing ---, the body is prose again → curling resumes.
+        let inBody = (fm as NSString).range(of: "body").location
+        XCTAssertEqual(SmartTypography.substitution(for: "\"", in: fm, at: inBody), "\u{201C}")
+        // A `---` that is NOT at the document start is a thematic break, not frontmatter → still curls.
+        let notFm = "hello\n---\nx"
+        let afterRule = ("hello\n---\n" as NSString).length
+        XCTAssertEqual(SmartTypography.substitution(for: "\"", in: notFm, at: afterRule), "\u{201C}")
+    }
 }

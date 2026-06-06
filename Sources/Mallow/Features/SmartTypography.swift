@@ -140,8 +140,9 @@ enum SmartTypography {
         let prev = characterBefore(utf16, at)
         let next = characterAfter(utf16, at)
 
-        // Never transform inside code (inline backtick span or fenced block). Cheap line/scan check.
-        if isInsideCode(utf16: utf16, at: at) { return nil }
+        // Never transform inside code (inline backtick span or fenced block) or inside a leading YAML
+        // frontmatter block — curling a quote / dashing a `--` there silently corrupts the structure.
+        if isInsideCode(utf16: utf16, at: at) || isInsideFrontmatter(utf16: utf16, at: at) { return nil }
 
         switch typed {
         case "\"":
@@ -237,5 +238,30 @@ enum SmartTypography {
         var j = lineStart
         while j < idx { if utf16[j] == backtick { ticks += 1 }; j += 1 }
         return ticks % 2 == 1
+    }
+
+    /// Suppress smart typography inside a leading YAML frontmatter block (`---` … `---` at the very top of
+    /// the document). Typing a `"` there would curl it and a `--` would become a dash, silently corrupting
+    /// the YAML (the editor otherwise preserves frontmatter byte-for-byte). True iff the document OPENS with
+    /// a `---` line and `at` sits after it, before the matching closing `---` line (or anywhere after the
+    /// opening while the block is still unclosed / being typed). A `---` that is NOT at the document start is
+    /// a thematic break, not frontmatter, so it never triggers this.
+    private static func isInsideFrontmatter(utf16: [UInt16], at idx: Int) -> Bool {
+        let dash: UInt16 = 45, newline: UInt16 = 10
+        // The document must OPEN with a "---" line (exactly three dashes, then a newline or end-of-doc).
+        guard utf16.count >= 3, utf16[0] == dash, utf16[1] == dash, utf16[2] == dash,
+              utf16.count == 3 || utf16[3] == newline else { return false }
+        let openLineEnd = 3                       // the opening line's newline index (if any)
+        guard idx > openLineEnd else { return false }   // caret still on the opening line → not inside
+        var lineStart = openLineEnd + 1
+        while lineStart < utf16.count {
+            var e = lineStart
+            while e < utf16.count, utf16[e] != newline { e += 1 }
+            let isClosingFence = (e - lineStart == 3)
+                && utf16[lineStart] == dash && utf16[lineStart + 1] == dash && utf16[lineStart + 2] == dash
+            if isClosingFence { return idx <= lineStart }   // inside iff before the closing fence line
+            lineStart = e + 1
+        }
+        return true   // no closing fence yet (block still being typed) → the rest is frontmatter
     }
 }
