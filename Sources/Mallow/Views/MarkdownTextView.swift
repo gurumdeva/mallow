@@ -77,16 +77,21 @@ final class MarkdownTextView: NSTextView {
             ?? (typingAttributes[.font] as? NSFont) ?? self.font ?? NSFont.systemFont(ofSize: 16)
         let glyphHeight = font.ascender - font.descender   // ascent + |descent| — the visible glyph box
         if r.height > glyphHeight + 1 {
+            var newY = rect.minY + (r.height - glyphHeight) / 2   // sane default: centered in the fragment
             if let lm = layoutManager, len > 0 {
                 // `location(forGlyphAt:)`.y is the baseline's offset from the line-fragment top; the caret
                 // rect's top IS that fragment top, so the baseline in view coords is rect.minY + that.
                 // Span the caret from one ascender above the baseline down through the descender.
                 let g = lm.glyphIndexForCharacter(at: min(loc, len - 1))
                 let baselineY = rect.minY + lm.location(forGlyphAt: g).y
-                r.origin.y = baselineY - font.ascender
-            } else {
-                r.origin.y += (r.height - glyphHeight) / 2   // fallback (empty doc / no layout): center
+                newY = baselineY - font.ascender
             }
+            // CLAMP the caret inside `rect` — the exact region AppKit invalidates when the caret moves. On an
+            // EMPTY line the nearest glyph (`min(loc, len-1)`) is the prior line's trailing newline, whose
+            // fragment differs from this `rect`, so the baseline math escapes `rect` and the caret is drawn
+            // outside it. A move then never erases that out-of-rect caret → a stale "ghost" caret stacked on
+            // the blank lines (reported after typing, Enter↵↵, then ↑↑). Clamping keeps every caret erasable.
+            r.origin.y = min(max(newY, rect.minY), rect.maxY - glyphHeight)
             r.size.height = glyphHeight
         }
         super.drawInsertionPoint(in: r, color: color, turnedOn: flag)
