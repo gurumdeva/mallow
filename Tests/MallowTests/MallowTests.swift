@@ -232,5 +232,8 @@ final class MallowTests: XCTestCase {
         XCTAssertEqual(visibleConcatenation("line<br>wrap"), "line<br>wrap")
         XCTAssertEqual(visibleConcatenation("H<sub>2</sub>O"), "H<sub>2</sub>O")
         XCTAssertEqual(visibleConcatenation("a <span>b</span> c"), "a <span>b</span> c")
+        // A raw-HTML block nested inside a blockquote (depth>0) is also content now — the `> ` marker
+        // stays a gap, the `<div>` shows. (Previously the whole div line vanished on screen.)
+        XCTAssertEqual(visibleConcatenation("> <div>x</div>"), "<div>x</div>")
     }
 }
