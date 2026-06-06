@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
-## [Unreleased]
+## [1.0.4] - 2026-06-06
+
+A correctness + polish release: a ghost-caret rendering fix, smoother Korean/CJK input, and a data-safety fix so raw HTML in your text can no longer disappear on screen. Signed with a Developer ID and notarized by Apple.
 
 ### Fixed
 - **Blank lines no longer show stray "ghost" marks.** After typing a line, pressing Enter twice, then moving the cursor up through the empty lines, faint vertical marks (left-over cursor pixels) could linger on the blank lines — they looked like stray commas or apostrophes even though no such characters exist in the document. The custom insertion-point caret was being drawn just outside the line region the system repaints when the cursor moves, so the old caret was never erased. The caret is now always clamped inside that region, so a moved cursor never leaves a ghost behind.
