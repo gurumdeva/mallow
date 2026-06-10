@@ -159,8 +159,12 @@ enum SmartTypography {
             return ellipsis("...").map(String.init)
 
         case "-":
-            // Block-start carve-out: a hyphen with no preceding char on the line is left alone.
-            if prev == nil { return nil }
+            // Carve-out: when the line up to the caret is ONLY thematic-break / table-delimiter characters
+            // (hyphens, en/em dashes, spaces/tabs, `|`, `:`), the user is typing a `---` rule or a GFM
+            // `|---|` delimiter row — DON'T substitute (an en/em dash would corrupt them). The old check was
+            // `prev == nil`, true only at document offset 0, so every other line's `--`/`---` got curled —
+            // making horizontal rules and table delimiter rows impossible to type. (Contract: lines 124-127.)
+            if isStructuralDashLine(utf16, at) { return nil }
             // En dash from "-" + a single preceding hyphen.
             if prev == "-" {
                 return dash("--").map(String.init)
@@ -174,6 +178,25 @@ enum SmartTypography {
         default:
             return nil
         }
+    }
+
+    /// True iff the current line, from its start up to `at`, contains ONLY characters that make up a
+    /// thematic break (`---`) or a GFM table delimiter row (`|---|`, `|:--:|`): hyphen, en/em dash (a
+    /// hyphen already substituted on this line), space, tab, `|`, `:`. On such a line the dash
+    /// substitution must stay inert so the user can actually type a rule / delimiter. Also true at the
+    /// very start of the document (`at == 0`) — the original offset-0 carve-out, now generalized per line.
+    private static func isStructuralDashLine(_ utf16: [UInt16], _ at: Int) -> Bool {
+        var i = at - 1
+        while i >= 0 {
+            let u = utf16[i]
+            if u == 10 { break }   // reached the line start (the preceding newline)
+            //         '-'   ' '   '\t'  '|'    ':'   en-dash  em-dash
+            guard u == 45 || u == 32 || u == 9 || u == 124 || u == 58 || u == 0x2013 || u == 0x2014 else {
+                return false
+            }
+            i -= 1
+        }
+        return true
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────────────────────

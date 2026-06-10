@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [Unreleased]
+
+A file-by-file stability + correct-display pass (whole-codebase review).
+
+### Fixed
+- **You can type `---` again.** A horizontal rule — and a GFM table's `|---|` delimiter row — was being auto-corrected into an en/em dash on every line except the document's first, so rules and hand-typed tables were impossible to write. Smart typography now leaves a line that is only dashes / pipes / colons alone.
+- **External-change reload keeps your place.** When a file changed on disk and Mallow silently reloaded it, the cursor and scroll jumped to the very bottom; they now stay where you were.
+- **"Discard" can't be silently undone.** Closing a window with unsaved changes and choosing Discard could, in a rare timing window, let a pending autosave write those discarded edits back to disk. The autosave is now cancelled on discard.
+- **List / quote toggles no longer trip on a stray space.** A blank separator line that happened to contain a space could flip a list toggle the wrong way and drop an empty marker on it.
+- **Search is accurate across line breaks** (engine): a search term crossing a line break could yield an invalid highlight range (garbled on Korean text) or report a match the reader can't see.
+
+### Changed
+- Robustness (no visible change in normal use): image paste/drop is guarded against a live IME composition; a folded or table line can't briefly collapse mid-composition; HTML export rejects a scripted `data:image/svg+xml` URL.
+
 ## [1.1.1] - 2026-06-06
 
 A polish + reliability patch from an adversarial review of the 1.1.0 additions: IME-composition data-safety hardening and Check-for-Updates fixes. Signed with a Developer ID and notarized by Apple.

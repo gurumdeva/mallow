@@ -108,10 +108,15 @@ extension EditorDocument {
         // desync the input context (crash / mangled composition). Skip — reloadFromDiskIfChanged runs again
         // on the next focus, by which point the composition has committed.
         guard !textView.hasMarkedText() else { return }
+        // Capture the caret BEFORE the replace: replacing the whole range collapses the selection to the
+        // replacement's END, so reading selectedRange() afterward always yields the document end — which
+        // would throw the caret + scroll to the bottom on every external reload. Preserve the prior offset
+        // (clamped to the new length) so the reader stays roughly where they were.
+        let priorCaret = textView.selectedRange().location
         let full = NSRange(location: 0, length: (textView.string as NSString).length)
         textView.replaceCharactersUndoably(in: full, with: disk)
         let len = (disk as NSString).length
-        let caret = min(textView.selectedRange().location, len)
+        let caret = min(priorCaret, len)
         textView.setSelectedRange(NSRange(location: caret, length: 0))
         vm.markSaved(path: path, content: disk)   // disk is now the clean baseline (not dirty)
         vm.refresh()                              // re-parse, restyle, recompute hidden glyphs, focus

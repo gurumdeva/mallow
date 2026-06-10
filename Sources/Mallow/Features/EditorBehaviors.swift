@@ -95,6 +95,14 @@ final class EditorBehaviors {
         }
     }
 
+    /// Cancel a pending debounced autosave. Called by the close-with-discard path: a timer suspended
+    /// while the discard dialog was up (modal runloop) could otherwise fire on the next default-mode pass
+    /// AFTER the window closes and write the very edits the user chose to discard over the saved file.
+    func cancelPendingAutosave() {
+        autosaveTimer?.invalidate()
+        autosaveTimer = nil
+    }
+
     // MARK: - Typewriter scrolling (ported from TypewriterScroll.swift)
 
     /// Re-centre the caret line as the selection moves. Called from `Coordinator.textViewDidChangeSelection`.

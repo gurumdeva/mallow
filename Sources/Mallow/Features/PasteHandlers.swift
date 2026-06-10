@@ -162,6 +162,11 @@ extension MarkdownEditor.Coordinator {
     /// inline data-URI markdown at the selection; else (2) if the clipboard is a single http(s) URL AND
     /// there's a non-empty selection, wrap the selection as `[selection](url)`; else (3) fall through.
     func handlePaste() -> Bool {
+        // Never run our custom (image/URL) paste into a live IME composition — inserting at an arbitrary
+        // index while the input context holds a marked range risks an NSRangeException / mangled syllable.
+        // Defer to AppKit's default paste (return false), which commits the composition first. (Matches the
+        // hasMarkedText guard every other buffer-touching path has.)
+        guard !doc.textView.hasMarkedText() else { return false }
         // (1) Image embed — takes precedence over URL-wrap (an image on the clipboard is the intent).
         let images = pendingImages(from: NSPasteboard.general)
         if !images.isEmpty {
@@ -194,6 +199,9 @@ extension MarkdownEditor.Coordinator {
     /// image(s) and we embedded them at the drop point; false to let NSTextView handle the drag (e.g.
     /// dragged plain text / internal moves).
     func handleDrop(_ sender: NSDraggingInfo) -> Bool {
+        // A drop does NOT commit a live IME composition (unlike ⌘V), so embedding at the drop index while
+        // marked text is held would insert mid-composition. Defer to NSTextView's default drag handling.
+        guard !doc.textView.hasMarkedText() else { return false }
         let images = pendingImages(from: sender.draggingPasteboard)
         guard !images.isEmpty else { return false }
         // Drop AT the cursor under the pointer; fall back to the current caret if it can't be mapped.

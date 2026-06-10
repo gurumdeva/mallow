@@ -200,7 +200,15 @@ struct WindowConfigurator: NSViewRepresentable {
             guard let doc, doc.vm.isDirty else {
                 return true   // nothing unsaved (or no doc) — close freely
             }
-            return confirmDiscard(on: sender)
+            let discard = confirmDiscard(on: sender)
+            if discard {
+                // The user discarded unsaved edits — cancel any pending debounced autosave so a timer that
+                // was suspended while this modal was up (the autosave fires in the default runloop mode,
+                // which only resumes after the modal returns) can't fire AFTER the window closes and write
+                // the discarded edits back to disk. The ⌘Q path is safe already (the process exits first).
+                (doc.textView.delegate as? MarkdownEditor.Coordinator)?.behaviors.cancelPendingAutosave()
+            }
+            return discard
         }
 
         /// Modal "Discard unsaved changes?" alert, reusing the shared `dialog.discard.*` locale keys (same

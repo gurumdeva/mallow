@@ -209,6 +209,11 @@ struct MarkdownEditor: NSViewRepresentable {
                            forGlyphRange glyphRange: NSRange) -> Bool {
             guard !vm.foldedChars.isEmpty || !vm.tableRowChars.isEmpty else { return false }
             let charStart = lm.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil).location
+            // IME guard, matching the glyph delegate: foldedChars / tableRowChars are FROZEN at
+            // pre-composition offsets while a composition is live, so a now-shifted VISIBLE line whose start
+            // collides with a stale folded index would wrongly collapse to zero height (its text vanishes
+            // mid-composition). Don't override geometry from the marked-range start onward; commit re-derives.
+            if doc.textView.hasMarkedText(), charStart >= doc.textView.markedRange().location { return false }
             if vm.foldedChars.contains(charStart) {
                 lineFragmentRect.pointee.size.height = 0
                 lineFragmentUsedRect.pointee.size.height = 0

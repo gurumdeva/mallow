@@ -212,6 +212,19 @@ final class MallowTests: XCTestCase {
         XCTAssertEqual(SmartTypography.substitution(for: "\"", in: notFm, at: afterRule), "\u{201C}")
     }
 
+    func testSmartTypography_lineLeadingDashesStayLiteral() {
+        // A thematic break and a GFM table delimiter row must be TYPEABLE: a hyphen on a line that is only
+        // hyphens / pipes / colons must NOT be turned into an en/em dash. (The old carve-out only fired at
+        // document offset 0, so every other line's `--`/`---` got curled — breaking rules and tables.)
+        XCTAssertNil(SmartTypography.substitution(for: "-", in: "x\n-", at: 3))    // 2nd `-` of a line-leading `--`
+        XCTAssertNil(SmartTypography.substitution(for: "-", in: "x\n--", at: 4))   // 3rd `-` of `---`
+        XCTAssertNil(SmartTypography.substitution(for: "-", in: "|-", at: 2))      // GFM delimiter `|--`
+        XCTAssertNil(SmartTypography.substitution(for: "-", in: "| :-", at: 4))    // aligned delimiter `| :--`
+        // But a real mid-word hyphen in prose still becomes an en dash.
+        XCTAssertEqual(SmartTypography.substitution(for: "-", in: "well-", at: 5), "\u{2013}")
+        XCTAssertEqual(SmartTypography.substitution(for: "-", in: "a-", at: 2), "\u{2013}")
+    }
+
     // MARK: - Inline raw HTML coverage (engine data-safety regression, end-to-end through the FFI bridge)
 
     func testInlineHTML_isCoveredByInlineRuns_notDropped() {
