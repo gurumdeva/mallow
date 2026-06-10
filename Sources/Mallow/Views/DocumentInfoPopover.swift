@@ -30,6 +30,11 @@ struct DocumentInfoPopover: View {
     private let contentWidth: CGFloat = 300
 
     var body: some View {
+        // Observe `revision` so Statistics + the TOC refresh LIVE while the popover stays open and the user
+        // keeps typing (⇧⌘I then edit) — without this dependency the body reads only non-observable state
+        // (textView.string / vm) and freezes at its open-time contents. (StatusBar reads revision the same
+        // way.) A `let _` declaration, not a bare `_ =` expression, so the ViewBuilder doesn't treat it as a view.
+        let _ = doc.revision
         // Recompute per render — cheap, and reflects the current buffer (mirrors the AppKit panel being
         // rebuilt on every open). `source` is read once and threaded through stats + outline.
         let source = doc.textView.string

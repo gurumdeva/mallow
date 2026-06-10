@@ -229,7 +229,11 @@ extension MarkdownEditor.Coordinator {
         }
         guard let inner = innerFor(charIndex),
               let isChecked = lineBoxes[inner],
-              inner >= 0, inner < total else { return false }
+              inner >= 0, inner < total,
+              // Only toggle a box the ENGINE recognized as a task marker. The line scan alone also matches a
+              // literal `- [ ] …` sitting INSIDE a fenced code block (rendered verbatim, no ☐), so without
+              // this a click there would silently edit the code sample. `vm.taskBoxes` excludes those.
+              doc.vm.taskBoxes[inner] != nil else { return false }
 
         // Flip the single inner char: ' ' → 'x' (check) or 'x'/'X' → ' ' (uncheck).
         let replacement = isChecked ? " " : "x"

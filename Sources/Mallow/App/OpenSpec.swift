@@ -11,12 +11,25 @@ enum OpenSpec: Codable, Hashable {
 }
 
 extension EditorDocument {
+    /// Cap for synchronously opening a file in the editor (read + decode + parse on the window-init main
+    /// thread). 50 MB is orders of magnitude above any real markdown note; a file larger than this opens
+    /// as an empty untitled window rather than hanging the app.
+    static let maxOpenBytes = 50 * 1024 * 1024
+
     /// Build a document for an open request. A file is read off disk (empty on failure) and recorded in
     /// the recent list; `nil`/`.blank` is an empty buffer, except the first ever launch, which seeds the
     /// welcome demo so a new user sees live styling immediately.
     static func make(for spec: OpenSpec?) -> EditorDocument {
         switch spec {
         case .file(let path):
+            // Stability guard: never read + parse a pathologically large file synchronously on the main
+            // thread (this runs in the window's init) — a few-hundred-MB `.md` would beachball the app at
+            // open. Above the cap, open an empty UNTITLED window instead; the file on disk is left untouched
+            // (path unbound → no autosave can clobber it). A real markdown note is never anywhere near this.
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+               let size = attrs[.size] as? Int, size > maxOpenBytes {
+                return EditorDocument(text: "", path: nil)
+            }
             // Read the raw bytes once. Strip a leading UTF-8 BOM (EF BB BF) before decoding (Foundation
             // would consume it anyway) but REMEMBER it (`hadBOM`) so save re-prepends it — a Windows /
             // PowerShell BOM file isn't silently de-BOM'd on an open→save round-trip.

@@ -131,6 +131,14 @@ final class WindowRegistry {
         guard !path.isEmpty else { return nil }
         let expanded = (path as NSString).expandingTildeInPath
         let url = URL(fileURLWithPath: expanded)
+        // If the file EXISTS, prefer the filesystem's OWN canonical path — it case-normalizes on a
+        // case-insensitive volume (default APFS), so `Note.md` and `note.md` resolve to ONE key. Without
+        // this they canonicalize differently, so two windows open on the same on-disk file and silently
+        // clobber each other's autosave — exactly the single-writer guarantee this registry exists for.
+        // (RenameSheet's same-file check already uses this key.)
+        if let canonical = (try? url.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath {
+            return canonical
+        }
         // `resolvingSymlinksInPath` also standardizes the path and makes it absolute; for a path whose
         // leaf doesn't exist yet it resolves the existing prefix and leaves the rest standardized — exactly
         // what we want so an about-to-be-created Save-As target still dedupes against an open window.
@@ -157,16 +165,16 @@ func confirmQuitIfDirty() -> Bool {
     let dirty = WindowRegistry.shared.dirtyDocuments()
     guard !dirty.isEmpty else { return true }   // nothing unsaved → quit freely
 
-    // No dedicated quit-with-N-dirty key exists in the locale tables (only the single-document
-    // `dialog.discard.*`), so the quit title/body are literal English; the title names the count so the
-    // user knows the blast radius. Quit Anyway is the destructive default (⏎); Cancel is the Esc action —
-    // same button ordering as WindowConfigurator.confirmDiscard (via the shared confirmDestructive helper).
+    // The title names the count so the user knows the blast radius. Quit Anyway is the destructive default
+    // (⏎); Cancel is the Esc action — same button ordering as WindowConfigurator.confirmDiscard. Now fully
+    // localized (en/ko/ja) — previously the title/body/confirm were literal English while only Cancel was
+    // localized, giving a ko/ja user a mixed-language dialog.
     let title = dirty.count == 1
-        ? "You have 1 document with unsaved changes."
-        : "You have \(dirty.count) documents with unsaved changes."
+        ? L.t("dialog.quit.titleOne")
+        : L.t("dialog.quit.titleMany", ["count": "\(dirty.count)"])
     return NSAlert.confirmDestructive(title: title,
-                                      body: "If you quit now, those changes will be lost.",
-                                      confirm: "Quit Anyway",
+                                      body: L.t("dialog.quit.body"),
+                                      confirm: L.t("dialog.quit.confirm"),
                                       cancel: L.t("dialog.discard.cancel"))
 }
 

@@ -173,7 +173,14 @@ func centerCaretLine(_ doc: EditorDocument) {
     let visible = clip.bounds                 // visible rect in document (text-view) coordinates
     let desiredOriginY = caretMidY - visible.height / 2
     guard let documentHeight = textView.enclosingScrollView?.documentView?.frame.height else { return }
-    let maxOriginY = max(0, documentHeight - visible.height)
+    // Let the LAST lines centre by scrolling into the bottom overscroll band the clip view permits (read
+    // its own value so the two can't drift) — but only when the document is taller than the viewport, the
+    // same condition BottomOverscrollClipView uses. Without this `maxOriginY` pins to the natural bottom
+    // and the caret on the final lines stays near the bottom instead of rising to the middle.
+    let overscroll = documentHeight > visible.height
+        ? (clip as? BottomOverscrollClipView)?.overscroll ?? 0
+        : 0
+    let maxOriginY = max(0, documentHeight - visible.height) + overscroll
     let clampedY = min(max(0, desiredOriginY), maxOriginY)
 
     // Don't nudge if we're already essentially centred (mirrors the |delta| < 1 short-circuit).

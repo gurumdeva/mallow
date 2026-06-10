@@ -17,6 +17,15 @@ A file-by-file stability + correct-display pass (whole-codebase review).
 - **"Discard" can't be silently undone.** Closing a window with unsaved changes and choosing Discard could, in a rare timing window, let a pending autosave write those discarded edits back to disk. The autosave is now cancelled on discard.
 - **List / quote toggles no longer trip on a stray space.** A blank separator line that happened to contain a space could flip a list toggle the wrong way and drop an empty marker on it.
 - **Search is accurate across line breaks** (engine): a search term crossing a line break could yield an invalid highlight range (garbled on Korean text) or report a match the reader can't see.
+- **Headings on indented items don't stack markers** (engine): applying a heading to an indented list item produced `#   - item` with the bullet still showing; it now becomes a clean heading.
+- **Code blocks with a language unwrap correctly** (engine): toggling off a ` ```rust `…` ``` ` block used to explode it into an empty block + stray paragraph instead of unwrapping.
+- **Task checkboxes can't be toggled inside a code block.** Clicking a literal `- [ ]` shown verbatim in a fenced code sample no longer silently edits the sample.
+- **The Document Info panel updates live.** Word/character counts and the outline now refresh while the panel stays open and you keep typing.
+- **The quit-with-unsaved-changes dialog is fully localized** (Korean / Japanese), instead of mixed English + a localized Cancel button.
+- **Typewriter mode can centre the last lines** of a document, using the scroll-past-end space.
+
+### Changed
+- Stability: a pathologically large file (> 50 MB) opens as an empty untitled window instead of hanging the app on the main thread; and two windows can no longer open on the same file via case-only path differences on a case-insensitive disk (which let their autosaves clobber each other).
 
 ### Changed
 - Robustness (no visible change in normal use): image paste/drop is guarded against a live IME composition; a folded or table line can't briefly collapse mid-composition; HTML export rejects a scripted `data:image/svg+xml` URL.
