@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
-## [Unreleased]
+## [1.1.2] - 2026-06-06
 
-A file-by-file stability + correct-display pass (whole-codebase review).
+A file-by-file stability + correct-display pass (whole-codebase review). Signed with a Developer ID and notarized by Apple.
 
 ### Fixed
 - **You can type `---` again.** A horizontal rule — and a GFM table's `|---|` delimiter row — was being auto-corrected into an en/em dash on every line except the document's first, so rules and hand-typed tables were impossible to write. Smart typography now leaves a line that is only dashes / pipes / colons alone.
