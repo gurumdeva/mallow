@@ -90,6 +90,11 @@ final class MallowAppDelegate: NSObject, NSApplicationDelegate {
     /// app's own 보기/View menu.
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        // End the launch phase a beat after launch: a file opened AT launch (delivered around now via
+        // application(_:open:)) supersedes the auto-created restore/welcome window; opens once the app is
+        // already running get their own windows. The delay covers the open event arriving slightly after
+        // this callback on some launches. See LaunchOpen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { LaunchOpen.endLaunchPhase() }
         // Quietly ask GitHub Releases whether a newer build is out (throttled to once/day; only surfaces
         // a prompt when an update actually exists). The explicit “Check for Updates…” menu item is the
         // manual counterpart. Network call is async, so this doesn't delay launch.

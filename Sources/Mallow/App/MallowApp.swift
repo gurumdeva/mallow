@@ -33,8 +33,10 @@ struct EditorWindow: View {
     @State private var showInfo = false
     @State private var showRename = false
     @Environment(\.openWindow) private var openWindow
+    private let spec: OpenSpec?
 
     init(spec: OpenSpec?) {
+        self.spec = spec
         _doc = State(initialValue: EditorDocument.make(for: spec))
     }
 
@@ -61,7 +63,21 @@ struct EditorWindow: View {
         .background(WindowActiveTracker(doc: doc))   // report this window active to AppState for the menu commands
         .background(WindowConfigurator(doc: doc))    // close-confirm on unsaved edits + session geometry persistence
         .sheet(isPresented: $showRename) { RenameSheet(doc: doc) }
-        .onAppear { WindowRegistry.shared.register(doc) }
+        .onAppear {
+            // A nil spec means SwiftUI auto-created this window (launch or reopen) rather than File ▸
+            // New/Open (which pass `.blank`/`.file`); tag it so a launch file-open can supersede it.
+            if spec == nil { LaunchOpen.tagInitialWindow(doc) }
+            WindowRegistry.shared.register(doc)
+            LaunchOpen.closePendingIfReady(newlyRegistered: doc)  // close a superseded initial window once we're up
+            // A nil-spec restore window that duplicates an already-open file is spurious (macOS spawns one
+            // when a file is opened while the app is already running). Close it — the existing window owns
+            // the file (the registry's single-writer-per-file invariant). Deferred so we close after this
+            // appearance settles and at least one other window remains.
+            if LaunchOpen.isSpuriousDuplicateRestoreWindow(doc, wasNilSpec: spec == nil) {
+                let victim = doc
+                DispatchQueue.main.async { victim.hostWindow?.close() }
+            }
+        }
         .onDisappear {
             WindowRegistry.shared.unregister(doc)
             // Drop the app-wide active-doc pointer if it was us, so a menu command fired after this window
@@ -71,11 +87,28 @@ struct EditorWindow: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .mallowOpenFile)) { note in
             guard let path = note.userInfo?["path"] as? String, claimFileOpen(path) else { return }
-            // Focus an already-open window for this file instead of opening a duplicate (data-safety).
-            if let existing = WindowRegistry.shared.document(forPath: path) {
-                WindowRegistry.shared.focusWindow(of: existing)
-            } else {
+            let action = LaunchOpen.decide(openPath: path,
+                                           receivingWindowPath: doc.vm.filePath,
+                                           receivingWindowIsDirty: doc.vm.isDirty,
+                                           receivingWindowIsInitial: doc === LaunchOpen.initialDoc,
+                                           isLaunching: LaunchOpen.isLaunching)
+            switch action {
+            case .focusThisWindow:
+                // This window already holds the file (e.g. the restored last file == the opened file) —
+                // focus it rather than open a duplicate.
+                WindowRegistry.shared.focusWindow(of: doc)
+            case .openNewWindow:
+                // Normal behavior: focus an already-open window for this file, else open a new one.
+                if let existing = WindowRegistry.shared.document(forPath: path) {
+                    WindowRegistry.shared.focusWindow(of: existing)
+                } else {
+                    openWindow(value: OpenSpec.file(path: path))
+                }
+            case .openAndSupersede:
+                // Launch handed us a different file than the restore/welcome this initial window shows:
+                // open the file in its own window and close this spurious one (once the file window is up).
                 openWindow(value: OpenSpec.file(path: path))
+                LaunchOpen.markSupersede(doc)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .mallowToggleInfo)) { _ in

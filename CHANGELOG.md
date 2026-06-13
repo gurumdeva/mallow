@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.1.4] - 2026-06-14
+
+A window-duplication fix. Signed with a Developer ID and notarized by Apple.
+
+### Fixed
+- **Opening a file no longer leaves you with two windows.** Launching Mallow with a document — double-clicking a `.md` in Finder, "Open With", or `open` from the terminal — opened the file but ALSO opened a second window restoring your last-edited file (or the welcome demo). When your last file happened to be the one you opened, this looked like two identical windows side by side. Launch now shows exactly one window: the file you opened. A plain launch with no file still reopens your last file as before.
+- **Opening a file while Mallow is already running no longer spawns a duplicate window.** macOS would quietly create an extra copy of your current window each time a file was opened from Finder; that duplicate is now suppressed, so you get just the opened file's window.
+
 ## [1.1.3] - 2026-06-13
 
 Two input-correctness fixes for everyday typing. Signed with a Developer ID and notarized by Apple.

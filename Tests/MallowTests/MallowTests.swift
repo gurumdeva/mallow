@@ -274,4 +274,57 @@ final class MallowTests: XCTestCase {
         XCTAssertFalse(UpdateChecker.isNewer("1.2.0+build5", than: "1.1.0"))
         XCTAssertTrue(UpdateChecker.isNewer("v1.2.0", than: "1.1.0"))   // a clean stable tag still upgrades
     }
+
+    // MARK: - Launch-open routing (the duplicate-window-on-launch guard)
+
+    // The pure decision behind MallowApp's `.mallowOpenFile` handler: when the OS hands the app a file,
+    // what should the receiving window do? Locks in the fix for "launching with a file opens TWO windows"
+    // (a restored-last-file window PLUS the opened-file window).
+
+    func testLaunchOpen_sameFileInThisWindow_focusesNotDuplicates() {
+        // The receiving window already shows the opened file (e.g. the restored last file IS the file the
+        // launch opened) — focus it, never a second identical window. True regardless of phase/role.
+        let a = LaunchOpen.decide(openPath: "/tmp/a.md", receivingWindowPath: "/tmp/a.md",
+                                  receivingWindowIsDirty: false, receivingWindowIsInitial: true, isLaunching: true)
+        XCTAssertEqual(a, .focusThisWindow)
+        // Same file via an equivalent spelling (`.`/`..`/redundant slash) still counts as the same file.
+        let b = LaunchOpen.decide(openPath: "/tmp/sub/../a.md", receivingWindowPath: "/tmp/./a.md",
+                                  receivingWindowIsDirty: false, receivingWindowIsInitial: false, isLaunching: false)
+        XCTAssertEqual(b, .focusThisWindow)
+    }
+
+    func testLaunchOpen_launchDifferentFileOnCleanInitialWindow_supersedes() {
+        // Cold launch, the spurious clean restore/welcome window, a DIFFERENT file → open the file and
+        // close the spurious window (the core fix).
+        let r = LaunchOpen.decide(openPath: "/tmp/opened.md", receivingWindowPath: "/tmp/lastfile.md",
+                                  receivingWindowIsDirty: false, receivingWindowIsInitial: true, isLaunching: true)
+        XCTAssertEqual(r, .openAndSupersede)
+        // The welcome window (no file) on first-run launch is likewise superseded by an opened file.
+        let w = LaunchOpen.decide(openPath: "/tmp/opened.md", receivingWindowPath: nil,
+                                  receivingWindowIsDirty: false, receivingWindowIsInitial: true, isLaunching: true)
+        XCTAssertEqual(w, .openAndSupersede)
+    }
+
+    func testLaunchOpen_dirtyInitialWindow_doesNotDiscard() {
+        // If the user already typed into the restore window before the launch open arrived, never close
+        // it (that would discard unsaved edits) — open the file in its own window instead.
+        let r = LaunchOpen.decide(openPath: "/tmp/opened.md", receivingWindowPath: "/tmp/lastfile.md",
+                                  receivingWindowIsDirty: true, receivingWindowIsInitial: true, isLaunching: true)
+        XCTAssertEqual(r, .openNewWindow)
+    }
+
+    func testLaunchOpen_afterLaunch_opensNewWindow() {
+        // Once the launch phase is over, opening a file always gets its own window (matches File ▸ Open),
+        // even on the (now ordinary) initial window — no superseding a window the user is using.
+        let r = LaunchOpen.decide(openPath: "/tmp/opened.md", receivingWindowPath: "/tmp/lastfile.md",
+                                  receivingWindowIsDirty: false, receivingWindowIsInitial: true, isLaunching: false)
+        XCTAssertEqual(r, .openNewWindow)
+    }
+
+    func testLaunchOpen_nonInitialWindowDuringLaunch_opensNewWindow() {
+        // A file-open received by a window that is NOT the spurious initial one never supersedes it.
+        let r = LaunchOpen.decide(openPath: "/tmp/opened.md", receivingWindowPath: "/tmp/other.md",
+                                  receivingWindowIsDirty: false, receivingWindowIsInitial: false, isLaunching: true)
+        XCTAssertEqual(r, .openNewWindow)
+    }
 }
