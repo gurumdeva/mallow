@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.1.3] - 2026-06-13
+
+Two input-correctness fixes for everyday typing. Signed with a Developer ID and notarized by Apple.
+
+### Fixed
+- **Typing a space at the end of a line is no longer invisible.** A trailing space the parser left outside its text run was being zero-width-hidden, so the space didn't show and the caret appeared frozen on the spot. Trailing whitespace now stays visible and the caret advances normally.
+- **Typing `-` (or `=`) under a line no longer balloons the line above into a heading.** A line followed by `-`/`=` is a Markdown *setext heading*, so starting a list — or just typing a dash on the next line — would instantly blow the previous sentence up to heading size. Setext headings now render as normal paragraphs; only `#`-style (ATX) headings render as headings. Both the `-` (H2) and `=` (H1) forms are covered, including the dash-under-a-pipe-line near-miss that could otherwise look like a stray table.
+
 ## [1.1.2] - 2026-06-06
 
 A file-by-file stability + correct-display pass (whole-codebase review). Signed with a Developer ID and notarized by Apple.

@@ -233,10 +233,27 @@ final class EditorViewModel {
             switch block.kindTag {
             case "Heading":
                 if let level = block.headingLevel, let nr = nsRange(block.range) {
-                    let hz: CGFloat = (level == 1 ? 28 : level == 2 ? 22 : level == 3 ? 18 : 16) * zoomFactor  // Mallow sizes × zoom
-                    storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: hz), range: nr)
+                    // Only ATX (`#`-prefixed) headings render big. A SETEXT heading — a line "underlined"
+                    // by `---`/`===` — is rendered as a normal paragraph instead: otherwise typing a lone
+                    // `-`/`=` on the line BELOW any text instantly balloons that text into a heading (e.g.
+                    // the moment you start a list). The engine still reports it faithfully as a Heading;
+                    // suppressing the big font here is a display choice. Detect ATX by the first
+                    // non-indent char being `#`.
+                    let nsSrc = s as NSString
+                    var i = nr.location
+                    let end = nr.location + nr.length
+                    while i < end {
+                        let c = nsSrc.character(at: i)
+                        if c != 32 && c != 9 { break }  // skip the ≤3 chars of allowed indent
+                        i += 1
+                    }
+                    if i < end, nsSrc.character(at: i) == 35 {  // '#'
+                        let hz: CGFloat = (level == 1 ? 28 : level == 2 ? 22 : level == 3 ? 18 : 16) * zoomFactor  // Mallow sizes × zoom
+                        storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: hz), range: nr)
+                        continue  // ATX heading text is uniform — no inline pass
+                    }
+                    // setext heading → fall through to the inline pass below (renders as body text)
                 }
-                continue  // heading text is uniform — no inline pass
             case "CodeBlock":
                 if let nr = nsRange(block.range) {
                     storage.addAttribute(.font,   // code is uniform monospace
@@ -721,7 +738,19 @@ private struct HiddenSyntaxCollector {
                 if lo > cursor { collapse(cursor, lo, keep: keep) }
                 cursor = max(cursor, hi)
             }
-            if cursor < bHi { collapse(cursor, bHi, keep: keep) }
+            // Trailing gap: peel trailing whitespace so a just-typed trailing space/tab stays VISIBLE and the
+            // caret visibly advances. pulldown excludes trailing whitespace from the last inline run, so
+            // without this peel it falls in the gap and gets zero-width-hidden — typing a space at the end of
+            // a line looked like nothing happened (the caret sat on an invisible char). Real trailing SYNTAX
+            // (a closing `##`, a hard-break `\`) is non-whitespace, so it is still hidden.
+            if cursor < bHi {
+                var hi = bHi
+                while hi > cursor {
+                    let c = ns.character(at: hi - 1)
+                    if c == 32 || c == 9 || c == 10 || c == 13 { hi -= 1 } else { break }
+                }
+                if hi > cursor { collapse(cursor, hi, keep: keep) }
+            }
         }
     }
 
