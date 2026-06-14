@@ -4,6 +4,7 @@
 
 import XCTest
 import Foundation
+import AppKit
 import UniformTypeIdentifiers
 @testable import Mallow
 
@@ -326,5 +327,33 @@ final class MallowTests: XCTestCase {
         let r = LaunchOpen.decide(openPath: "/tmp/opened.md", receivingWindowPath: "/tmp/other.md",
                                   receivingWindowIsDirty: false, receivingWindowIsInitial: false, isLaunching: true)
         XCTAssertEqual(r, .openNewWindow)
+    }
+
+    // MARK: Hidden set — a paragraph's leading whitespace stays VISIBLE (the leading-space peel)
+
+    func testHideBlockGaps_paragraphLeadingWhitespaceVisible_markersStillHidden() {
+        // Drives the real hide pipeline (parse → recomputeHidden) and reads the resulting hidden set.
+        // `tv` is retained by this scope; the view model holds it weakly.
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        let vm = EditorViewModel(textView: tv)
+        func hidden(_ s: String) -> Set<Int> { tv.string = s; vm.refresh(); return vm.hiddenChars }
+
+        // THE FIX: a paragraph's leading spaces are content, not syntax — they must NOT be zero-width-hidden
+        // (typing spaces at the start of a paragraph used to show nothing). Symmetric to the trailing peel.
+        let para = hidden("   hello")        // 3 leading spaces + "hello"
+        XCTAssertFalse(para.contains(0), "paragraph leading space @0 must stay visible")
+        XCTAssertFalse(para.contains(1), "paragraph leading space @1 must stay visible")
+        XCTAssertFalse(para.contains(2), "paragraph leading space @2 must stay visible")
+
+        // The peel is WHITESPACE-ONLY: a leading escape backslash in a paragraph is syntax → still hidden.
+        XCTAssertTrue(hidden("\\*x").contains(0), "a paragraph's leading escape backslash must still hide")
+
+        // REGRESSION (the peel is scoped to Paragraph): the `#` marker of a heading still hides — the fix
+        // must not leak into Heading/List/BlockQuote. (A heading's ≤3-space indent is outside pulldown's
+        // heading block range, so it isn't part of this hide pass either way; the marker is the guard.)
+        XCTAssertTrue(hidden("# Heading").contains(0), "the heading # marker must still hide")
+
+        // REGRESSION: a blockquote marker still hides (a bar is drawn in its place).
+        XCTAssertTrue(hidden("> quote").contains(0), "the blockquote > must still hide")
     }
 }

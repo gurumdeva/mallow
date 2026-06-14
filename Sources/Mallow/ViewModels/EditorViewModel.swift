@@ -734,6 +734,19 @@ private struct HiddenSyntaxCollector {
                 .sorted { $0.lo < $1.lo }
             let keep = (block.kindTag == "List") ? grammar.leadingMarkers(bLo, bHi) : Set<Int>()
             var cursor = bLo
+            // Leading gap (Paragraph only): peel leading whitespace so indentation typed at the START of a
+            // paragraph stays VISIBLE — the symmetric twin of the trailing-whitespace peel below. pulldown
+            // strips a paragraph's insignificant leading whitespace from its first inline run, so otherwise
+            // it lands in the leading gap and gets zero-width-hidden (you type spaces and nothing shows).
+            // Scoped to Paragraph because Heading/List/BlockQuote leading gaps are the block MARKER (`#`,
+            // `- `, `> `) + padding, which MUST stay hidden; their gaps start with a non-whitespace marker
+            // so the peel would stop immediately anyway — the guard just makes that intent explicit/safe.
+            if block.kindTag == "Paragraph" {
+                while cursor < bHi {
+                    let c = ns.character(at: cursor)
+                    if c == 32 || c == 9 { cursor += 1 } else { break }
+                }
+            }
             for (lo, hi) in covered {
                 if lo > cursor { collapse(cursor, lo, keep: keep) }
                 cursor = max(cursor, hi)
