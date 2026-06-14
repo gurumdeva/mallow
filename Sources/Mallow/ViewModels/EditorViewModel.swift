@@ -247,12 +247,13 @@ final class EditorViewModel {
                         if c != 32 && c != 9 { break }  // skip the ≤3 chars of allowed indent
                         i += 1
                     }
-                    if i < end, nsSrc.character(at: i) == 35 {  // '#'
+                    if i < end, nsSrc.character(at: i) == 35, !block.inlines.isEmpty {  // '#' with text
                         let hz: CGFloat = (level == 1 ? 28 : level == 2 ? 22 : level == 3 ? 18 : 16) * zoomFactor  // Mallow sizes × zoom
                         storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: hz), range: nr)
                         continue  // ATX heading text is uniform — no inline pass
                     }
-                    // setext heading → fall through to the inline pass below (renders as body text)
+                    // setext heading, OR an empty heading still being typed (a lone `#`, now shown by
+                    // `showOrphanHeadingMarkers`) → fall through to the inline pass, rendering as body text.
                 }
             case "CodeBlock":
                 if let nr = nsRange(block.range) {
@@ -353,6 +354,7 @@ final class EditorViewModel {
         // only inserts into the same set.
         var collector = HiddenSyntaxCollector(ns: cb, map: map, total: total)
         collector.hideBlockGaps(blocks)        // the `#`/`**`/`> ` marker gaps in paragraphs/headings/lists/quotes
+        collector.showOrphanHeadingMarkers(blocks) // …but reveal a setext underline / lone `#` (text-less line)
         collector.hideInlineCodeFences(blocks) // the ` backtick runs around inline code
         collector.hideThematicBreaks(blocks)   // the --- / *** / ___ source (a rule is drawn instead)
         collector.hideCodeBlockFences(blocks)  // the ``` opening/closing fence lines
@@ -764,6 +766,33 @@ private struct HiddenSyntaxCollector {
                 }
                 if hi > cursor { collapse(cursor, hi, keep: keep) }
             }
+        }
+    }
+
+    /// Reveal a heading marker that has no text on its own line. A heading's `#` / setext underline hides
+    /// only where it shares a line with the heading TEXT; a marker on a text-LESS line is shown literally
+    /// instead of vanishing:
+    ///   • a SETEXT underline — `Title\n---` / `Title\n===`. Setext headings render as a plain paragraph
+    ///     here (see `restyle`), so the `---`/`===` below is plain text, not a vanished marker. Typing a
+    ///     lone `-` under a line used to show nothing (the line above stays put), which read as "my
+    ///     keystroke did nothing"; now the `-` shows until it gains content and becomes a list/heading.
+    ///   • the bare `#` of an EMPTY heading you're still typing (`#`, `## `) — was invisible, now shows.
+    /// A closing ATX `#` (`# Title #`) and the leading `#` of a real heading stay hidden — they share the
+    /// TEXT's line. Runs AFTER `hideBlockGaps`; the later bullet/task/table passes never touch headings.
+    mutating func showOrphanHeadingMarkers(_ blocks: [PBlock]) {
+        for block in blocks where block.kindTag == "Heading" {
+            let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: total)
+            let runs = block.inlines.map { $0.range.utf16Bounds(map: map, clampedTo: total) }
+            guard let firstLo = runs.map(\.lo).min(), let lastHi = runs.map(\.hi).max() else {
+                for i in bLo ..< bHi { hidden.remove(i) }   // empty heading → reveal the whole marker
+                continue
+            }
+            // The text sits on ONE line; keep that line's markers hidden, reveal every other line.
+            var lineLo = firstLo
+            while lineLo > bLo, ns.character(at: lineLo - 1) != 10 { lineLo -= 1 }
+            var lineHi = lastHi
+            while lineHi < bHi, ns.character(at: lineHi) != 10 { lineHi += 1 }
+            for i in bLo ..< bHi where i < lineLo || i >= lineHi { hidden.remove(i) }
         }
     }
 

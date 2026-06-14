@@ -356,4 +356,34 @@ final class MallowTests: XCTestCase {
         // REGRESSION: a blockquote marker still hides (a bar is drawn in its place).
         XCTAssertTrue(hidden("> quote").contains(0), "the blockquote > must still hide")
     }
+
+    // MARK: Hidden set — a heading marker on a TEXT-LESS line shows (setext underline / lone `#`)
+
+    func testShowOrphanHeadingMarkers_setextUnderlineAndLoneHashVisible() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        let vm = EditorViewModel(textView: tv)
+        func hidden(_ s: String) -> Set<Int> { tv.string = s; vm.refresh(); return vm.hiddenChars }
+
+        // THE REPORTED BUG: `text\n-` is a setext heading. The text renders as a plain paragraph (v1.1.3),
+        // so the underline `-`/`=` must show as plain text instead of vanishing (you typed it; you should
+        // see it — it becomes a list/heading once it gains content).
+        XCTAssertFalse(hidden("Hi\n-").contains(3), "setext H2 underline `-` @3 must show")
+        let eq = hidden("Hi\n===")                                // setext H1 — `===` at 3,4,5
+        XCTAssertFalse(eq.contains(3), "setext H1 underline `=` @3 must show")
+        XCTAssertFalse(eq.contains(5), "setext H1 underline `=` @5 must show")
+        XCTAssertFalse(hidden("안녕\n-").contains(3), "the `-` under 안녕 (exact reported case) must show")
+
+        // The bare `#` of an EMPTY heading still being typed shows (was invisible).
+        XCTAssertFalse(hidden("#").contains(0), "a lone `#` must show")
+
+        // REGRESSION: a real ATX heading still hides its `# ` marker (text shares the line); text shows.
+        let h = hidden("# H")
+        XCTAssertTrue(h.contains(0), "the `#` of `# H` must still hide")
+        XCTAssertTrue(h.contains(1), "the space after `#` must still hide")
+        XCTAssertFalse(h.contains(2), "the heading text H must show")
+        // REGRESSION: a closing ATX `#` stays hidden — it's on the text's line.
+        XCTAssertTrue(hidden("# H #").contains(4), "a closing `#` must still hide")
+        // REGRESSION (not a heading): a paragraph's closing `**` stays hidden — the rule is heading-only.
+        XCTAssertTrue(hidden("x **b**").contains(5), "a paragraph's closing ** must still hide")
+    }
 }
