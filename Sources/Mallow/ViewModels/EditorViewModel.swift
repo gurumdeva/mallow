@@ -354,7 +354,7 @@ final class EditorViewModel {
         // only inserts into the same set.
         var collector = HiddenSyntaxCollector(ns: cb, map: map, total: total)
         collector.hideBlockGaps(blocks)        // the `#`/`**`/`> ` marker gaps in paragraphs/headings/lists/quotes
-        collector.showOrphanHeadingMarkers(blocks) // …but reveal a setext underline / lone `#` (text-less line)
+        collector.showOrphanMarkers(blocks)    // …but reveal a marker with no content yet (lone `-`/`#`, setext)
         collector.hideInlineCodeFences(blocks) // the ` backtick runs around inline code
         collector.hideThematicBreaks(blocks)   // the --- / *** / ___ source (a rule is drawn instead)
         collector.hideCodeBlockFences(blocks)  // the ``` opening/closing fence lines
@@ -769,22 +769,26 @@ private struct HiddenSyntaxCollector {
         }
     }
 
-    /// Reveal a heading marker that has no text on its own line. A heading's `#` / setext underline hides
-    /// only where it shares a line with the heading TEXT; a marker on a text-LESS line is shown literally
-    /// instead of vanishing:
-    ///   • a SETEXT underline — `Title\n---` / `Title\n===`. Setext headings render as a plain paragraph
-    ///     here (see `restyle`), so the `---`/`===` below is plain text, not a vanished marker. Typing a
-    ///     lone `-` under a line used to show nothing (the line above stays put), which read as "my
-    ///     keystroke did nothing"; now the `-` shows until it gains content and becomes a list/heading.
-    ///   • the bare `#` of an EMPTY heading you're still typing (`#`, `## `) — was invisible, now shows.
-    /// A closing ATX `#` (`# Title #`) and the leading `#` of a real heading stay hidden — they share the
-    /// TEXT's line. Runs AFTER `hideBlockGaps`; the later bullet/task/table passes never touch headings.
-    mutating func showOrphanHeadingMarkers(_ blocks: [PBlock]) {
-        for block in blocks where block.kindTag == "Heading" {
+    /// Reveal a block marker that has no text on its own line, so a marker you've typed but not yet given
+    /// content shows literally instead of vanishing ("you typed it, you should see it"):
+    ///   • a lone list bullet — `-` / `*` / `+` / `1.` with nothing after it (an empty list item). The
+    ///     bullet pipeline only draws `•` for a `- ` WITH a trailing space, so a BARE `-` was neither
+    ///     bulleted nor kept and fell into the gap → hidden. Now it shows until you type the space/content
+    ///     that turns it into a real bullet.
+    ///   • a SETEXT underline — `Title\n---` / `Title\n===` (rendered as a plain paragraph here, so the
+    ///     `---`/`===` below is plain text). Typing a lone `-` under a line used to show nothing.
+    ///   • the bare `#` of an EMPTY heading you're still typing (`#`, `## `).
+    /// A marker that ALREADY has a visible stand-in stays hidden: a `- ` bullet draws `•`, a `>` draws its
+    /// quote bar (so BlockQuote is EXCLUDED), and a closing `# H #` / a real heading's `#` share the text's
+    /// line. This pass only ever UN-hides; the later bullet/task/table passes don't re-touch these chars.
+    /// Runs right after `hideBlockGaps`.
+    mutating func showOrphanMarkers(_ blocks: [PBlock]) {
+        for block in blocks
+        where EditorViewModel.hideable(block.kindTag) && block.kindTag != "BlockQuote" {
             let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: total)
             let runs = block.inlines.map { $0.range.utf16Bounds(map: map, clampedTo: total) }
             guard let firstLo = runs.map(\.lo).min(), let lastHi = runs.map(\.hi).max() else {
-                for i in bLo ..< bHi { hidden.remove(i) }   // empty heading → reveal the whole marker
+                for i in bLo ..< bHi { hidden.remove(i) }   // empty block → reveal its raw marker
                 continue
             }
             // The text sits on ONE line; keep that line's markers hidden, reveal every other line.

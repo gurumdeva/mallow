@@ -383,7 +383,32 @@ final class MallowTests: XCTestCase {
         XCTAssertFalse(h.contains(2), "the heading text H must show")
         // REGRESSION: a closing ATX `#` stays hidden — it's on the text's line.
         XCTAssertTrue(hidden("# H #").contains(4), "a closing `#` must still hide")
-        // REGRESSION (not a heading): a paragraph's closing `**` stays hidden — the rule is heading-only.
+        // REGRESSION (not a heading): a paragraph's closing `**` stays hidden.
         XCTAssertTrue(hidden("x **b**").contains(5), "a paragraph's closing ** must still hide")
+    }
+
+    // MARK: Hidden set — a lone list marker (`-`/`*`/`+`/`1.`) with no content shows literally
+
+    func testShowOrphanMarkers_loneListBulletVisible() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        let vm = EditorViewModel(textView: tv)
+        func hidden(_ s: String) -> Set<Int> { tv.string = s; vm.refresh(); return vm.hiddenChars }
+
+        // THE REPORTED BUG: a lone list marker is an EMPTY list item. The bullet pipeline only draws `•`
+        // for `- ` (dash + space), so a bare marker was neither bulleted nor kept → hidden → invisible.
+        // It must show literally until it gains the space/content that turns it into a real bullet.
+        XCTAssertFalse(hidden("-").contains(0), "a lone `-` must show")
+        XCTAssertFalse(hidden("*").contains(0), "a lone `*` must show")
+        XCTAssertFalse(hidden("+").contains(0), "a lone `+` must show")
+        let ord = hidden("1.")
+        XCTAssertFalse(ord.contains(0), "a lone `1.` must show (digit)")
+        XCTAssertFalse(ord.contains(1), "a lone `1.` must show (dot)")
+
+        // REGRESSION: a real list item with content still shows its text (and the `- ` is bulleted, not
+        // revealed — it shares the text's line, so the generalized rule leaves it to the bullet pass).
+        XCTAssertFalse(hidden("- x").contains(2), "list item text must show")
+        // REGRESSION: a paragraph's closing `**` and a real heading's `#` are NOT over-revealed.
+        XCTAssertTrue(hidden("a **b**").contains(6), "a paragraph's closing ** must still hide")
+        XCTAssertTrue(hidden("# H").contains(0), "a real heading's `#` must still hide")
     }
 }
