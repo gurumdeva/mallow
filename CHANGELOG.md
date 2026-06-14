@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.1.5] - 2026-06-14
+
+A typing-visibility fix, from a 116-case audit of "text that gets styled unintentionally." Signed with a Developer ID and notarized by Apple.
+
+### Fixed
+- **Spaces typed at the START of a paragraph are no longer invisible.** Leading whitespace was being zero-width-hidden along with the markdown markers, so indenting the first line of a paragraph showed nothing — the start-of-line twin of the v1.1.3 end-of-line trailing-space fix. Leading spaces now stay visible. (Heading / list / quote markers and their padding still hide exactly as before; the fix is scoped to paragraphs.)
+
+> The same audit confirmed the *other* candidates are best left alone: smart-typography dashes/quotes are one ⌘Z to revert and can't be guarded without breaking number ranges like `1990--2000`, and `__init__`→bold / `1. text`→list / 4-space→code are correct CommonMark — changing them would render differently from every other markdown tool.
+
 ## [1.1.4] - 2026-06-14
 
 A window-duplication fix. Signed with a Developer ID and notarized by Apple.
