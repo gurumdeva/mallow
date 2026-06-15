@@ -169,12 +169,14 @@ final class MarkdownTextView: NSTextView {
             let card = NSRect(x: origin.x, y: origin.y + top, width: tc.size.width - 8, height: bottom - top)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
-        // GFM tables: an elevated card + a 1px grid (outer border + a rule under each row + a rule at each
-        // interior column boundary). Rows are the line fragments (the `|---|` delimiter row is collapsed to
-        // zero height, so it's skipped). The column rules come from TableRendering's computed
-        // `interiorEdges` — x-offsets from the table's left text edge that share the SAME column-width model
-        // the cell kern uses, so rules and text can't drift (the old per-row `|`-glyph probe was ragged for
-        // CJK). They're anchored to the table's first glyph (its probed left edge).
+        // GFM tables: an elevated card + a 1px grid (outer border + a horizontal rule at each row boundary +
+        // a rule at each interior column boundary). The card spans the table's line fragments (the `|---|`
+        // delimiter row is collapsed to zero height, so it's skipped); the horizontal rules anchor to
+        // SOURCE-row starts (`grid.rowStartChars`), so a long last column that WRAPS into several fragments
+        // still gets exactly ONE rule at its row's top — not one per wrapped fragment. The column rules come
+        // from TableRendering's computed `interiorEdges` — x-offsets from the table's left text edge that
+        // share the SAME column-width model the cell kern uses, so rules and text can't drift (the old
+        // per-row `|`-glyph probe was ragged for CJK). They're anchored to the table's first glyph (left edge).
         for grid in tableGrids {
             let r = grid.blockRange
             let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
@@ -201,8 +203,15 @@ final class MarkdownTextView: NSTextView {
             border.stroke()
             let rules = NSBezierPath()
             rules.lineWidth = 1
-            for i in 0 ..< (rows.count - 1) {   // a rule under every row but the last (header rule + row separators)
-                let y = (origin.y + rows[i].maxY).rounded() + 0.5
+            // Horizontal rule at the TOP of each content row after the header (header rule + row separators),
+            // anchored to SOURCE-row starts so a wrapped row spanning several fragments gets ONE rule at its
+            // top, not one per fragment (a fitting table's rows are one fragment each → same result as before).
+            for rc in grid.rowStartChars {
+                let g = lm.glyphRange(forCharacterRange: NSRange(location: rc, length: 1),
+                                      actualCharacterRange: nil)
+                guard g.length > 0 else { continue }
+                let y = (origin.y + lm.lineFragmentRect(forGlyphAt: g.location, effectiveRange: nil).minY)
+                    .rounded() + 0.5
                 rules.move(to: NSPoint(x: card.minX, y: y))
                 rules.line(to: NSPoint(x: card.maxX, y: y))
             }

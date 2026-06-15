@@ -82,6 +82,17 @@ final class Restyler {
 
         func nsRange(_ r: PRange) -> NSRange? { r.utf16Range(map: map, clampedTo: nsLen) }
 
+        // Usable width for a table's content: the text container's width minus its line padding and the
+        // table's own left inset. TableRendering wraps a table's long LAST column (hanging indent → the row
+        // grows taller) when the laid-out table is wider than this, instead of letting it overflow the
+        // window. A nil container or a not-yet-laid-out width yields a huge / ≤0 value → the never-wrap path
+        // (style() guards on availableWidth > 0). Recomputed only on restyle (edit/open/paste), not on a bare
+        // window resize — an already-wrapped table still resizes gracefully (its hanging indent is tied to
+        // the fixed left columns, not the window width).
+        let tableAvailableWidth = textView.textContainer.map {
+            $0.size.width - 2 * $0.lineFragmentPadding - TableRendering.tableInset
+        } ?? .greatestFiniteMagnitude
+
         var quotes: [NSRange] = []   // blockquote ranges → 3px left bar drawn by the text view
         var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
         var codeCards: [NSRange] = [] // code-block ranges → rounded elevated card drawn by the text view
@@ -140,7 +151,8 @@ final class Restyler {
             case "ThematicBreak":
                 if let nr = nsRange(block.range) { rules.append(nr) }   // dashes hidden; a rule is drawn instead
             case "Table":
-                if let grid = TableRendering.style(block, map: map, storage: storage, hidden: hidden) {
+                if let grid = TableRendering.style(block, map: map, storage: storage, hidden: hidden,
+                                                   availableWidth: tableAvailableWidth) {
                     tableGrids.append(grid)
                 }
                 continue   // TableRendering owns the cell font + column kern; skip the generic inline pass

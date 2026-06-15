@@ -33,7 +33,13 @@ struct TableGrid {
     let interiorEdges: [CGFloat]
     /// Total laid-out width of the table from its first glyph to its last (the outer pipes' spaces
     /// included). The view sizes the card to this so it hugs the table instead of spanning the page.
+    /// When the table OVERFLOWS the window (the last column wraps), this is the available width instead,
+    /// so the card fills to the container's right edge rather than to the (off-screen) laid-out width.
     let totalWidth: CGFloat
+    /// UTF-16 line-start index of each CONTENT row after the first (header) — i.e. the top of every row
+    /// that should get a horizontal separator rule. Anchoring the rules to source-row starts (not to every
+    /// line fragment) means a wrapped row spanning several fragments still gets exactly ONE rule at its top.
+    let rowStartChars: [Int]
 }
 
 enum TableRendering {
@@ -49,8 +55,13 @@ enum TableRendering {
     ///   - storage: the text storage to mutate (fonts + alignment kern).
     ///   - hidden:  the view-model's hidden-glyph set (markers rendered zero-width) — so a cell's visible
     ///              width excludes any hidden `**`/`` ` ``/`](url)` it contains.
+    ///   - availableWidth: usable text width for the table (container width minus paddings and the table
+    ///              inset). When the laid-out table is wider than this, the LAST column wraps via a hanging
+    ///              indent (the row grows taller) instead of overflowing the window. Pass a large value to
+    ///              force the never-wrap (fits) path.
     @discardableResult
-    static func style(_ block: PBlock, map: [Int], storage: NSTextStorage, hidden: Set<Int>) -> TableGrid? {
+    static func style(_ block: PBlock, map: [Int], storage: NSTextStorage, hidden: Set<Int>,
+                      availableWidth: CGFloat) -> TableGrid? {
         let ns = storage.string as NSString
         let total = ns.length
         guard let blockRange = block.range.utf16Range(map: map, clampedTo: total) else { return nil }
@@ -60,7 +71,7 @@ enum TableRendering {
         let colCount = (block.cells.map(\.col).max() ?? -1) + 1
         let fullRowCount = (block.cells.map(\.row).max() ?? -1) + 1
         guard colCount > 0, fullRowCount > 0 else {
-            return TableGrid(blockRange: blockRange, interiorEdges: [], totalWidth: 0)
+            return TableGrid(blockRange: blockRange, interiorEdges: [], totalWidth: 0, rowStartChars: [])
         }
 
         var cell = Array(repeating: Array(repeating: NSRange(location: blockRange.location, length: 0),
@@ -93,10 +104,11 @@ enum TableRendering {
         }
         let bHi = tableRange.location + tableRange.length
 
-        // 3) Mono font + tidy paragraph style across the (real) table range. Equal-width digits/Latin plus
-        //    the per-cell kern below give straight columns; the engine's inline runs are re-asserted on top.
+        // 3) Mono font across the (real) table range. Equal-width digits/Latin plus the per-cell kern below
+        //    give straight columns; the engine's inline runs are re-asserted on top. (The paragraph style is
+        //    set in step 6 — once the column widths reveal whether the table overflows and needs the
+        //    last-column hanging indent.)
         let mono = NSFont.monospacedSystemFont(ofSize: tableFontSize, weight: .regular)
-        storage.addAttribute(.paragraphStyle, value: tableParagraphStyle, range: tableRange)
         storage.addAttribute(.font, value: mono, range: tableRange)
 
         // Re-assert inline emphasis on top of the mono base (setting one .font over the block wiped the
@@ -127,11 +139,49 @@ enum TableRendering {
         let gap = (" " as NSString).size(withAttributes: [.font: mono]).width   // one mono space of breathing room
         for c in 0 ..< colCount { colSlot[c] += gap }
 
-        // 5) Pad each cell to its column width via `.kern`, distributed by the column's alignment so the
+        // 5) Interior column-rule offsets, the LAST column's left edge, and the laid-out width — all from
+        //    the table's left text edge. A separator `|` (rendered as a space of width `gap`) sits between
+        //    consecutive columns; OUTER leading/trailing `|` (the common GFM shape) shift/extend the table by
+        //    one space each. The view anchors the rules + card to the probed left edge. Computed BEFORE the
+        //    kern so the overflow check below can size the last column's hanging indent.
+        let hasLeadingPipe = tableRange.location < total && ns.character(at: tableRange.location) == 124  // |
+        let hasTrailingPipe = lastContentChar(ns, tableRange) == 124
+        var edges: [CGFloat] = []
+        var x: CGFloat = hasLeadingPipe ? gap : 0   // left edge of cell 0's slot
+        var lastColLeftX: CGFloat = x               // left edge of the last column (set in the loop)
+        for c in 0 ..< colCount {
+            if c == colCount - 1 { lastColLeftX = x }   // last column begins here (before its own slot)
+            x += colSlot[c]                          // cell c spans up to here
+            if c < colCount - 1 {
+                edges.append(x + gap / 2)            // rule at the centre of the separator's space
+                x += gap
+            }
+        }
+        let laidOutWidth = x + (hasTrailingPipe ? gap : 0)
+
+        // Overflow → wrap the LAST column. When the laid-out table is wider than the window, the last column
+        // is left UN-kerned (step 7) so its text flows and wraps at the container's right edge, and the row
+        // is hang-indented to the last column's left edge (step 6) so a long last cell's continuation lines
+        // line up under their column — the ROW GROWS TALLER instead of the table overflowing sideways. It's
+        // ordinary text layout (no hidden or redrawn glyphs), so selection / ⌘F / focus / editing all keep
+        // working. Needs ≥2 columns; only the LAST column wraps (the common "description/notes last" shape).
+        let wrapLast = colCount >= 2 && availableWidth > 0 && laidOutWidth > availableWidth
+
+        // 6) Paragraph style: a 12pt inset on the first line, and — when wrapping — a matching hanging indent
+        //    out to the last column's left edge, so wrapped lines align under that column (not at the margin).
+        let para = NSMutableParagraphStyle()
+        para.firstLineHeadIndent = tableInset
+        para.headIndent = wrapLast ? tableInset + lastColLeftX : tableInset
+        storage.addAttribute(.paragraphStyle, value: para, range: tableRange)
+
+        // 7) Pad each cell to its column width via `.kern`, distributed by the column's alignment so the
         //    separators land at one x per column. Left/None → pad after the last char; right → after the
         //    first char (pushes content right); center → split. Empty (padded short-row) cells are skipped.
+        //    When wrapping, the LAST column is skipped (left un-kerned) so it can flow + wrap; its hanging
+        //    indent (step 6) keeps the continuation lines aligned.
         for r in 0 ..< rowCount {
             for c in 0 ..< colCount {
+                if wrapLast && c == colCount - 1 { continue }
                 let range = cell[r][c]
                 guard range.length > 0 else { continue }
                 let extra = colSlot[c] - width[r][c]
@@ -150,23 +200,17 @@ enum TableRendering {
             }
         }
 
-        // 6) Interior column-rule offsets + total width, from the table's left text edge. A separator `|`
-        //    (rendered as a space of width `gap`) sits between consecutive columns; OUTER leading/trailing
-        //    `|` (when present, the common GFM shape) shift/extend the table by one space each. The view
-        //    anchors the rules and the card to the probed left edge.
-        let hasLeadingPipe = tableRange.location < total && ns.character(at: tableRange.location) == 124  // |
-        let hasTrailingPipe = lastContentChar(ns, tableRange) == 124
-        var edges: [CGFloat] = []
-        var x: CGFloat = hasLeadingPipe ? gap : 0   // left edge of cell 0's slot
-        for c in 0 ..< colCount {
-            x += colSlot[c]                          // cell c spans up to here
-            if c < colCount - 1 {
-                edges.append(x + gap / 2)            // rule at the centre of the separator's space
-                x += gap
-            }
+        // 8) Row-start char indices (header excluded) for the grid's horizontal rules — anchored to SOURCE
+        //    rows so a wrapped row that spans several line fragments still gets exactly ONE rule at its top.
+        var rowStartChars: [Int] = []
+        for r in 1 ..< rowCount {
+            rowStartChars.append(ns.lineRange(for: NSRange(location: cell[r][0].location, length: 0)).location)
         }
-        let totalWidth = x + (hasTrailingPipe ? gap : 0)
-        return TableGrid(blockRange: tableRange, interiorEdges: edges, totalWidth: totalWidth)
+
+        // When wrapping, the card fills to the container's right edge (the last column extends there), so
+        // report the available width rather than the (partly off-screen) laid-out width.
+        return TableGrid(blockRange: tableRange, interiorEdges: edges,
+                         totalWidth: wrapLast ? availableWidth : laidOutWidth, rowStartChars: rowStartChars)
     }
 
     /// A zero-length probe range at the start of row `r`'s first cell (clamped in-bounds) — used to ask,
@@ -228,14 +272,11 @@ enum TableRendering {
     /// access to the per-window `zoomFactor`); the measurement + grid offsets are all at this size.
     private static let tableFontSize: CGFloat = 16 * 0.92
 
-    /// A tidy paragraph style for the table block: a small left inset (so it sits off the margin inside
-    /// its card, matching code blocks). NOTE: no `lineHeightMultiple` — each row's vertical breathing room
-    /// comes from the layout delegate (`shouldSetLineFragmentRect`), which pads each table row top and
-    /// bottom and centers the text, so cells aren't cramped against the row rules.
-    private static let tableParagraphStyle: NSParagraphStyle = {
-        let p = NSMutableParagraphStyle()
-        p.firstLineHeadIndent = 12
-        p.headIndent = 12
-        return p
-    }()
+    /// The table block's left inset (points): the table sits this far off the margin inside its card,
+    /// matching code blocks. Applied as each row paragraph's `firstLineHeadIndent`; when a long LAST column
+    /// wraps, the hanging `headIndent` is this inset plus that column's left edge (so wrapped lines align
+    /// under their column). Internal so the Restyler can subtract it when computing the table's available
+    /// width. NOTE: no `lineHeightMultiple` — each row's vertical breathing room comes from the layout
+    /// delegate (`shouldSetLineFragmentRect`), which pads each table row top and bottom and centers the text.
+    static let tableInset: CGFloat = 12
 }

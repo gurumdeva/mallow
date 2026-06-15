@@ -411,4 +411,50 @@ final class MallowTests: XCTestCase {
         XCTAssertTrue(hidden("a **b**").contains(6), "a paragraph's closing ** must still hide")
         XCTAssertTrue(hidden("# H").contains(0), "a real heading's `#` must still hide")
     }
+
+    // MARK: Table rendering — a long LAST column wraps via a hanging indent (display-only, the row grows
+    // taller); a table that fits is byte-identical to before. Locks in the overflow branch of
+    // TableRendering.style so a future change can't silently drop the wrap — or start wrapping tables
+    // that fit (which would regress every existing table).
+
+    func testTableWrap_longLastColumnHangsIndent_fittingTableUnchanged() {
+        // Narrow frame + a pinned container size so the overflow decision is deterministic headlessly (no
+        // window to lay out + track). The Restyler derives availableWidth = size.width − 2·padding − inset.
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 360, height: 300))
+        tv.textContainer?.size = NSSize(width: 360, height: 100_000)
+        let vm = EditorViewModel(textView: tv)
+
+        // (headIndent − firstLineHeadIndent) on the table's row paragraph style: > 0 ⇒ a hanging indent is
+        // engaged (the last column wraps under its own column); ≈ 0 ⇒ the plain fit path. Plus the count of
+        // horizontal row-separator rules (header excluded).
+        func probe(_ s: String) -> (hang: CGFloat, ruleRows: Int)? {
+            tv.string = s
+            vm.refresh()
+            guard let grid = tv.tableGrids.first,
+                  let p = tv.textStorage?.attribute(.paragraphStyle, at: grid.blockRange.location,
+                                                    effectiveRange: nil) as? NSParagraphStyle else { return nil }
+            return (p.headIndent - p.firstLineHeadIndent, grid.rowStartChars.count)
+        }
+
+        // A long LAST column can't fit 360pt → it wraps, so the row paragraph gets a hanging indent.
+        let wide = """
+        | A | B | Note |
+        |---|---|---|
+        | x | y | A deliberately long note that cannot possibly fit inside the narrow pinned container so the last column has to wrap onto several lines. |
+        """
+        let w = probe(wide)
+        XCTAssertNotNil(w, "wide table should produce a grid")
+        XCTAssertGreaterThan(w?.hang ?? 0, 1, "a long last column must engage a hanging indent")
+        XCTAssertEqual(w?.ruleRows, 1, "header + 1 data row → exactly 1 row-separator rule")
+
+        // A table that fits keeps the plain 12/12 inset — no hanging indent, identical to before.
+        let narrow = """
+        | A | B |
+        |---|---|
+        | x | y |
+        """
+        let n = probe(narrow)
+        XCTAssertNotNil(n, "narrow table should produce a grid")
+        XCTAssertEqual(n?.hang ?? -1, 0, accuracy: 0.5, "a fitting table keeps headIndent == firstLineHeadIndent")
+    }
 }
