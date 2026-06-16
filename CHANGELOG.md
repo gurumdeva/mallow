@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.1.6] - 2026-06-16
+
+A table-readability improvement. Signed with a Developer ID and notarized by Apple.
+
+### Changed
+- **A table with a long last column now wraps that column instead of overflowing the window.** When a table is wider than the window — usually because its last column holds a long description, note, or comparison — that last column's text now wraps onto multiple lines and the row grows taller, so everything stays visible with no sideways scrolling. The earlier columns stay aligned on one line, and the wrapped lines line up neatly under their own column. The wrapping is display-only: the markdown source is untouched, so selecting, finding (⌘F), focus mode, and editing the table all behave exactly as before, and tables that already fit render unchanged. (Only the last column wraps; a long column elsewhere is uncommon and may still overflow — a later refinement.)
+
 ## [1.1.5] - 2026-06-14
 
 A typing-visibility fix, from a 116-case audit of "text that gets styled unintentionally." Signed with a Developer ID and notarized by Apple.
