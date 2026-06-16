@@ -457,4 +457,47 @@ final class MallowTests: XCTestCase {
         XCTAssertNotNil(n, "narrow table should produce a grid")
         XCTAssertEqual(n?.hang ?? -1, 0, accuracy: 0.5, "a fitting table keeps headIndent == firstLineHeadIndent")
     }
+
+    // MARK: Table rendering — a wide NON-last column shrinks the whole table to fit (the last-column wrap
+    // can't help when the overflow isn't in the last column). Locks the shrink-to-fit branch: a fitting
+    // table keeps the full base font, an over-wide middle column scales it down, floored at 0.6×.
+
+    func testTableShrink_wideNonLastColumn_scalesDownFloored() {
+        // Pin a narrow container (as in the wrap test) so the overflow decision is deterministic headlessly.
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 360, height: 300))
+        tv.textContainer?.size = NSSize(width: 360, height: 100_000)
+        let vm = EditorViewModel(textView: tv)
+
+        // The table's base font point size (read off the first table glyph) — 15 when it fits, smaller when
+        // it had to shrink to fit a wide column that isn't last.
+        func fontSize(_ s: String) -> CGFloat? {
+            tv.string = s
+            vm.refresh()
+            guard let grid = tv.tableGrids.first,
+                  let f = tv.textStorage?.attribute(.font, at: grid.blockRange.location,
+                                                    effectiveRange: nil) as? NSFont else { return nil }
+            return f.pointSize
+        }
+
+        // A long MIDDLE column (last column short) can't fit 360pt and the last-column wrap can't help, so
+        // the whole table scales down.
+        let wideMiddle = """
+        | A | 설명 | B |
+        |---|------|---|
+        | x | 셀 폭만으로 창을 넘겨버리는 가운데 열의 제법 긴 설명 텍스트입니다 | y |
+        | x | 짧음 | y |
+        """
+        let shrunk = fontSize(wideMiddle)
+        XCTAssertNotNil(shrunk, "wide-middle table should produce a grid")
+        XCTAssertLessThan(shrunk ?? 99, 15, "a wide non-last column must shrink the table below the 15pt base")
+        XCTAssertGreaterThanOrEqual(shrunk ?? 0, 15 * 0.6 - 0.1, "shrink is floored at 0.6× so text stays legible")
+
+        // A table that fits keeps the full 15pt base — no shrink.
+        let fits = """
+        | A | B |
+        |---|---|
+        | x | y |
+        """
+        XCTAssertEqual(fontSize(fits) ?? 0, 15, accuracy: 0.01, "a fitting table keeps the 15pt base font")
+    }
 }

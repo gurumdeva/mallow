@@ -104,72 +104,90 @@ enum TableRendering {
         }
         let bHi = tableRange.location + tableRange.length
 
-        // 3) Table font: the PROPORTIONAL body font (sans), NOT monospace. Columns are straightened by the
-        //    per-cell `.kern` below — each cell is measured and padded to its column's width — so a fixed-
-        //    width face isn't what aligns them; a sans face just reads far better for prose (especially
-        //    Korean) and matches the surrounding body text. The engine's inline runs are re-asserted on top.
-        //    (The paragraph style is set in step 6, once the widths reveal whether the table overflows.)
-        let base = NSFont.systemFont(ofSize: tableFontSize, weight: .regular)
-        storage.addAttribute(.font, value: base, range: tableRange)
-
-        // Re-assert inline emphasis on top of the mono base (setting one .font over the block wiped the
-        // base pass's bold/italic). Inline code/link keep their colour/background from the base pass.
+        // 3) Layout is done by two local helpers so it can run TWICE — once at the body size, and again at a
+        //    smaller size if the table must SHRINK to fit (a wide column that isn't last; see step 5).
         let fm = NSFontManager.shared
-        for inline in block.inlines {
-            let (ilo, ihi) = inline.range.utf16Bounds(map: map, clampedTo: total)
-            guard ihi > ilo, ilo >= tableRange.location, ihi <= bHi else { continue }
-            let bold = inline.marks.contains("Strong"), italic = inline.marks.contains("Emphasis")
-            guard bold || italic else { continue }
-            var f = base
-            if bold { f = fm.convert(f, toHaveTrait: .boldFontMask) }
-            if italic { f = fm.convert(f, toHaveTrait: .italicFontMask) }
-            storage.addAttribute(.font, value: f, range: NSRange(location: ilo, length: ihi - ilo))
-        }
-
-        // 4) Column widths: the widest VISIBLE cell per column, plus a uniform gap so content never kisses
-        //    a rule. Width is measured (CTLine typographic bounds) so it matches what the layout lays out.
-        var width = Array(repeating: [CGFloat](repeating: 0, count: colCount), count: rowCount)
-        var colSlot = [CGFloat](repeating: 0, count: colCount)
-        for r in 0 ..< rowCount {
-            for c in 0 ..< colCount {
-                let w = visibleWidth(cell[r][c], storage: storage, hidden: hidden)
-                width[r][c] = w
-                colSlot[c] = max(colSlot[c], w)
-            }
-        }
-        // Column breathing room: ~1.6 spaces (a sans space is narrow, so one alone lets text kiss the rule).
-        let gap = (" " as NSString).size(withAttributes: [.font: base]).width * 1.6
-        for c in 0 ..< colCount { colSlot[c] += gap }
-
-        // 5) Interior column-rule offsets, the LAST column's left edge, and the laid-out width — all from
-        //    the table's left text edge. A separator `|` (rendered as a space of width `gap`) sits between
-        //    consecutive columns; OUTER leading/trailing `|` (the common GFM shape) shift/extend the table by
-        //    one space each. The view anchors the rules + card to the probed left edge. Computed BEFORE the
-        //    kern so the overflow check below can size the last column's hanging indent.
         let hasLeadingPipe = tableRange.location < total && ns.character(at: tableRange.location) == 124  // |
         let hasTrailingPipe = lastContentChar(ns, tableRange) == 124
-        var edges: [CGFloat] = []
-        var x: CGFloat = hasLeadingPipe ? gap : 0   // left edge of cell 0's slot
-        var lastColLeftX: CGFloat = x               // left edge of the last column (set in the loop)
-        for c in 0 ..< colCount {
-            if c == colCount - 1 { lastColLeftX = x }   // last column begins here (before its own slot)
-            x += colSlot[c]                          // cell c spans up to here
-            if c < colCount - 1 {
-                edges.append(x + gap / 2)            // rule at the centre of the separator's space
-                x += gap
+
+        // `measure(at:)` — set the PROPORTIONAL body font (sans, NOT monospace) at `size` as the table base,
+        // re-assert inline bold/italic on top (a single .font over the block wipes them), then measure each
+        // column's widest VISIBLE cell plus a uniform gap. The columns are straightened by this measure +
+        // per-cell `.kern`, so a fixed-width face was never what aligned them; sans just reads far better for
+        // prose (especially Korean) and matches the body text.
+        func measure(at size: CGFloat) -> (width: [[CGFloat]], colSlot: [CGFloat], gap: CGFloat) {
+            let base = NSFont.systemFont(ofSize: size, weight: .regular)
+            storage.addAttribute(.font, value: base, range: tableRange)
+            for inline in block.inlines {
+                let (ilo, ihi) = inline.range.utf16Bounds(map: map, clampedTo: total)
+                guard ihi > ilo, ilo >= tableRange.location, ihi <= bHi else { continue }
+                let bold = inline.marks.contains("Strong"), italic = inline.marks.contains("Emphasis")
+                guard bold || italic else { continue }
+                var f = base
+                if bold { f = fm.convert(f, toHaveTrait: .boldFontMask) }
+                if italic { f = fm.convert(f, toHaveTrait: .italicFontMask) }
+                storage.addAttribute(.font, value: f, range: NSRange(location: ilo, length: ihi - ilo))
+            }
+            var width = Array(repeating: [CGFloat](repeating: 0, count: colCount), count: rowCount)
+            var colSlot = [CGFloat](repeating: 0, count: colCount)
+            for r in 0 ..< rowCount {
+                for c in 0 ..< colCount {
+                    let w = visibleWidth(cell[r][c], storage: storage, hidden: hidden)
+                    width[r][c] = w
+                    colSlot[c] = max(colSlot[c], w)
+                }
+            }
+            // ~1.6 spaces of breathing room (a sans space is narrow, so one alone lets text kiss the rule).
+            let gap = (" " as NSString).size(withAttributes: [.font: base]).width * 1.6
+            for c in 0 ..< colCount { colSlot[c] += gap }
+            return (width, colSlot, gap)
+        }
+
+        // `geometry` — interior column-rule offsets, the LAST column's left edge, and the laid-out width, all
+        // from the table's left text edge. A separator `|` (a space of width `gap`) sits between columns;
+        // OUTER leading/trailing `|` (the common GFM shape) shift/extend the table by one space each.
+        func geometry(_ colSlot: [CGFloat], _ gap: CGFloat)
+            -> (edges: [CGFloat], lastColLeftX: CGFloat, laidOutWidth: CGFloat) {
+            var edges: [CGFloat] = []
+            var x: CGFloat = hasLeadingPipe ? gap : 0   // left edge of cell 0's slot
+            var lastColLeftX: CGFloat = x
+            for c in 0 ..< colCount {
+                if c == colCount - 1 { lastColLeftX = x }   // last column begins here (before its own slot)
+                x += colSlot[c]                              // cell c spans up to here
+                if c < colCount - 1 { edges.append(x + gap / 2); x += gap }   // rule at the separator's centre
+            }
+            return (edges, lastColLeftX, x + (hasTrailingPipe ? gap : 0))
+        }
+
+        // 4) Measure + lay out at the body size.
+        var (width, colSlot, gap) = measure(at: tableFontSize)
+        var (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
+
+        // 5) Shrink-to-fit: when even the NON-last columns (plus a reserve for the last) overflow the window,
+        //    the last-column wrap below can't help — the last column would start off-screen. Scale the whole
+        //    table down so the fixed columns fit, then re-measure; the last column still wraps in the reserved
+        //    remainder. This is the uncommon "the wide column ISN'T last" case. A table whose only wide column
+        //    is the last (or that fits) never shrinks — `scale` stays 1, byte-identical to before.
+        if colCount >= 2, availableWidth > 0, laidOutWidth > availableWidth {
+            let reserve = min(availableWidth * 0.33, colSlot[colCount - 1])   // width kept free for the last column
+            if lastColLeftX + reserve > availableWidth {
+                let scale = max(0.6, (availableWidth - reserve) / max(1, lastColLeftX))   // 0.6 floor keeps text legible
+                if scale < 0.999 {
+                    (width, colSlot, gap) = measure(at: tableFontSize * scale)
+                    (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
+                }
             }
         }
-        let laidOutWidth = x + (hasTrailingPipe ? gap : 0)
 
-        // Overflow → wrap the LAST column. When the laid-out table is wider than the window, the last column
-        // is left UN-kerned (step 7) so its text flows and wraps at the container's right edge, and the row
-        // is hang-indented to the last column's left edge (step 6) so a long last cell's continuation lines
-        // line up under their column — the ROW GROWS TALLER instead of the table overflowing sideways. It's
-        // ordinary text layout (no hidden or redrawn glyphs), so selection / ⌘F / focus / editing all keep
-        // working. Needs ≥2 columns; only the LAST column wraps (the common "description/notes last" shape).
+        // 6) Overflow → wrap the LAST column. When the (possibly shrunk) table is still wider than the window,
+        //    the last column is left UN-kerned (step 8) so its text flows + wraps at the container's right
+        //    edge, and the row is hang-indented to the last column's left edge (step 7) so a long last cell's
+        //    continuation lines line up under their column — the ROW GROWS TALLER instead of overflowing
+        //    sideways. Ordinary text layout (no hidden/redrawn glyphs), so selection / ⌘F / focus / editing
+        //    all keep working. Needs ≥2 columns; only the LAST column wraps (the "description/notes last" shape).
         let wrapLast = colCount >= 2 && availableWidth > 0 && laidOutWidth > availableWidth
 
-        // 6) Paragraph style: a 12pt inset on the first line, and — when wrapping — a matching hanging indent
+        // 7) Paragraph style: a 12pt inset on the first line, and — when wrapping — a matching hanging indent
         //    out to the last column's left edge, so wrapped lines align under that column (not at the margin).
         let para = NSMutableParagraphStyle()
         para.firstLineHeadIndent = tableInset
@@ -180,11 +198,11 @@ enum TableRendering {
         para.lineSpacing = 5
         storage.addAttribute(.paragraphStyle, value: para, range: tableRange)
 
-        // 7) Pad each cell to its column width via `.kern`, distributed by the column's alignment so the
+        // 8) Pad each cell to its column width via `.kern`, distributed by the column's alignment so the
         //    separators land at one x per column. Left/None → pad after the last char; right → after the
         //    first char (pushes content right); center → split. Empty (padded short-row) cells are skipped.
         //    When wrapping, the LAST column is skipped (left un-kerned) so it can flow + wrap; its hanging
-        //    indent (step 6) keeps the continuation lines aligned.
+        //    indent (step 7) keeps the continuation lines aligned.
         for r in 0 ..< rowCount {
             for c in 0 ..< colCount {
                 if wrapLast && c == colCount - 1 { continue }
@@ -206,7 +224,7 @@ enum TableRendering {
             }
         }
 
-        // 8) Row-start char indices (header excluded) for the grid's horizontal rules — anchored to SOURCE
+        // 9) Row-start char indices (header excluded) for the grid's horizontal rules — anchored to SOURCE
         //    rows so a wrapped row that spans several line fragments still gets exactly ONE rule at its top.
         var rowStartChars: [Int] = []
         for r in 1 ..< rowCount {
