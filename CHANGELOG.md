@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.1.8] - 2026-06-16
+
+A table-layout improvement. Signed with a Developer ID and notarized by Apple.
+
+### Changed
+- **A table with a wide column that isn't the last one now shrinks to fit the window instead of overflowing.** v1.1.6 wraps a long *last* column; but when the wide column comes earlier (a long middle column, say), wrapping the last one can't help. Such a table now scales its text down just enough to fit within the window — no sideways scrolling — keeping every column on one line and aligned. Tables that already fit, and tables whose only wide column is the last (still handled by wrapping), render exactly as before.
+
 ## [1.1.7] - 2026-06-16
 
 A table-readability improvement. Signed with a Developer ID and notarized by Apple.
