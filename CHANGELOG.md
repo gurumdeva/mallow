@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.1.7] - 2026-06-16
+
+A table-readability improvement. Signed with a Developer ID and notarized by Apple.
+
+### Changed
+- **Tables now use the proportional body font instead of a monospaced one.** Table text — Korean and other prose especially — reads far more naturally and matches the rest of the document, instead of looking like code. Columns stay aligned exactly as before (each cell is measured and padded to its column's width, so a fixed-width font was never what aligned them). A cell long enough to wrap onto several lines now also gets a little breathing room between those lines.
+
 ## [1.1.6] - 2026-06-16
 
 A table-readability improvement. Signed with a Developer ID and notarized by Apple.
