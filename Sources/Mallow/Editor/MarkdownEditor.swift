@@ -198,9 +198,9 @@ struct MarkdownEditor: NSViewRepresentable {
         ///      hug the content. The glyphs are already hidden, so nothing draws in the zero row.
         ///  (2) `vm.tableRowChars` → taller + centered: a GFM table content row gets `tableRowPad` of space
         ///      ABOVE and BELOW its text (and the text centered), so cells aren't cramped against the grid
-        ///      rules. The table paragraph style carries no `lineHeightMultiple` precisely so this is the
-        ///      only source of row height — and unlike a multiple (which only adds space above the glyph),
-        ///      this pads both sides evenly.
+        ///      rules. This pad is the only source of a SINGLE-line row's height (the table paragraph style
+        ///      carries no `lineHeightMultiple`, which would add space only above the glyph); a tall WRAPPED
+        ///      cell additionally gets `lineSpacing` BETWEEN its lines from the table paragraph style.
         func layoutManager(_ lm: NSLayoutManager,
                            shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
                            lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,

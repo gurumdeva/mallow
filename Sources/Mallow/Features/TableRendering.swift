@@ -104,12 +104,13 @@ enum TableRendering {
         }
         let bHi = tableRange.location + tableRange.length
 
-        // 3) Mono font across the (real) table range. Equal-width digits/Latin plus the per-cell kern below
-        //    give straight columns; the engine's inline runs are re-asserted on top. (The paragraph style is
-        //    set in step 6 — once the column widths reveal whether the table overflows and needs the
-        //    last-column hanging indent.)
-        let mono = NSFont.monospacedSystemFont(ofSize: tableFontSize, weight: .regular)
-        storage.addAttribute(.font, value: mono, range: tableRange)
+        // 3) Table font: the PROPORTIONAL body font (sans), NOT monospace. Columns are straightened by the
+        //    per-cell `.kern` below — each cell is measured and padded to its column's width — so a fixed-
+        //    width face isn't what aligns them; a sans face just reads far better for prose (especially
+        //    Korean) and matches the surrounding body text. The engine's inline runs are re-asserted on top.
+        //    (The paragraph style is set in step 6, once the widths reveal whether the table overflows.)
+        let base = NSFont.systemFont(ofSize: tableFontSize, weight: .regular)
+        storage.addAttribute(.font, value: base, range: tableRange)
 
         // Re-assert inline emphasis on top of the mono base (setting one .font over the block wiped the
         // base pass's bold/italic). Inline code/link keep their colour/background from the base pass.
@@ -119,7 +120,7 @@ enum TableRendering {
             guard ihi > ilo, ilo >= tableRange.location, ihi <= bHi else { continue }
             let bold = inline.marks.contains("Strong"), italic = inline.marks.contains("Emphasis")
             guard bold || italic else { continue }
-            var f = mono
+            var f = base
             if bold { f = fm.convert(f, toHaveTrait: .boldFontMask) }
             if italic { f = fm.convert(f, toHaveTrait: .italicFontMask) }
             storage.addAttribute(.font, value: f, range: NSRange(location: ilo, length: ihi - ilo))
@@ -136,7 +137,8 @@ enum TableRendering {
                 colSlot[c] = max(colSlot[c], w)
             }
         }
-        let gap = (" " as NSString).size(withAttributes: [.font: mono]).width   // one mono space of breathing room
+        // Column breathing room: ~1.6 spaces (a sans space is narrow, so one alone lets text kiss the rule).
+        let gap = (" " as NSString).size(withAttributes: [.font: base]).width * 1.6
         for c in 0 ..< colCount { colSlot[c] += gap }
 
         // 5) Interior column-rule offsets, the LAST column's left edge, and the laid-out width — all from
@@ -172,6 +174,10 @@ enum TableRendering {
         let para = NSMutableParagraphStyle()
         para.firstLineHeadIndent = tableInset
         para.headIndent = wrapLast ? tableInset + lastColLeftX : tableInset
+        // Breathing room BETWEEN the wrapped lines of a tall cell. `lineSpacing` adds gap only between lines
+        // of the SAME paragraph, so a single-line row is untouched (its height still comes purely from the
+        // layout delegate's ±6pt row pad) — only a wrapped multi-line cell opens up.
+        para.lineSpacing = 5
         storage.addAttribute(.paragraphStyle, value: para, range: tableRange)
 
         // 7) Pad each cell to its column width via `.kern`, distributed by the column's alignment so the
@@ -267,10 +273,10 @@ enum TableRendering {
 
     // MARK: - metrics
 
-    /// Table mono size — matches the inline-code shrink (0.92em of the 16pt body), so a table reads at the
-    /// same weight as inline code, a touch smaller than body text. Renders at 1× zoom (this file has no
-    /// access to the per-window `zoomFactor`); the measurement + grid offsets are all at this size.
-    private static let tableFontSize: CGFloat = 16 * 0.92
+    /// Table text size — the proportional body font at a hair under body size (15 vs 16pt), so a table reads
+    /// like the surrounding prose but stays a touch denser. Renders at 1× zoom (this file has no access to
+    /// the per-window `zoomFactor`); the measurement + grid offsets are all at this size.
+    private static let tableFontSize: CGFloat = 15
 
     /// The table block's left inset (points): the table sits this far off the margin inside its card,
     /// matching code blocks. Applied as each row paragraph's `firstLineHeadIndent`; when a long LAST column
