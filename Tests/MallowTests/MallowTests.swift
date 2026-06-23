@@ -492,7 +492,20 @@ final class MallowTests: XCTestCase {
         XCTAssertLessThan(shrunk ?? 99, 15, "a wide non-last column must shrink the table below the 15pt base")
         XCTAssertGreaterThanOrEqual(shrunk ?? 0, 15 * 0.6 - 0.1, "shrink is floored at 0.6× so text stays legible")
 
-        // A table that fits keeps the full 15pt base — no shrink.
+        // PREFER WRAP over shrink: a wide middle column whose LAST column can still wrap into the remaining
+        // space must NOT shrink — the row wraps at full size instead (shrinking would make the readable
+        // columns tiny). Widen the container so the non-last columns fit and only the last column wraps.
+        tv.textContainer?.size = NSSize(width: 620, height: 100_000)
+        let wideMiddleWrappableLast = """
+        | 코드 | number 는 IEEE 754 double 로 해석되어 정밀도가 손실됨 | 문자열로 전송하는 것이 안전한 관례입니다 |
+        |---|---|---|
+        | E1 | 짧음 | 짧음 |
+        """
+        XCTAssertEqual(fontSize(wideMiddleWrappableLast) ?? 0, 15, accuracy: 0.01,
+                       "a wide middle column whose last column can wrap should wrap at full size, not shrink")
+
+        // A table that fits keeps the full 15pt base — no shrink. (Back to the narrow container.)
+        tv.textContainer?.size = NSSize(width: 360, height: 100_000)
         let fits = """
         | A | B |
         |---|---|

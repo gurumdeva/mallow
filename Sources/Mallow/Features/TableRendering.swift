@@ -163,15 +163,17 @@ enum TableRendering {
         var (width, colSlot, gap) = measure(at: tableFontSize)
         var (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
 
-        // 5) Shrink-to-fit: when even the NON-last columns (plus a reserve for the last) overflow the window,
-        //    the last-column wrap below can't help — the last column would start off-screen. Scale the whole
-        //    table down so the fixed columns fit, then re-measure; the last column still wraps in the reserved
-        //    remainder. This is the uncommon "the wide column ISN'T last" case. A table whose only wide column
-        //    is the last (or that fits) never shrinks — `scale` stays 1, byte-identical to before.
+        // 5) Shrink-to-fit is a LAST resort. When the table overflows we'd rather WRAP the last column at full
+        //    size (step 6) than shrink the whole table — shrinking makes even the readable columns tiny. So
+        //    only shrink when the NON-last columns are themselves too wide: even after wrapping the last
+        //    column down to a minimum readable width, the fixed columns still don't fit. Then scale the whole
+        //    table down so they do, and re-measure. A table that fits — or whose overflow the last-column wrap
+        //    can absorb (a long LAST column, OR a wide middle column with a wrappable last one) — never
+        //    shrinks; `scale` stays 1, byte-identical to before.
         if colCount >= 2, availableWidth > 0, laidOutWidth > availableWidth {
-            let reserve = min(availableWidth * 0.33, colSlot[colCount - 1])   // width kept free for the last column
-            if lastColLeftX + reserve > availableWidth {
-                let scale = max(0.6, (availableWidth - reserve) / max(1, lastColLeftX))   // 0.6 floor keeps text legible
+            let minLast = min(colSlot[colCount - 1], 110)   // the least width the last column can usefully wrap into
+            if lastColLeftX + minLast > availableWidth {
+                let scale = max(0.6, (availableWidth - minLast) / max(1, lastColLeftX))   // 0.6 floor keeps text legible
                 if scale < 0.999 {
                     (width, colSlot, gap) = measure(at: tableFontSize * scale)
                     (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
