@@ -13,6 +13,7 @@ A table-readability fix. Signed with a Developer ID and notarized by Apple.
 
 ### Fixed
 - **A table with a wide column in the MIDDLE no longer shrinks to tiny text.** The v1.1.8 shrink-to-fit was too eager — it reserved a generous slice of the window for the last column, so a table whose long column wasn't the last (e.g. a wide "limitation" column with a normal column after it) tripped the shrink path and rendered *every* column small and hard to read. The table now stays at full size and the last column wraps under itself instead; the whole table only shrinks as a true last resort, when the other columns are so wide that nothing else fits.
+- **A very wide table now always fits the window.** The shrink step had a legibility floor that, for a table with several wide columns, could stop shrinking before it actually fit — leaving a column off the right edge. Fitting now takes priority, so no table runs past the window (verified across every table in a large document set).
 
 ## [1.1.8] - 2026-06-16
 
