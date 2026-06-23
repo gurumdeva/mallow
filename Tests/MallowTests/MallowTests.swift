@@ -460,7 +460,8 @@ final class MallowTests: XCTestCase {
 
     // MARK: Table rendering — a wide NON-last column shrinks the whole table to fit (the last-column wrap
     // can't help when the overflow isn't in the last column). Locks the shrink-to-fit branch: a fitting
-    // table keeps the full base font, an over-wide middle column scales it down, floored at 0.6×.
+    // table keeps the full base font; an over-wide middle column scales down enough to GUARANTEE fit
+    // (only a microscopic-text backstop floors the scale, so fitting always wins over a legibility floor).
 
     func testTableShrink_wideNonLastColumn_scalesDownFloored() {
         // Pin a narrow container (as in the wrap test) so the overflow decision is deterministic headlessly.
@@ -490,7 +491,7 @@ final class MallowTests: XCTestCase {
         let shrunk = fontSize(wideMiddle)
         XCTAssertNotNil(shrunk, "wide-middle table should produce a grid")
         XCTAssertLessThan(shrunk ?? 99, 15, "a wide non-last column must shrink the table below the 15pt base")
-        XCTAssertGreaterThanOrEqual(shrunk ?? 0, 15 * 0.6 - 0.1, "shrink is floored at 0.6× so text stays legible")
+        XCTAssertGreaterThanOrEqual(shrunk ?? 0, 15 * 0.35 - 0.1, "shrink floored only by a 0.35× microscopic-text backstop")
 
         // PREFER WRAP over shrink: a wide middle column whose LAST column can still wrap into the remaining
         // space must NOT shrink — the row wraps at full size instead (shrinking would make the readable
@@ -513,4 +514,52 @@ final class MallowTests: XCTestCase {
         """
         XCTAssertEqual(fontSize(fits) ?? 0, 15, accuracy: 0.01, "a fitting table keeps the 15pt base font")
     }
+
+    // MARK: Table rendering — INVARIANT: no table overflows the window. However its columns are sized, the
+    // styled table must fit — by full-size layout, by wrapping its last column ON-SCREEN, or by shrinking —
+    // never pushing a column off the right edge (which makes a row wrap to the margin and breaks the grid).
+    // This is the whole point of the wrap + shrink paths; lock it across a matrix of shapes and widths.
+
+    func testTableNeverOverflows_acrossShapesAndWidths() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 400, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        let inset: CGFloat = 12   // == TableRendering.tableInset
+
+        // The table's effective right-edge need vs the usable width. When wrapping (headIndent > inset) the
+        // last column starts at lastColLeftX and flows into the remainder, so it must start on-screen; when
+        // not wrapping the whole laid-out width must fit. need ≤ avail ⇒ no overflow / no margin-wrap.
+        func check(_ s: String, _ containerWidth: CGFloat) {
+            tv.textContainer?.size = NSSize(width: containerWidth, height: 100_000)
+            tv.string = s
+            vm.refresh()
+            guard let grid = tv.tableGrids.first,
+                  let p = tv.textStorage?.attribute(.paragraphStyle, at: grid.blockRange.location,
+                                                    effectiveRange: nil) as? NSParagraphStyle else {
+                return XCTFail("no grid @\(Int(containerWidth))pt")
+            }
+            let pad = (tv.textContainer?.lineFragmentPadding ?? 5) * 2
+            let avail = containerWidth - pad - inset
+            let wrapping = p.headIndent > inset + 0.5
+            let need = wrapping ? (p.headIndent - inset) : grid.totalWidth
+            XCTAssertLessThanOrEqual(need, avail + 2,
+                "@\(Int(containerWidth))pt overflows: need \(Int(need)) > avail \(Int(avail)) (wrapping=\(wrapping))")
+        }
+
+        let shapes = [
+            // long LAST column
+            "| 항목 | 분류 | 마지막 열에 제법 긴 설명이 들어가 줄바꿈이 필요할 수 있는 경우입니다 |\n|---|---|---|\n| a | b | c |",
+            // wide MIDDLE column, short last
+            "| A | 가운데 열이 길어서 창을 넘길 수 있는 설명 텍스트가 들어갑니다 | B |\n|---|---|---|\n| x | y | z |",
+            // dense 5-column table (the user's method-table shape)
+            "| 메서드 | 의미 | 본문 | 안전(safe) | 멱등(idempotent) |\n|---|---|---|---|---|\n| GET | 조회 | 없음 | 예 | 예 |\n| DELETE | 삭제 | 보통 없음 | 아니오 | 예 |",
+            // TWO wide non-last columns
+            "| 코드 | 첫번째 설명 칸이 꽤 깁니다 | 두번째 설명 칸도 꽤 깁니다 | 끝 |\n|---|---|---|---|\n| E | a | b | c |",
+        ]
+        for shape in shapes {
+            // Includes narrow widths (360/320) where a wide-non-last table needs < 0.6× to fit — the old
+            // 0.6 legibility floor pushed its last column off-screen there; the guaranteed-fit scale doesn't.
+            for w in [1200.0, 900.0, 700.0, 520.0, 420.0, 360.0, 320.0] as [CGFloat] { check(shape, w) }
+        }
+    }
+
 }

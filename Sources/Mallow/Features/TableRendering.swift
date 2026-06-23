@@ -171,9 +171,14 @@ enum TableRendering {
         //    can absorb (a long LAST column, OR a wide middle column with a wrappable last one) — never
         //    shrinks; `scale` stays 1, byte-identical to before.
         if colCount >= 2, availableWidth > 0, laidOutWidth > availableWidth {
-            let minLast = min(colSlot[colCount - 1], 110)   // the least width the last column can usefully wrap into
+            let minLast = min(colSlot[colCount - 1], 96)   // the least width the last column needs to wrap into
             if lastColLeftX + minLast > availableWidth {
-                let scale = max(0.6, (availableWidth - minLast) / max(1, lastColLeftX))   // 0.6 floor keeps text legible
+                // Scale so the NON-last columns fit with `minLast` left for the last column to wrap into. This
+                // GUARANTEES the table fits — no horizontal overflow, no ugly mid-row wrap that breaks the grid
+                // — which is the hard requirement. No legibility floor here: a floor that still can't fit would
+                // re-introduce overflow (the bug this replaced). 0.35 is only a microscopic-text backstop for an
+                // absurdly wide table (non-last columns > ~2.8× the window), far past any real document table.
+                let scale = max(0.35, min(1, (availableWidth - minLast) / max(1, lastColLeftX)))
                 if scale < 0.999 {
                     (width, colSlot, gap) = measure(at: tableFontSize * scale)
                     (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
