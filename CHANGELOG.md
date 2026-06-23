@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.1.9] - 2026-06-23
+
+A table-readability fix. Signed with a Developer ID and notarized by Apple.
+
+### Fixed
+- **A table with a wide column in the MIDDLE no longer shrinks to tiny text.** The v1.1.8 shrink-to-fit was too eager — it reserved a generous slice of the window for the last column, so a table whose long column wasn't the last (e.g. a wide "limitation" column with a normal column after it) tripped the shrink path and rendered *every* column small and hard to read. The table now stays at full size and the last column wraps under itself instead; the whole table only shrinks as a true last resort, when the other columns are so wide that nothing else fits.
+
 ## [1.1.8] - 2026-06-16
 
 A table-layout improvement. Signed with a Developer ID and notarized by Apple.
