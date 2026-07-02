@@ -52,18 +52,24 @@ struct MarkdownEditor: NSViewRepresentable {
         taskClick.delaysPrimaryMouseButtonEvents = false
         textView.addGestureRecognizer(taskClick)
 
-        // Vertically-growing text view inside a scroll view (the classic NSTextView-in-NSScrollView setup).
+        // Text view inside a scroll view, growing BOTH ways: vertically for the document, horizontally so a
+        // wide table can extend past the viewport and be reached by a horizontal scroller (a too-wide table
+        // scrolls, never shrinks). The Restyler owns the container width each pass — it sets it to the
+        // viewport width normally (so prose fills the width and wraps at the viewport), or wider when a table
+        // needs it (prose then keeps its viewport wrap via a `tailIndent`). So width does NOT track the view.
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
+        textView.isHorizontallyResizable = true
+        textView.autoresizingMask = []
+        textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
 
         let scroll = NSScrollView()
         scroll.contentView = BottomOverscrollClipView()   // scroll-past-end: extend only the scroll clamp
         scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true               // shown only when a wide table overflows…
+        scroll.autohidesScrollers = true                  // …auto-hidden otherwise (no table → looks unchanged)
         scroll.drawsBackground = true
         scroll.backgroundColor = mallowBG
         scroll.borderType = .noBorder
@@ -72,6 +78,10 @@ struct MarkdownEditor: NSViewRepresentable {
         // vertical scroller would otherwise run up underneath it and its top would look clipped. Inset the
         // scroller down by the bar height so the scrollbar starts cleanly below the chrome.
         scroll.scrollerInsets = NSEdgeInsets(top: ChromeBar.barHeight, left: 0, bottom: 0, right: 0)
+
+        // Re-run the width-dependent style pass when the viewport width changes (window resize), so table
+        // geometry (card, rules, kern, wrap) follows the text instead of freezing at the open-time width.
+        context.coordinator.observeViewportWidth(of: scroll.contentView)
 
         // First render: parse + style + hide once the view is in the hierarchy.
         DispatchQueue.main.async { doc.vm.refresh() }
@@ -91,6 +101,53 @@ struct MarkdownEditor: NSViewRepresentable {
         private var vm: EditorViewModel { doc.vm }
 
         init(doc: EditorDocument) { self.doc = doc }
+
+        deinit {
+            if let o = widthObserver { NotificationCenter.default.removeObserver(o) }
+            reflowWork?.cancel()
+        }
+
+        // MARK: width-change reflow
+        //
+        // Table geometry — per-cell `.kern`, the wrap edge, `TableGrid.totalWidth`/`interiorEdges` — is
+        // computed at the current viewport width during `restyle`. When the window/viewport width changes
+        // the TEXT reflows live (the container tracks the view), but that frozen geometry would go stale:
+        // the card + column rules stay at the old width while the wrapped text moves, so they detach. Re-run
+        // the (width-dependent) style pass on a resize, debounced so a live drag doesn't restyle per frame.
+        // The parse and hidden-glyph set are width-independent, so only `restyle()` reruns — not `refresh()`.
+        private var widthObserver: NSObjectProtocol?
+        private var lastLayoutWidth: CGFloat = 0
+        private var reflowWork: DispatchWorkItem?
+
+        func observeViewportWidth(of clipView: NSClipView) {
+            lastLayoutWidth = clipView.bounds.width
+            clipView.postsFrameChangedNotifications = true
+            widthObserver = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification, object: clipView, queue: .main
+            ) { [weak self, weak clipView] _ in
+                guard let clipView else { return }
+                self?.scheduleReflow(clipView.bounds.width)
+            }
+        }
+
+        private func scheduleReflow(_ clipWidth: CGFloat) {
+            guard abs(clipWidth - lastLayoutWidth) > 0.5 else { return }   // a scroll or vertical-only change — ignore
+            lastLayoutWidth = clipWidth
+            // Immediate + cheap: keep the container filling the viewport so PROSE re-wraps live during a
+            // drag — but never below a horizontally-scrolling table's width (that width holds until the
+            // debounced restyle re-measures). This is just the container box; no text is re-measured here.
+            let tv = doc.textView
+            let viewportContainerW = max(0, clipWidth - 2 * tv.textContainerInset.width)
+            tv.textContainer?.size.width = max(viewportContainerW, tv.tableContainerWidth)
+            // Debounced + expensive: re-measure table kern / wrap edge / card / rules at the new width.
+            reflowWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, !self.doc.textView.hasMarkedText() else { return }   // never restyle mid-IME
+                self.vm.restyle()
+            }
+            reflowWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        }
 
         /// Map a click to a character index and toggle a task checkbox if it landed on one (else no-op).
         @objc func handleTaskClick(_ g: NSClickGestureRecognizer) {

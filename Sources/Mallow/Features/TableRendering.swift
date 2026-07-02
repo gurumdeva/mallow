@@ -159,46 +159,39 @@ enum TableRendering {
             return (edges, lastColLeftX, x + (hasTrailingPipe ? gap : 0))
         }
 
-        // 4) Measure + lay out at the body size.
-        var (width, colSlot, gap) = measure(at: tableFontSize)
-        var (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
+        // 4) Measure + lay out ONCE at the body size. Tables never scale — every table in a document reads at
+        //    the same 15pt (a table too wide to fit SCROLLS, it doesn't shrink), so sizes can't look "제각각".
+        let (width, colSlot, gap) = measure(at: tableFontSize)
+        let (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
 
-        // 5) Shrink-to-fit is a LAST resort. When the table overflows we'd rather WRAP the last column at full
-        //    size (step 6) than shrink the whole table — shrinking makes even the readable columns tiny. So
-        //    only shrink when the NON-last columns are themselves too wide: even after wrapping the last
-        //    column down to a minimum readable width, the fixed columns still don't fit. Then scale the whole
-        //    table down so they do, and re-measure. A table that fits — or whose overflow the last-column wrap
-        //    can absorb (a long LAST column, OR a wide middle column with a wrappable last one) — never
-        //    shrinks; `scale` stays 1, byte-identical to before.
-        if colCount >= 2, availableWidth > 0, laidOutWidth > availableWidth {
-            let minLast = min(colSlot[colCount - 1], 96)   // the least width the last column needs to wrap into
-            if lastColLeftX + minLast > availableWidth {
-                // Scale so the NON-last columns fit with `minLast` left for the last column to wrap into. This
-                // GUARANTEES the table fits — no horizontal overflow, no ugly mid-row wrap that breaks the grid
-                // — which is the hard requirement. No legibility floor here: a floor that still can't fit would
-                // re-introduce overflow (the bug this replaced). 0.35 is only a microscopic-text backstop for an
-                // absurdly wide table (non-last columns > ~2.8× the window), far past any real document table.
-                let scale = max(0.35, min(1, (availableWidth - minLast) / max(1, lastColLeftX)))
-                if scale < 0.999 {
-                    (width, colSlot, gap) = measure(at: tableFontSize * scale)
-                    (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
-                }
-            }
+        // 5) Decide how the table meets the viewport — all at full size (see the file-header decision tree):
+        //      fits                          → plain, no wrap  (byte-identical to a narrow table today)
+        //      overflows, last col has room  → WRAP the last column inside the viewport (the row grows taller)
+        //      overflows, non-last too wide  → keep natural width; the editor SCROLLS horizontally
+        //    `slot` is the last column's laid width when wrapping; `minLast`/`lastCap` keep a wrap neither
+        //    uselessly narrow nor absurdly wide. `availableWidth` is the viewport room for `laidOutWidth`.
+        let lastNatural = colSlot[colCount - 1]
+        let remainder = availableWidth - lastColLeftX        // viewport room to the right of the last column's left edge
+        let wrapLast: Bool
+        let slot: CGFloat
+        if colCount < 2 || availableWidth <= 0 || laidOutWidth <= availableWidth {
+            wrapLast = false; slot = lastNatural                          // fits — no wrap, no scroll
+        } else if remainder >= minLast {
+            wrapLast = true;  slot = min(lastNatural, remainder)          // wrap the last column within the viewport
+        } else {
+            wrapLast = lastNatural > lastCap                              // non-last cols exceed viewport → horizontal scroll;
+            slot = min(lastNatural, lastCap)                             // cap a giant last cell so it wraps rather than sprawls
         }
 
-        // 6) Overflow → wrap the LAST column. When the (possibly shrunk) table is still wider than the window,
-        //    the last column is left UN-kerned (step 8) so its text flows + wraps at the container's right
-        //    edge, and the row is hang-indented to the last column's left edge (step 7) so a long last cell's
-        //    continuation lines line up under their column — the ROW GROWS TALLER instead of overflowing
-        //    sideways. Ordinary text layout (no hidden/redrawn glyphs), so selection / ⌘F / focus / editing
-        //    all keep working. Needs ≥2 columns; only the LAST column wraps (the "description/notes last" shape).
-        let wrapLast = colCount >= 2 && availableWidth > 0 && laidOutWidth > availableWidth
-
-        // 7) Paragraph style: a 12pt inset on the first line, and — when wrapping — a matching hanging indent
-        //    out to the last column's left edge, so wrapped lines align under that column (not at the margin).
+        // 6) Paragraph style: the 12pt inset; and when the last column wraps, a hanging `headIndent` to its
+        //    left edge PLUS an absolute `tailIndent` at its right edge — so it wraps INSIDE its own column
+        //    (bounded), the row grows taller, and the wrap edge is explicit state, not "wherever the container
+        //    happens to end" (which drifts on resize). Ordinary text layout — selection / ⌘F / focus / editing
+        //    are unaffected; the source bytes are untouched.
         let para = NSMutableParagraphStyle()
         para.firstLineHeadIndent = tableInset
         para.headIndent = wrapLast ? tableInset + lastColLeftX : tableInset
+        para.tailIndent = wrapLast ? tableInset + lastColLeftX + slot : 0
         // Breathing room BETWEEN the wrapped lines of a tall cell. `lineSpacing` adds gap only between lines
         // of the SAME paragraph, so a single-line row is untouched (its height still comes purely from the
         // layout delegate's ±6pt row pad) — only a wrapped multi-line cell opens up.
@@ -209,7 +202,7 @@ enum TableRendering {
         //    separators land at one x per column. Left/None → pad after the last char; right → after the
         //    first char (pushes content right); center → split. Empty (padded short-row) cells are skipped.
         //    When wrapping, the LAST column is skipped (left un-kerned) so it can flow + wrap; its hanging
-        //    indent (step 7) keeps the continuation lines aligned.
+        //    indent + tailIndent (step 6) bound the continuation lines to its column.
         for r in 0 ..< rowCount {
             for c in 0 ..< colCount {
                 if wrapLast && c == colCount - 1 { continue }
@@ -238,10 +231,12 @@ enum TableRendering {
             rowStartChars.append(ns.lineRange(for: NSRange(location: cell[r][0].location, length: 0)).location)
         }
 
-        // When wrapping, the card fills to the container's right edge (the last column extends there), so
-        // report the available width rather than the (partly off-screen) laid-out width.
+        // Card width = the table's TRUE laid-out width so the card EXACTLY bounds the table at any width — a
+        // wrapped last column contributes its bounded `slot`, otherwise the natural laid width. (No more
+        // clamping to availableWidth, which detached the card from a shrunk/wrapped table.)
+        let totalWidth = wrapLast ? (lastColLeftX + slot) : laidOutWidth   // wrap: right edge = the tailIndent (bounded slot)
         return TableGrid(blockRange: tableRange, interiorEdges: edges,
-                         totalWidth: wrapLast ? availableWidth : laidOutWidth, rowStartChars: rowStartChars)
+                         totalWidth: totalWidth, rowStartChars: rowStartChars)
     }
 
     /// A zero-length probe range at the start of row `r`'s first cell (clamped in-bounds) — used to ask,
@@ -302,6 +297,11 @@ enum TableRendering {
     /// like the surrounding prose but stays a touch denser. Renders at 1× zoom (this file has no access to
     /// the per-window `zoomFactor`); the measurement + grid offsets are all at this size.
     private static let tableFontSize: CGFloat = 15
+
+    /// Bounds on a wrapping last column's width (points). Below `minLast` a wrap is too narrow to read, so
+    /// the table scrolls horizontally instead; above `lastCap` a single long cell would sprawl, so it wraps.
+    private static let minLast: CGFloat = 110
+    private static let lastCap: CGFloat = 420
 
     /// The table block's left inset (points): the table sits this far off the margin inside its card,
     /// matching code blocks. Applied as each row paragraph's `firstLineHeadIndent`; when a long LAST column

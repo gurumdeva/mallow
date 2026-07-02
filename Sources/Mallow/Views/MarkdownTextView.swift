@@ -15,6 +15,11 @@ final class MarkdownTextView: NSTextView {
     var ruleLines: [NSRange] = [] { didSet { needsDisplay = true } }
     var inlineCodeRuns: [NSRange] = [] { didSet { needsDisplay = true } }   // `code` spans → rounded pill
 
+    /// The text-container width a wide table needs (points), or 0 if every table fits the viewport. The
+    /// Restyler sets it each pass; the resize observer reads it so the container never shrinks below a
+    /// horizontally-scrolling table while the window is being dragged (before the debounced restyle runs).
+    var tableContainerWidth: CGFloat = 0
+
     // Defeat "Add period with double-space" — a global text-input default (NSAutomaticPeriodSubstitution-
     // Enabled) with no per-view or app-domain override. On the 2nd space the system calls
     // insertText(". ", replacing the just-typed space at {loc,1}); that inserts a "." the user never

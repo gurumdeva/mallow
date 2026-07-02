@@ -82,16 +82,23 @@ final class Restyler {
 
         func nsRange(_ r: PRange) -> NSRange? { r.utf16Range(map: map, clampedTo: nsLen) }
 
-        // Usable width for a table's content: the text container's width minus its line padding and the
-        // table's own left inset. TableRendering wraps a table's long LAST column (hanging indent → the row
-        // grows taller) when the laid-out table is wider than this, instead of letting it overflow the
-        // window. A nil container or a not-yet-laid-out width yields a huge / ≤0 value → the never-wrap path
-        // (style() guards on availableWidth > 0). Recomputed only on restyle (edit/open/paste), not on a bare
-        // window resize — an already-wrapped table still resizes gracefully (its hanging indent is tied to
-        // the fixed left columns, not the window width).
-        let tableAvailableWidth = textView.textContainer.map {
-            $0.size.width - 2 * $0.lineFragmentPadding - TableRendering.tableInset
-        } ?? .greatestFiniteMagnitude
+        // Viewport geometry for table layout + horizontal scroll. The text CONTAINER may be wider than the
+        // viewport (so a too-wide table can be scrolled to), so the viewport width comes from the enclosing
+        // scroll view's clip — NOT the container. `availableWidth` is the room a table's laid-out width has
+        // inside the viewport (the table's own inset already subtracted). On first paint (no laid-out clip
+        // yet) it's huge → every table takes the fits path, corrected on the next restyle once laid out.
+        let padding = textView.textContainer?.lineFragmentPadding ?? 5
+        let inset = textView.textContainerInset.width
+        // The width of a container that exactly fills the viewport: from the scroll view's clip in the real
+        // app; fall back to the text container's own width when there's no scroll view (headless tests /
+        // detached view). 0 ⇒ not laid out yet → every table takes the fits path (availableWidth huge).
+        let clipContentWidth = textView.enclosingScrollView?.contentView.bounds.width ?? 0
+        let viewportContainerWidth = clipContentWidth > 0 ? clipContentWidth - 2 * inset
+                                                          : (textView.textContainer?.size.width ?? 0)
+        let availableWidth: CGFloat = viewportContainerWidth > 0
+            ? viewportContainerWidth - 2 * padding - TableRendering.tableInset
+            : .greatestFiniteMagnitude
+        var maxTableRight: CGFloat = 0   // widest table's TRUE laid-out width (from its first glyph); 0 ⇒ no table
 
         var quotes: [NSRange] = []   // blockquote ranges → 3px left bar drawn by the text view
         var rules: [NSRange] = []    // thematic-break ranges → 1px rule drawn by the text view
@@ -152,8 +159,9 @@ final class Restyler {
                 if let nr = nsRange(block.range) { rules.append(nr) }   // dashes hidden; a rule is drawn instead
             case "Table":
                 if let grid = TableRendering.style(block, map: map, storage: storage, hidden: hidden,
-                                                   availableWidth: tableAvailableWidth) {
+                                                   availableWidth: availableWidth) {
                     tableGrids.append(grid)
+                    maxTableRight = max(maxTableRight, grid.totalWidth)   // for the container-width / h-scroll decision
                 }
                 continue   // TableRendering owns the cell font + column kern; skip the generic inline pass
             default:
@@ -188,7 +196,34 @@ final class Restyler {
             rules.removeAll { NSIntersectionRange($0, fmRange).length > 0 }
         }
 
+        // Horizontal scroll: widen the container to the widest table's right edge (+ a small margin) so it
+        // can be scrolled to; otherwise the container just fills the viewport. When it ends up wider than the
+        // viewport, keep PROSE wrapping at the viewport by giving every NON-table paragraph an absolute
+        // tailIndent there — so only the table extends into the scrolled region, never the prose.
+        // Only widen the container when a table GENUINELY exceeds the viewport (→ horizontal scroll). A
+        // fitting or last-column-wrapping table has totalWidth ≤ availableWidth, so it never triggers a
+        // scroller — the container stays at the viewport width (no spurious h-scroll on ordinary docs).
+        let neededContainerWidth = (availableWidth > 0 && maxTableRight > availableWidth)
+            ? 2 * padding + TableRendering.tableInset + maxTableRight + 8
+            : 0
+        let containerWidth = viewportContainerWidth > 0 ? max(viewportContainerWidth, neededContainerWidth)
+                                                        : max(textView.bounds.width, neededContainerWidth)
+        if viewportContainerWidth > 0, containerWidth > viewportContainerWidth + 0.5 {
+            let proseTail = viewportContainerWidth - 2 * padding   // the viewport's text-area right edge (absolute)
+            let tableRanges = tableGrids.map(\.blockRange)
+            storage.enumerateAttribute(.paragraphStyle,
+                                       in: NSRange(location: 0, length: nsLen)) { value, range, _ in
+                if tableRanges.contains(where: { NSIntersectionRange($0, range).length > 0 }) { return }  // tables keep their own edge
+                let base = (value as? NSParagraphStyle) ?? mallowBodyParagraphStyle
+                let p = base.mutableCopy() as! NSMutableParagraphStyle
+                p.tailIndent = proseTail
+                storage.addAttribute(.paragraphStyle, value: p, range: range)
+            }
+        }
+
         storage.endEditing()
+        textView.textContainer?.size = NSSize(width: containerWidth, height: .greatestFiniteMagnitude)
+        textView.tableContainerWidth = neededContainerWidth   // the resize observer keeps the container ≥ this live
         textView.codeCards = codeCards     // hand the decoration ranges to the view's draw pass
         textView.tableGrids = tableGrids
         textView.quoteBars = quotes

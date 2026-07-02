@@ -412,154 +412,98 @@ final class MallowTests: XCTestCase {
         XCTAssertTrue(hidden("# H").contains(0), "a real heading's `#` must still hide")
     }
 
-    // MARK: Table rendering — a long LAST column wraps via a hanging indent (display-only, the row grows
-    // taller); a table that fits is byte-identical to before. Locks in the overflow branch of
-    // TableRendering.style so a future change can't silently drop the wrap — or start wrapping tables
-    // that fit (which would regress every existing table).
+    // MARK: Table rendering v2 (docs/plans/table-rendering-v2-hscroll.md) — ONE size for every table (never
+    // shrink); a long LAST column wraps INSIDE its column bounded by a tailIndent; a table too wide for the
+    // viewport keeps full size and the editor scrolls horizontally. The headless seam pins the text container
+    // to stand in for the viewport (availableWidth = size.width − 2·padding − tableInset).
 
-    func testTableWrap_longLastColumnHangsIndent_fittingTableUnchanged() {
-        // Narrow frame + a pinned container size so the overflow decision is deterministic headlessly (no
-        // window to lay out + track). The Restyler derives availableWidth = size.width − 2·padding − inset.
-        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 360, height: 300))
-        tv.textContainer?.size = NSSize(width: 360, height: 100_000)
-        let vm = EditorViewModel(textView: tv)
-
-        // (headIndent − firstLineHeadIndent) on the table's row paragraph style: > 0 ⇒ a hanging indent is
-        // engaged (the last column wraps under its own column); ≈ 0 ⇒ the plain fit path. Plus the count of
-        // horizontal row-separator rules (header excluded).
-        func probe(_ s: String) -> (hang: CGFloat, ruleRows: Int)? {
-            tv.string = s
-            vm.refresh()
-            guard let grid = tv.tableGrids.first,
-                  let p = tv.textStorage?.attribute(.paragraphStyle, at: grid.blockRange.location,
-                                                    effectiveRange: nil) as? NSParagraphStyle else { return nil }
-            return (p.headIndent - p.firstLineHeadIndent, grid.rowStartChars.count)
-        }
-
-        // A long LAST column can't fit 360pt → it wraps, so the row paragraph gets a hanging indent.
-        let wide = """
-        | A | B | Note |
-        |---|---|---|
-        | x | y | A deliberately long note that cannot possibly fit inside the narrow pinned container so the last column has to wrap onto several lines. |
-        """
-        let w = probe(wide)
-        XCTAssertNotNil(w, "wide table should produce a grid")
-        XCTAssertGreaterThan(w?.hang ?? 0, 1, "a long last column must engage a hanging indent")
-        XCTAssertEqual(w?.ruleRows, 1, "header + 1 data row → exactly 1 row-separator rule")
-
-        // A table that fits keeps the plain 12/12 inset — no hanging indent, identical to before.
-        let narrow = """
-        | A | B |
-        |---|---|
-        | x | y |
-        """
-        let n = probe(narrow)
-        XCTAssertNotNil(n, "narrow table should produce a grid")
-        XCTAssertEqual(n?.hang ?? -1, 0, accuracy: 0.5, "a fitting table keeps headIndent == firstLineHeadIndent")
+    /// Style `s` at viewport `w` and read the load-bearing outputs off the first table.
+    private func tableProbe(_ tv: MarkdownTextView, _ vm: EditorViewModel, _ s: String, _ w: CGFloat)
+        -> (font: CGFloat, headIndent: CGFloat, tailIndent: CGFloat, inset: CGFloat,
+            totalWidth: CGFloat, rules: Int, container: CGFloat)? {
+        tv.textContainer?.size = NSSize(width: w, height: 100_000)
+        tv.string = s
+        vm.refresh()
+        guard let grid = tv.tableGrids.first, let storage = tv.textStorage,
+              let f = storage.attribute(.font, at: grid.blockRange.location, effectiveRange: nil) as? NSFont,
+              let p = storage.attribute(.paragraphStyle, at: grid.blockRange.location, effectiveRange: nil) as? NSParagraphStyle
+        else { return nil }
+        return (f.pointSize, p.headIndent, p.tailIndent, p.firstLineHeadIndent, grid.totalWidth,
+                grid.rowStartChars.count, tv.textContainer?.size.width ?? 0)
     }
 
-    // MARK: Table rendering — a wide NON-last column shrinks the whole table to fit (the last-column wrap
-    // can't help when the overflow isn't in the last column). Locks the shrink-to-fit branch: a fitting
-    // table keeps the full base font; an over-wide middle column scales down enough to GUARANTEE fit
-    // (only a microscopic-text backstop floors the scale, so fitting always wins over a legibility floor).
-
-    func testTableShrink_wideNonLastColumn_scalesDownFloored() {
-        // Pin a narrow container (as in the wrap test) so the overflow decision is deterministic headlessly.
-        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 360, height: 300))
-        tv.textContainer?.size = NSSize(width: 360, height: 100_000)
-        let vm = EditorViewModel(textView: tv)
-
-        // The table's base font point size (read off the first table glyph) — 15 when it fits, smaller when
-        // it had to shrink to fit a wide column that isn't last.
-        func fontSize(_ s: String) -> CGFloat? {
-            tv.string = s
-            vm.refresh()
-            guard let grid = tv.tableGrids.first,
-                  let f = tv.textStorage?.attribute(.font, at: grid.blockRange.location,
-                                                    effectiveRange: nil) as? NSFont else { return nil }
-            return f.pointSize
-        }
-
-        // A long MIDDLE column (last column short) can't fit 360pt and the last-column wrap can't help, so
-        // the whole table scales down.
-        let wideMiddle = """
-        | A | 설명 | B |
-        |---|------|---|
-        | x | 셀 폭만으로 창을 넘겨버리는 가운데 열의 제법 긴 설명 텍스트입니다 | y |
-        | x | 짧음 | y |
-        """
-        let shrunk = fontSize(wideMiddle)
-        XCTAssertNotNil(shrunk, "wide-middle table should produce a grid")
-        XCTAssertLessThan(shrunk ?? 99, 15, "a wide non-last column must shrink the table below the 15pt base")
-        XCTAssertGreaterThanOrEqual(shrunk ?? 0, 15 * 0.35 - 0.1, "shrink floored only by a 0.35× microscopic-text backstop")
-
-        // PREFER WRAP over shrink: a wide middle column whose LAST column can still wrap into the remaining
-        // space must NOT shrink — the row wraps at full size instead (shrinking would make the readable
-        // columns tiny). Widen the container so the non-last columns fit and only the last column wraps.
-        tv.textContainer?.size = NSSize(width: 620, height: 100_000)
-        let wideMiddleWrappableLast = """
-        | 코드 | number 는 IEEE 754 double 로 해석되어 정밀도가 손실됨 | 문자열로 전송하는 것이 안전한 관례입니다 |
-        |---|---|---|
-        | E1 | 짧음 | 짧음 |
-        """
-        XCTAssertEqual(fontSize(wideMiddleWrappableLast) ?? 0, 15, accuracy: 0.01,
-                       "a wide middle column whose last column can wrap should wrap at full size, not shrink")
-
-        // A table that fits keeps the full 15pt base — no shrink. (Back to the narrow container.)
-        tv.textContainer?.size = NSSize(width: 360, height: 100_000)
-        let fits = """
-        | A | B |
-        |---|---|
-        | x | y |
-        """
-        XCTAssertEqual(fontSize(fits) ?? 0, 15, accuracy: 0.01, "a fitting table keeps the 15pt base font")
-    }
-
-    // MARK: Table rendering — INVARIANT: no table overflows the window. However its columns are sized, the
-    // styled table must fit — by full-size layout, by wrapping its last column ON-SCREEN, or by shrinking —
-    // never pushing a column off the right edge (which makes a row wrap to the margin and breaks the grid).
-    // This is the whole point of the wrap + shrink paths; lock it across a matrix of shapes and widths.
-
-    func testTableNeverOverflows_acrossShapesAndWidths() {
+    // Every table renders at the 15pt base — a wide one scrolls, it never shrinks (fixes the "제각각" sizes).
+    func testTableV2_everyTableRendersAtBaseSize() {
         let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 400, height: 400))
         let vm = EditorViewModel(textView: tv)
-        let inset: CGFloat = 12   // == TableRendering.tableInset
-
-        // The table's effective right-edge need vs the usable width. When wrapping (headIndent > inset) the
-        // last column starts at lastColLeftX and flows into the remainder, so it must start on-screen; when
-        // not wrapping the whole laid-out width must fit. need ≤ avail ⇒ no overflow / no margin-wrap.
-        func check(_ s: String, _ containerWidth: CGFloat) {
-            tv.textContainer?.size = NSSize(width: containerWidth, height: 100_000)
-            tv.string = s
-            vm.refresh()
-            guard let grid = tv.tableGrids.first,
-                  let p = tv.textStorage?.attribute(.paragraphStyle, at: grid.blockRange.location,
-                                                    effectiveRange: nil) as? NSParagraphStyle else {
-                return XCTFail("no grid @\(Int(containerWidth))pt")
-            }
-            let pad = (tv.textContainer?.lineFragmentPadding ?? 5) * 2
-            let avail = containerWidth - pad - inset
-            let wrapping = p.headIndent > inset + 0.5
-            let need = wrapping ? (p.headIndent - inset) : grid.totalWidth
-            XCTAssertLessThanOrEqual(need, avail + 2,
-                "@\(Int(containerWidth))pt overflows: need \(Int(need)) > avail \(Int(avail)) (wrapping=\(wrapping))")
-        }
-
-        let shapes = [
-            // long LAST column
-            "| 항목 | 분류 | 마지막 열에 제법 긴 설명이 들어가 줄바꿈이 필요할 수 있는 경우입니다 |\n|---|---|---|\n| a | b | c |",
-            // wide MIDDLE column, short last
-            "| A | 가운데 열이 길어서 창을 넘길 수 있는 설명 텍스트가 들어갑니다 | B |\n|---|---|---|\n| x | y | z |",
-            // dense 5-column table (the user's method-table shape)
-            "| 메서드 | 의미 | 본문 | 안전(safe) | 멱등(idempotent) |\n|---|---|---|---|---|\n| GET | 조회 | 없음 | 예 | 예 |\n| DELETE | 삭제 | 보통 없음 | 아니오 | 예 |",
-            // TWO wide non-last columns
-            "| 코드 | 첫번째 설명 칸이 꽤 깁니다 | 두번째 설명 칸도 꽤 깁니다 | 끝 |\n|---|---|---|---|\n| E | a | b | c |",
+        let tables = [
+            "| A | B |\n|---|---|\n| x | y |",                                                                 // fits
+            "| A | 가운데 열이 아주 길어 창을 넘겨버리는 긴 설명 텍스트입니다 정말 길게 | B |\n|---|---|---|\n| x | y | z |",     // wide middle
+            "| 메서드 | 의미 | 본문 | 안전(safe) | 멱등(idempotent) |\n|---|---|---|---|---|\n| GET | 조회 | 없음 | 예 | 예 |", // dense 5-col
         ]
-        for shape in shapes {
-            // Includes narrow widths (360/320) where a wide-non-last table needs < 0.6× to fit — the old
-            // 0.6 legibility floor pushed its last column off-screen there; the guaranteed-fit scale doesn't.
-            for w in [1200.0, 900.0, 700.0, 520.0, 420.0, 360.0, 320.0] as [CGFloat] { check(shape, w) }
+        for t in tables {
+            for w in [340.0, 700.0, 1100.0] as [CGFloat] {
+                XCTAssertEqual(tableProbe(tv, vm, t, w)?.font ?? 0, 15, accuracy: 0.01,
+                               "every table renders at 15pt (never shrinks), at any viewport width")
+            }
         }
+    }
+
+    // A table that fits: no wrap edge, plain inset, fits the viewport, container stays the viewport (no scroll).
+    func testTableV2_fittingTable_plainAndUnscrolled() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        guard let p = tableProbe(tv, vm, "| 이름 | 나이 | 직업 |\n|---|---|---|\n| 권 | 30 | 개발자 |", 700) else { return XCTFail() }
+        XCTAssertEqual(p.font, 15, accuracy: 0.01)
+        XCTAssertEqual(p.tailIndent, 0, "a fitting table has no wrap edge")
+        XCTAssertEqual(p.headIndent, p.inset, accuracy: 0.5, "a fitting table: no hanging indent")
+        XCTAssertLessThanOrEqual(p.totalWidth, 678 + 1, "fits within the viewport (700 − 2·5 − 12)")
+        XCTAssertEqual(p.container, 700, accuracy: 1, "container stays the viewport width ⇒ no horizontal scroll")
+    }
+
+    // A long LAST column wraps INSIDE its column, bounded by a tailIndent, at full size; the table still fits
+    // the viewport (no h-scroll), and no line fragment spills past the wrap edge.
+    func testTableV2_longLastColumn_wrapsBoundedByTailIndent() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        let s = "| 항목 | 분류 | 설명 |\n|---|---|---|\n| A | 상태 | 마지막 열에 아주 긴 설명이 들어가서 반드시 여러 줄로 줄바꿈되어야 하는 경우입니다 그리고 조금 더 길게 늘립니다 |"
+        guard let p = tableProbe(tv, vm, s, 700) else { return XCTFail() }
+        XCTAssertEqual(p.font, 15, accuracy: 0.01, "full size, not shrunk")
+        XCTAssertGreaterThan(p.headIndent, p.inset + 1, "hanging indent at the last column's left edge")
+        XCTAssertGreaterThan(p.tailIndent, p.headIndent + 1, "an explicit wrap edge to the right of the column start")
+        XCTAssertLessThanOrEqual(p.totalWidth, 678 + 2, "wrapped table fits the viewport — no horizontal scroll")
+        XCTAssertEqual(p.container, 700, accuracy: 1, "no container widening for a wrap")
+        // The wrapped cell's glyphs stay within the tailIndent (bounded in-column), not sprawling right.
+        if let lm = tv.layoutManager, let tc = tv.textContainer, let grid = tv.tableGrids.first {
+            lm.ensureLayout(for: tc)
+            var maxUsedX: CGFloat = 0
+            lm.enumerateLineFragments(forGlyphRange: lm.glyphRange(forCharacterRange: grid.blockRange,
+                                                                   actualCharacterRange: nil)) { _, used, _, _, _ in
+                maxUsedX = max(maxUsedX, used.maxX)
+            }
+            XCTAssertLessThanOrEqual(maxUsedX, tc.lineFragmentPadding + p.tailIndent + 3, "no glyph spills past the wrap edge")
+        }
+    }
+
+    // Wide NON-last columns can't fit the viewport → the table keeps full size and the container widens so the
+    // editor scrolls horizontally (never shrinks, never wraps a middle column).
+    func testTableV2_wideNonLastColumns_horizontalScroll() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 460, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        let s = "| 코드 | 첫번째로 꽤 긴 설명이 들어가는 열입니다 길게 | 두번째로 꽤 긴 설명이 들어가는 열입니다 길게 | 끝 |\n|---|---|---|---|\n| E | a | b | c |"
+        guard let p = tableProbe(tv, vm, s, 460) else { return XCTFail() }   // viewport ⇒ availableWidth = 438
+        XCTAssertEqual(p.font, 15, accuracy: 0.01, "full size — a wide table scrolls, never shrinks")
+        XCTAssertGreaterThan(p.totalWidth, 438, "wider than the viewport ⇒ horizontal scroll")
+        XCTAssertGreaterThan(p.container, 461, "the container widened past the viewport for the scroller")
+    }
+
+    // Many rows: exactly one horizontal separator rule per source row after the header.
+    func testTableV2_manyRows_oneRulePerRow() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        let rows = (1...7).map { "| \($0) | 단계\($0) | 설명 |" }.joined(separator: "\n")
+        guard let p = tableProbe(tv, vm, "| # | 단계 | 설명 |\n|---|---|---|\n" + rows, 700) else { return XCTFail() }
+        XCTAssertEqual(p.rules, 7, "7 data rows → 7 separator rules (header excluded)")
     }
 
 }
