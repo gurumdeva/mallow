@@ -20,6 +20,13 @@ final class MarkdownTextView: NSTextView {
     /// horizontally-scrolling table while the window is being dragged (before the debounced restyle runs).
     var tableContainerWidth: CGFloat = 0
 
+    /// The width of a container that exactly fills the viewport (points), set by the Restyler each pass; 0
+    /// when unknown. Block decorations that should track the WINDOW — the code-block card and the thematic
+    /// rule — clamp their width to this so they don't stretch across the extra-wide container a horizontally
+    /// scrolling table creates (their text already wraps at the viewport). The TABLE card intentionally does
+    /// NOT clamp — it owns the scrolled region.
+    var viewportContainerWidth: CGFloat = 0
+
     // Defeat "Add period with double-space" — a global text-input default (NSAutomaticPeriodSubstitution-
     // Enabled) with no per-view or app-domain override. On the 2nd space the system calls
     // insertText(". ", replacing the just-typed space at {loc,1}); that inserts a "." the user never
@@ -161,6 +168,11 @@ final class MarkdownTextView: NSTextView {
         super.drawBackground(in: rect)
         guard let lm = layoutManager, let tc = textContainer else { return }
         let origin = textContainerOrigin
+        // Width for decorations that track the WINDOW (code card, thematic rule): the container can be wider
+        // than the viewport when a wide table scrolls horizontally, but those blocks' text wraps at the
+        // viewport, so their card/rule must too. Clamp to the viewport width (fall back to the container when
+        // it's unknown — no wide table ⇒ they're equal, so this is byte-identical to before).
+        let decoWidth = viewportContainerWidth > 0 ? min(tc.size.width, viewportContainerWidth) : tc.size.width
 
         // Code blocks: a rounded elevated card behind the code (corners + a right inset the
         // text-attribute background can't give). The card's vertical padding (cap line → top edge,
@@ -171,7 +183,7 @@ final class MarkdownTextView: NSTextView {
         for r in codeCards {
             guard let a = decorationAnchors(forCharacterRange: r) else { continue }
             let top = a.capTop - cardPadding, bottom = a.baseline + cardPadding
-            let card = NSRect(x: origin.x, y: origin.y + top, width: tc.size.width - 8, height: bottom - top)
+            let card = NSRect(x: origin.x, y: origin.y + top, width: decoWidth - 8, height: bottom - top)
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
         // GFM tables: an elevated card + a 1px grid (outer border + a horizontal rule at each row boundary +
@@ -267,7 +279,7 @@ final class MarkdownTextView: NSTextView {
             var eff = NSRange()
             let line = lm.lineFragmentRect(forGlyphAt: gi, effectiveRange: &eff)
             let y = (origin.y + line.midY).rounded() + 0.5   // crisp 1px hairline
-            NSRect(x: origin.x, y: y, width: tc.size.width - 8, height: 1).fill()
+            NSRect(x: origin.x, y: y, width: decoWidth - 8, height: 1).fill()
         }
     }
 

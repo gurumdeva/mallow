@@ -16,6 +16,9 @@ Tables reworked — one size, in-column wrapping, and horizontal scroll for wide
 
 ### Fixed
 - **Tables no longer detach from their grid and card after you resize the window.** Table layout — column alignment, the card, and the wrapping — now recomputes when the window width changes, so the card and column rules always frame the text instead of freezing at the width the file was opened at.
+- **Table cells now have even padding on both sides of every column rule.** Cell text used to sit almost against the rule on one side while the other side had a wide gap, because the rules were positioned from an estimate that drifted off the actual laid-out text. Each rule is now centred in the real gap between two columns, so every cell reads with consistent breathing room and text never kisses a rule.
+- **Inline `code` is no longer too wide.** The monospaced font for inline code now sits slightly smaller (0.85×) so a `code` span reads inline with the surrounding text instead of bulging past it.
+- **A code block or horizontal rule no longer stretches far past the window when the document contains a wide, sideways-scrolling table.** Those blocks now end at the window edge as they should, even though a wide table can make the editor scroll horizontally.
 
 ## [1.1.9] - 2026-06-23
 

@@ -40,8 +40,9 @@ final class Restyler {
         let code = marks.contains("Code"), strong = marks.contains("Strong"), emph = marks.contains("Emphasis")
         let key = (code ? 1 : 0) | (strong ? 2 : 0) | (emph ? 4 : 0)
         if let cached = fontCache[key] { return cached }
-        var f = code   // inline code shrinks to 0.92em (CSS) in mono
-            ? NSFont.monospacedSystemFont(ofSize: baseSize * 0.92 * zoom, weight: .regular) : baseFont
+        var f = code   // inline code in mono at 0.85em — a monospace face advances wide, so it needs to sit a
+                       // touch smaller than the body to read as inline (not bulge past the surrounding text)
+            ? NSFont.monospacedSystemFont(ofSize: baseSize * 0.85 * zoom, weight: .regular) : baseFont
         if strong { f = fm.convert(f, toHaveTrait: .boldFontMask) }
         if emph { f = fm.convert(f, toHaveTrait: .italicFontMask) }
         fontCache[key] = f
@@ -224,6 +225,7 @@ final class Restyler {
         storage.endEditing()
         textView.textContainer?.size = NSSize(width: containerWidth, height: .greatestFiniteMagnitude)
         textView.tableContainerWidth = neededContainerWidth   // the resize observer keeps the container ≥ this live
+        textView.viewportContainerWidth = viewportContainerWidth   // window-tracking decorations (code card, rule) clamp to it
         textView.codeCards = codeCards     // hand the decoration ranges to the view's draw pass
         textView.tableGrids = tableGrids
         textView.quoteBars = quotes

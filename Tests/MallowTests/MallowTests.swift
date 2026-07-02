@@ -506,4 +506,65 @@ final class MallowTests: XCTestCase {
         XCTAssertEqual(p.rules, 7, "7 data rows → 7 separator rules (header excluded)")
     }
 
+    // Every interior column rule sits with roughly EQUAL padding to the text on both sides (no cell kissing a
+    // rule). Measures, per header-row rule, the nearest visible glyph on each side and asserts both a floor
+    // and near-symmetry — the defect was ~16pt on one side, ~1.7pt on the other.
+    func testTableV2_cellPaddingSymmetricAroundRules() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        tv.textContainer?.size = NSSize(width: 700, height: 100_000)
+        // Header is the widest cell in every column, so the header row's content edges ARE the column edges
+        // (the rule centres on a column's widest cell; a shorter cell just gets extra trailing space).
+        tv.string = "| 헷갈림개념 | 두번째열 | 정리요약 |\n|---|---|---|\n| A | B | C |"
+        vm.refresh()
+        guard let grid = tv.tableGrids.first, let lm = tv.layoutManager, let tc = tv.textContainer
+        else { return XCTFail("no table grid") }
+        lm.ensureLayout(for: tc)
+        let ns = tv.string as NSString
+        let leftGlyph = lm.glyphRange(forCharacterRange: NSRange(location: grid.blockRange.location, length: 1),
+                                      actualCharacterRange: nil)
+        let leftX = lm.boundingRect(forGlyphRange: leftGlyph, in: tc).minX
+
+        // Ink extents of the VISIBLE glyphs (skip spaces + the pipe-as-space) on the header row.
+        let firstNL = ns.range(of: "\n").location
+        var ink: [(minX: CGFloat, maxX: CGFloat)] = []
+        for i in 0 ..< firstNL {
+            let ch = ns.character(at: i)
+            if ch == 32 || ch == 124 { continue }   // space or '|'
+            let g = lm.glyphRange(forCharacterRange: NSRange(location: i, length: 1), actualCharacterRange: nil)
+            let r = lm.boundingRect(forGlyphRange: g, in: tc)
+            ink.append((r.minX, r.maxX))
+        }
+        XCTAssertFalse(grid.interiorEdges.isEmpty, "a 3-col table has interior rules")
+        for edge in grid.interiorEdges {
+            let x = leftX + edge
+            let leftEnd = ink.filter { $0.maxX <= x + 0.5 }.map(\.maxX).max()
+            let rightStart = ink.filter { $0.minX >= x - 0.5 }.map(\.minX).min()
+            guard let l = leftEnd, let r = rightStart else { return XCTFail("rule has content on both sides") }
+            let leftPad = x - l, rightPad = r - x
+            XCTAssertGreaterThan(leftPad, 4, "rule \(edge): left padding too tight (\(leftPad))")
+            XCTAssertGreaterThan(rightPad, 4, "rule \(edge): right padding too tight (\(rightPad))")
+            XCTAssertLessThan(abs(leftPad - rightPad), 3, "rule \(edge): padding not symmetric (\(leftPad) vs \(rightPad))")
+        }
+    }
+
+    // A wide table widens the text container past the viewport (horizontal scroll), but window-tracking
+    // decorations (the code-block card, the thematic rule) must keep clamping to the VIEWPORT — the Restyler
+    // hands the viewport width to the view, distinct from the widened container.
+    func testTableV2_wideTableKeepsViewportWidthForDecorations() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 460, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        tv.textContainer?.size = NSSize(width: 460, height: 100_000)
+        let wide = "| 첫번째열헤더길다 | 두번째열헤더길다 | 세번째열헤더길다 | 네번째열헤더길다 |\n" +
+                   "|---|---|---|---|\n| 값하나 | 값둘 | 값셋 | 값넷 |"
+        tv.string = wide + "\n\n```\nlet x = 1\n```"
+        vm.refresh()
+        let container = tv.textContainer?.size.width ?? 0
+        XCTAssertFalse(tv.codeCards.isEmpty, "the fenced block is a code card")
+        XCTAssertGreaterThan(container, 461, "a too-wide table widens the container past the 460 viewport")
+        XCTAssertEqual(tv.viewportContainerWidth, 460, accuracy: 1, "viewport width preserved for the code card / rule")
+        // decoWidth = min(container, viewport) = viewport → the code card clamps, it doesn't span the container.
+        XCTAssertLessThan(tv.viewportContainerWidth, container - 1, "code card would clamp below the widened container")
+    }
+
 }

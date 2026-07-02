@@ -104,18 +104,16 @@ enum TableRendering {
         }
         let bHi = tableRange.location + tableRange.length
 
-        // 3) Layout is done by two local helpers so it can run TWICE — once at the body size, and again at a
-        //    smaller size if the table must SHRINK to fit (a wide column that isn't last; see step 5).
+        // 3) Layout runs through local helpers (`measure` / `separators` / `geometry`) at the one body size —
+        //    tables never scale; a table too wide to fit SCROLLS or wraps its last column (see step 5).
         let fm = NSFontManager.shared
-        let hasLeadingPipe = tableRange.location < total && ns.character(at: tableRange.location) == 124  // |
-        let hasTrailingPipe = lastContentChar(ns, tableRange) == 124
 
         // `measure(at:)` — set the PROPORTIONAL body font (sans, NOT monospace) at `size` as the table base,
         // re-assert inline bold/italic on top (a single .font over the block wipes them), then measure each
         // column's widest VISIBLE cell plus a uniform gap. The columns are straightened by this measure +
         // per-cell `.kern`, so a fixed-width face was never what aligned them; sans just reads far better for
         // prose (especially Korean) and matches the body text.
-        func measure(at size: CGFloat) -> (width: [[CGFloat]], colSlot: [CGFloat], gap: CGFloat) {
+        func measure(at size: CGFloat) -> (width: [[CGFloat]], colSlot: [CGFloat]) {
             let base = NSFont.systemFont(ofSize: size, weight: .regular)
             storage.addAttribute(.font, value: base, range: tableRange)
             for inline in block.inlines {
@@ -137,32 +135,68 @@ enum TableRendering {
                     colSlot[c] = max(colSlot[c], w)
                 }
             }
-            // ~1.6 spaces of breathing room (a sans space is narrow, so one alone lets text kiss the rule).
-            let gap = (" " as NSString).size(withAttributes: [.font: base]).width * 1.6
-            for c in 0 ..< colCount { colSlot[c] += gap }
-            return (width, colSlot, gap)
+            // Slots carry CONTENT ONLY (widest visible cell). Inter-column breathing room is added later
+            // (`slotPad`, symmetric) and centred on each rule using the REAL source separator widths
+            // (`separators()`) — a fixed `gap` estimate drifts off the laid-out glyphs (the pipe/space
+            // advances accumulate), which is what left text kissing the rules.
+            return (width, colSlot)
+        }
+
+        // `separators` — the rendered widths of the source runs BETWEEN cells, and the outer `| `…` |`, taken
+        // from row 0. Each `|` is measured as a space (the table glyph substitution advances it as one), so a
+        // rule can be centred in the ACTUAL gap between two columns. Every row shares one column model (cells
+        // are kerned to `colSlot`), so row 0's separators position the rules for all rows; `lead`/`trail`
+        // double as the card's left/right inner padding.
+        func separators() -> (lead: CGFloat, sep: [CGFloat], trail: CGFloat) {
+            let line = ns.lineRange(for: NSRange(location: min(cell[0][0].location, total), length: 0))
+            var trailEnd = line.location + line.length
+            while trailEnd > line.location {   // exclude the row's trailing newline(s) from the trailing pad
+                let ch = ns.character(at: trailEnd - 1)
+                if ch == 10 || ch == 13 { trailEnd -= 1 } else { break }
+            }
+            let lead = spanWidth(line.location, cell[0][0].location, storage: storage, hidden: hidden)
+            var sep = [CGFloat](repeating: 0, count: max(0, colCount - 1))
+            for c in 0 ..< max(0, colCount - 1) {
+                let lo = cell[0][c].location + cell[0][c].length
+                sep[c] = spanWidth(lo, max(lo, cell[0][c + 1].location), storage: storage, hidden: hidden)
+            }
+            let last = cell[0][colCount - 1]
+            let trail = spanWidth(min(last.location + last.length, trailEnd), trailEnd,
+                                  storage: storage, hidden: hidden)
+            return (lead, sep, trail)
         }
 
         // `geometry` — interior column-rule offsets, the LAST column's left edge, and the laid-out width, all
-        // from the table's left text edge. A separator `|` (a space of width `gap`) sits between columns;
-        // OUTER leading/trailing `|` (the common GFM shape) shift/extend the table by one space each.
-        func geometry(_ colSlot: [CGFloat], _ gap: CGFloat)
+        // from the table's left text edge. Columns carry content + a `slotPad` of trailing room; the measured
+        // source separators sit between them. Each rule is placed so BOTH neighbouring cells get equal padding
+        // of `(sep + slotPad)/2` (the widest cell's content ends `slotPad` before its slot end, so the rule
+        // offset `(sep − slotPad)/2` from the slot end centres it in the visual gap).
+        func geometry(_ colSlot: [CGFloat], _ s: (lead: CGFloat, sep: [CGFloat], trail: CGFloat))
             -> (edges: [CGFloat], lastColLeftX: CGFloat, laidOutWidth: CGFloat) {
             var edges: [CGFloat] = []
-            var x: CGFloat = hasLeadingPipe ? gap : 0   // left edge of cell 0's slot
-            var lastColLeftX: CGFloat = x
+            var x = s.lead                                   // cell 0's content starts one leading `| ` in
+            var lastColLeftX = x
             for c in 0 ..< colCount {
-                if c == colCount - 1 { lastColLeftX = x }   // last column begins here (before its own slot)
-                x += colSlot[c]                              // cell c spans up to here
-                if c < colCount - 1 { edges.append(x + gap / 2); x += gap }   // rule at the separator's centre
+                if c == colCount - 1 { lastColLeftX = x }    // last column begins here (before its own slot)
+                x += colSlot[c]                              // cell c's slot spans up to here
+                if c < colCount - 1 {
+                    edges.append(x + (s.sep[c] - slotPad) / 2)   // rule centred → equal padding on both sides
+                    x += s.sep[c]
+                }
             }
-            return (edges, lastColLeftX, x + (hasTrailingPipe ? gap : 0))
+            return (edges, lastColLeftX, x + s.trail)
         }
 
         // 4) Measure + lay out ONCE at the body size. Tables never scale — every table in a document reads at
         //    the same 15pt (a table too wide to fit SCROLLS, it doesn't shrink), so sizes can't look "제각각".
-        let (width, colSlot, gap) = measure(at: tableFontSize)
-        let (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, gap)
+        let (width, colSlotRaw) = measure(at: tableFontSize)
+        var colSlot = colSlotRaw
+        // Symmetric breathing room: give every column but the last a `slotPad` of trailing room (the last
+        // column's right side is the card's inner edge, handled by `trail`). Combined with centred rules
+        // (see `geometry`) this yields even padding on both sides of every rule.
+        for c in 0 ..< max(0, colCount - 1) { colSlot[c] += slotPad }
+        let sep = separators()
+        let (edges, lastColLeftX, laidOutWidth) = geometry(colSlot, sep)
 
         // 5) Decide how the table meets the viewport — all at full size (see the file-header decision tree):
         //      fits                          → plain, no wrap  (byte-identical to a narrow table today)
@@ -252,16 +286,25 @@ enum TableRendering {
         return ns.range(of: "|", options: [], range: line).location != NSNotFound
     }
 
-    /// The last non-whitespace character code in `range` (skipping trailing spaces/tabs/newlines), or 0
-    /// if none — used to detect a GFM table's trailing outer `|`.
-    private static func lastContentChar(_ ns: NSString, _ range: NSRange) -> unichar {
-        var i = range.location + range.length - 1
-        while i >= range.location {
-            let ch = ns.character(at: i)
-            if ch != 32 && ch != 9 && ch != 10 && ch != 13 { return ch }
-            i -= 1
+    /// The rendered width of source characters `[lo, hi)` as the layout advances them: each table `|` is
+    /// measured as a SPACE (the glyph substitution draws it as one), and any `hidden` marker char drops to
+    /// zero width. Used to measure the real inter-cell separators so a grid rule can sit at the true centre
+    /// of the gap between two columns (a fixed estimate drifts off the glyphs).
+    private static func spanWidth(_ lo: Int, _ hi: Int, storage: NSTextStorage, hidden: Set<Int>) -> CGFloat {
+        guard hi > lo else { return 0 }
+        let sub = storage.attributedSubstring(from: NSRange(location: lo, length: hi - lo))
+        let out = NSMutableAttributedString()
+        for k in 0 ..< (hi - lo) where !hidden.contains(lo + k) {
+            let piece = sub.attributedSubstring(from: NSRange(location: k, length: 1))
+            if piece.string == "|", piece.length > 0 {
+                out.append(NSAttributedString(string: " ",
+                                              attributes: piece.attributes(at: 0, effectiveRange: nil)))
+            } else {
+                out.append(piece)
+            }
         }
-        return 0
+        guard out.length > 0 else { return 0 }
+        return CGFloat(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(out), nil, nil, nil))
     }
 
     /// The laid-out width of `range`'s VISIBLE glyphs (skipping any in `hidden`), via CoreText typographic
@@ -302,6 +345,11 @@ enum TableRendering {
     /// the table scrolls horizontally instead; above `lastCap` a single long cell would sprawl, so it wraps.
     private static let minLast: CGFloat = 110
     private static let lastCap: CGFloat = 420
+
+    /// Trailing breathing room (points) added to every non-last column slot. With centred rules (see
+    /// `geometry`) each interior rule ends up with `(separator + slotPad)/2` of padding on BOTH sides, so
+    /// cell text never kisses a rule. The last column has none (its right side is the card's inner edge).
+    private static let slotPad: CGFloat = 6
 
     /// The table block's left inset (points): the table sits this far off the margin inside its card,
     /// matching code blocks. Applied as each row paragraph's `firstLineHeadIndent`; when a long LAST column
