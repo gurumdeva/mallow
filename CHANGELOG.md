@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.2.0] - 2026-07-02
+
+Tables reworked — one size, in-column wrapping, and horizontal scroll for wide tables. Signed with a Developer ID and notarized by Apple.
+
+### Changed
+- **Every table now renders at one size, and a table too wide for the window scrolls horizontally instead of shrinking.** Before, a wide table could shrink to fit, so a document ended up mixing full-size and shrunk tables. Now all tables render at the same size: a table with a long last column wraps that column within its own column (the row grows taller), and a table that is genuinely wider than the window keeps its size and can be scrolled sideways — while the surrounding text still wraps at the window edge, so only the table scrolls. Tables that already fit are unchanged.
+
+### Fixed
+- **Tables no longer detach from their grid and card after you resize the window.** Table layout — column alignment, the card, and the wrapping — now recomputes when the window width changes, so the card and column rules always frame the text instead of freezing at the width the file was opened at.
+
 ## [1.1.9] - 2026-06-23
 
 A table-readability fix. Signed with a Developer ID and notarized by Apple.
