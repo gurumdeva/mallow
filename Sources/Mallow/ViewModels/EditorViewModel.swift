@@ -35,9 +35,19 @@ final class EditorViewModel {
     /// styled-font cache; kept in zoom-sync by `zoomFactor`'s didSet above.
     private let restyler = Restyler()
 
+    /// The glyph-level rendering delegate (hide syntax zero-width, `•` bullets, ☐/☑ boxes, `|`→space,
+    /// folded lines, table-row padding). Owned HERE — not by the SwiftUI Coordinator — so headless tests
+    /// exercise the exact same glyph pipeline the app renders. Installed on the layout manager in `init`.
+    private var layoutDelegate: EditorLayoutDelegate?
+
     init(textView: MarkdownTextView) {
         self.textView = textView
         baseline = textView.string
+        // Touching layoutManager forces TextKit 1, where the glyph-generation delegate fires (the
+        // hide-syntax + substitution pipeline depends on it).
+        let delegate = EditorLayoutDelegate(vm: self, textView: textView)
+        layoutDelegate = delegate
+        textView.layoutManager?.delegate = delegate
     }
 
     // MARK: derived state for the chrome

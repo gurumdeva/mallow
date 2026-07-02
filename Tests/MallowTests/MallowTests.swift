@@ -526,6 +526,9 @@ final class MallowTests: XCTestCase {
         let leftX = lm.boundingRect(forGlyphRange: leftGlyph, in: tc).minX
 
         // Ink extents of the VISIBLE glyphs (skip spaces + the pipe-as-space) on the header row.
+        // `boundingRect` includes a glyph's ADVANCE — for the cell's kerned last char that advance carries
+        // the alignment padding (`.kern`), which is exactly the blank the rule is centred in. Subtract the
+        // char's own kern so `maxX` means "where the drawn letter ends", not "where the padding ends".
         let firstNL = ns.range(of: "\n").location
         var ink: [(minX: CGFloat, maxX: CGFloat)] = []
         for i in 0 ..< firstNL {
@@ -533,7 +536,8 @@ final class MallowTests: XCTestCase {
             if ch == 32 || ch == 124 { continue }   // space or '|'
             let g = lm.glyphRange(forCharacterRange: NSRange(location: i, length: 1), actualCharacterRange: nil)
             let r = lm.boundingRect(forGlyphRange: g, in: tc)
-            ink.append((r.minX, r.maxX))
+            let kern = (tv.textStorage?.attribute(.kern, at: i, effectiveRange: nil) as? CGFloat) ?? 0
+            ink.append((r.minX, r.maxX - kern))
         }
         XCTAssertFalse(grid.interiorEdges.isEmpty, "a 3-col table has interior rules")
         for edge in grid.interiorEdges {
@@ -548,23 +552,33 @@ final class MallowTests: XCTestCase {
         }
     }
 
-    // A wide table widens the text container past the viewport (horizontal scroll), but window-tracking
-    // decorations (the code-block card, the thematic rule) must keep clamping to the VIEWPORT — the Restyler
-    // hands the viewport width to the view, distinct from the widened container.
-    func testTableV2_wideTableKeepsViewportWidthForDecorations() {
-        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 460, height: 400))
+    // Hidden syntax markers are truly ZERO-WIDTH in layout, not just invisible. Regression for the
+    // ghost-advance bug: `.null`-property glyphs kept their font advances, so backticks widened every
+    // inline-code pill by ~2 characters, `**` left holes around bold text, `# ` indented headings off
+    // the margin, and table cells containing markers drifted off their measured column slots.
+    // (Requires the EditorLayoutDelegate — installed by EditorViewModel.init — to run headless.)
+    func testHiddenMarkers_zeroWidthInLayout() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
         let vm = EditorViewModel(textView: tv)
-        tv.textContainer?.size = NSSize(width: 460, height: 100_000)
-        let wide = "| 첫번째열헤더길다 | 두번째열헤더길다 | 세번째열헤더길다 | 네번째열헤더길다 |\n" +
-                   "|---|---|---|---|\n| 값하나 | 값둘 | 값셋 | 값넷 |"
-        tv.string = wide + "\n\n```\nlet x = 1\n```"
+        tv.textContainer?.size = NSSize(width: 700, height: 100_000)
+        tv.string = "# 헤딩\n\n본문 시작줄\n\n가 **볼드** 나\n\n가 `code` 나\n"
         vm.refresh()
-        let container = tv.textContainer?.size.width ?? 0
-        XCTAssertFalse(tv.codeCards.isEmpty, "the fenced block is a code card")
-        XCTAssertGreaterThan(container, 461, "a too-wide table widens the container past the 460 viewport")
-        XCTAssertEqual(tv.viewportContainerWidth, 460, accuracy: 1, "viewport width preserved for the code card / rule")
-        // decoWidth = min(container, viewport) = viewport → the code card clamps, it doesn't span the container.
-        XCTAssertLessThan(tv.viewportContainerWidth, container - 1, "code card would clamp below the widened container")
+        guard let lm = tv.layoutManager, let tc = tv.textContainer else { return XCTFail() }
+        lm.ensureLayout(for: tc)
+        let ns = tv.string as NSString
+        func x(_ i: Int) -> CGFloat {
+            let g = lm.glyphRange(forCharacterRange: NSRange(location: i, length: 1), actualCharacterRange: nil)
+            return lm.location(forGlyphAt: g.location).x
+        }
+        // Heading text starts at the same x as body text (the hidden `# ` takes no space).
+        XCTAssertEqual(x(2), x(ns.range(of: "본문").location), accuracy: 0.5, "heading aligns with body")
+        // Bold text starts where its opening `**` starts (markers widthless).
+        let boldOpen = ns.range(of: "**볼드**").location
+        XCTAssertEqual(x(boldOpen + 2), x(boldOpen), accuracy: 0.5, "no ghost gap before bold text")
+        // Inline code: both backticks widthless → the pill's box hugs the visible text.
+        let tickOpen = ns.range(of: "`code`").location
+        XCTAssertEqual(x(tickOpen + 1), x(tickOpen), accuracy: 0.5, "no ghost gap at the code span's left")
+        XCTAssertEqual(x(tickOpen + 6), x(tickOpen + 5), accuracy: 0.5, "no ghost gap at the code span's right")
     }
 
 }

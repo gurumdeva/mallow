@@ -136,15 +136,19 @@ final class MarkdownTextView: NSTextView {
             guard fragRect.height > 0 else { return }   // skip folded / collapsed-fence (zero-height) lines
             // Measure from the first glyph that is BOTH inside `cr` AND visible. Two reasons it may not be
             // `gr`'s first glyph: (1) `glyphRange(forCharacterRange:)` snaps a range that starts on a hidden
-            // (`.null`, zero-width) glyph — a blockquote's `>` marker, an inline-code backtick — back to the
-            // previous visible glyph, which can be the char (or whole line) BEFORE `cr`; (2) a `.null` glyph's
+            // (zero-width) glyph — a blockquote's `>` marker, an inline-code backtick — back to the
+            // previous visible glyph, which can be the char (or whole line) BEFORE `cr`; (2) a hidden glyph's
             // `location(forGlyphAt:)` reports the line-fragment TOP as the baseline, not the real text
             // baseline, which would push `capTop` a line-leading above the text. Advancing past both gives
             // the true first-letter baseline, so the bar/pill hugs the text instead of towering above it.
+            // Hidden markers carry `.controlCharacter` (zero-advance); `.null` remains for the task-box
+            // fallback glyph — skip both.
             let lineEnd = lineGlyphRange.location + lineGlyphRange.length
             var g = max(lineGlyphRange.location, gr.location)
-            while g < lineEnd,
-                  lm.characterIndexForGlyph(at: g) < cr.location || lm.propertyForGlyph(at: g).contains(.null) {
+            while g < lineEnd {
+                let p = lm.propertyForGlyph(at: g)
+                guard lm.characterIndexForGlyph(at: g) < cr.location
+                    || p.contains(.null) || p.contains(.controlCharacter) else { break }
                 g += 1
             }
             guard g < lineEnd else { return }                              // nothing visible inside cr on this line
