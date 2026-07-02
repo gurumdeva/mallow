@@ -269,9 +269,13 @@ final class MarkdownTextView: NSTextView {
                 guard lineGlyphs.length > 0 else { return }
                 let lineChars = lm.characterRange(forGlyphRange: lineGlyphs, actualGlyphRange: nil)
                 guard let a = self.decorationAnchors(forCharacterRange: lineChars) else { return }
+                // 3.5pt of horizontal padding: the hidden backticks are zero-width, so the box hugs the
+                // text exactly — a drawn pad gives the pill air without shifting layout. Safe because code
+                // spans are almost always space-separated from prose (corpus: ~1% direct-adjacent); in that
+                // rare case the pill juts a hair toward the neighbor, which beats real flow-shifting space.
                 let box = lm.boundingRect(forGlyphRange: lineGlyphs, in: tc)
-                let pill = NSRect(x: origin.x + box.minX - 2, y: origin.y + a.capTop - 2,
-                                  width: box.width + 4, height: (a.baseline - a.capTop) + 4)
+                let pill = NSRect(x: origin.x + box.minX - 3.5, y: origin.y + a.capTop - 2,
+                                  width: box.width + 7, height: (a.baseline - a.capTop) + 4)
                 NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
             }
         }

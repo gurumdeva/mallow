@@ -40,9 +40,10 @@ final class Restyler {
         let code = marks.contains("Code"), strong = marks.contains("Strong"), emph = marks.contains("Emphasis")
         let key = (code ? 1 : 0) | (strong ? 2 : 0) | (emph ? 4 : 0)
         if let cached = fontCache[key] { return cached }
-        var f = code   // inline code in mono at 0.85em — a monospace face advances wide, so it needs to sit a
-                       // touch smaller than the body to read as inline (not bulge past the surrounding text)
-            ? NSFont.monospacedSystemFont(ofSize: baseSize * 0.85 * zoom, weight: .regular) : baseFont
+        var f = code   // inline code in mono at 0.9em — slightly under the body so mono's wide advances read
+                       // inline. (0.85 was an overcorrection from the ghost-advance era: with the hidden
+                       // backticks now truly zero-width the pill hugs the text, and 0.85 read too small.)
+            ? NSFont.monospacedSystemFont(ofSize: baseSize * 0.9 * zoom, weight: .regular) : baseFont
         if strong { f = fm.convert(f, toHaveTrait: .boldFontMask) }
         if emph { f = fm.convert(f, toHaveTrait: .italicFontMask) }
         fontCache[key] = f
