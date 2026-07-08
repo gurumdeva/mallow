@@ -132,6 +132,35 @@ final class MallowTests: XCTestCase {
         XCTAssertFalse(registry.register(a), "re-registering an existing doc is not a collision")
     }
 
+    // MARK: Task-box marker walk (one walk feeds both the hide pass and the click-toggle)
+
+    func testMarkerGrammar_taskBoxAndPrefixEndAgree() {
+        // markerPrefixEnd (what the hide pass keeps visible) and taskBox(onLine:) (what a click toggles)
+        // now share ONE walk (lineMarker), so a box is found IFF the prefix skipped past it. Assert that
+        // agreement across bullets, ordered lists, nested quotes, checked/unchecked, and non-boxes.
+        func check(_ line: String, hasBox: Bool, checked: Bool = false) {
+            let g = MarkerGrammar(ns: CharBuffer(line as NSString))
+            let hi = (line as NSString).length
+            let box = g.taskBox(onLine: 0, hi)
+            XCTAssertEqual(box != nil, hasBox, "box presence for \(line.debugDescription)")
+            if let box {
+                XCTAssertEqual(box.checked, checked, "checked state for \(line.debugDescription)")
+                // The prefix must extend PAST the box (box.inner is the `[`'s next char; prefixEnd skips
+                // `[ ] ` → at least inner+3), proving the same walk consumed it.
+                XCTAssertGreaterThan(g.markerPrefixEnd(0, hi), box.inner, "prefix must cover the box")
+            }
+        }
+        check("- [ ] todo", hasBox: true, checked: false)
+        check("- [x] done", hasBox: true, checked: true)
+        check("- [X] done", hasBox: true, checked: true)
+        check("1. [ ] ordered task", hasBox: true, checked: false)
+        check("> - [ ] quoted task", hasBox: true, checked: false)
+        check("- plain bullet", hasBox: false)
+        check("- [link] not a box", hasBox: false)   // no marker-space after `]`
+        check("[ ] not in a list", hasBox: false)    // no bullet before the box
+        check("5 apples", hasBox: false)              // bare number = content
+    }
+
     // MARK: byte ↔ UTF-16 ↔ scalar offset conversions (engine ranges ↔ NSTextView ranges)
 
     func testOffsetConversions_asciiIsIdentity() {

@@ -35,20 +35,40 @@ struct MarkerGrammar {
 
     func isMarkerSpace(_ c: unichar) -> Bool { c == 32 || c == 9 }
 
-    /// If `start` opens a task-list checkbox `[ ] ` / `[x] ` / `[X] `, return the index past it (so the
-    /// box stays visible as part of the marker); otherwise return `start` unchanged.
-    func skipTaskBox(_ start: Int, _ lineHi: Int) -> Int {
-        guard start + 3 < lineHi, ns.character(at: start) == 91 /* [ */ else { return start }
+    /// The layout of a GFM task checkbox: the inner char's UTF-16 index (the ` `/`x`/`X` between the
+    /// brackets — substituted with ☐/☑ and the char a click-toggle rewrites) plus whether it's checked.
+    /// The brackets sit at `inner - 1` (`[`) and `inner + 1` (`]`), so callers derive them without a
+    /// richer struct.
+    struct TaskBox { let inner: Int; let checked: Bool }
+
+    /// If `start` opens a task-list checkbox `[ ] ` / `[x] ` / `[X] ` (a marker space must follow the `]`,
+    /// so `[link] ` is not a box), return its layout; otherwise nil. The single shape test both the hide
+    /// pass and the click-toggle use, so the box kept visible is exactly the box a click flips.
+    func taskBoxAt(_ start: Int, _ lineHi: Int) -> TaskBox? {
+        guard start + 3 < lineHi, ns.character(at: start) == 91 /* [ */ else { return nil }
         let inner = ns.character(at: start + 1)
-        guard inner == 32 || inner == 120 || inner == 88 /* space/x/X */,
+        let checked = inner == 120 || inner == 88 /* x/X */
+        guard inner == 32 || checked,
               ns.character(at: start + 2) == 93 /* ] */,
-              isMarkerSpace(ns.character(at: start + 3)) else { return start }
-        return start + 4
+              isMarkerSpace(ns.character(at: start + 3)) else { return nil }
+        return TaskBox(inner: start + 1, checked: checked)
     }
 
-    /// The index where the line's leading marker prefix ends (indent + bullet/number/quote markers,
-    /// incl. a task-box). A bare number with no `.`/`)` delimiter is content, not a marker.
-    func markerPrefixEnd(_ lineLo: Int, _ lineHi: Int) -> Int {
+    /// If `start` opens a task-list checkbox, the index past it (so the box stays visible as part of the
+    /// marker); otherwise `start` unchanged. Thin wrapper over `taskBoxAt` so the skip and the record
+    /// share one shape test.
+    func skipTaskBox(_ start: Int, _ lineHi: Int) -> Int {
+        taskBoxAt(start, lineHi) != nil ? start + 4 : start
+    }
+
+    /// The parsed leading structure of one line: where the whole marker prefix ends (indent + nested
+    /// `>` + bullet/number + task box — all kept visible), and the task box if the line is a `- [ ]`
+    /// item. ONE walk feeds both `markerPrefixEnd` (the hide pass's "keep visible" span) and
+    /// `taskBox(onLine:)` (the click-toggle / ☐ substitution), so the two can never drift — the
+    /// duplication that used to live in TaskList's TaskBoxScanner.
+    struct LineMarker { let prefixEnd: Int; let taskBox: TaskBox? }
+
+    func lineMarker(_ lineLo: Int, _ lineHi: Int) -> LineMarker {
         var i = lineLo
         while i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }  // indent
         while i < lineHi {
@@ -60,20 +80,65 @@ struct MarkerGrammar {
             }
             if c == 45 || c == 42 || c == 43 /* - * + */,
                i + 1 < lineHi, isMarkerSpace(ns.character(at: i + 1)) {
-                return skipTaskBox(i + 2, lineHi)  // bullet ends the marker
+                return marker(afterBulletAt: i + 2, lineHi)  // bullet ends the marker; a box may follow
             }
             if c >= 48 && c <= 57 /* digit */ {  // ordered: N. / N)
                 var j = i
                 while j < lineHi && ns.character(at: j) >= 48 && ns.character(at: j) <= 57 { j += 1 }
                 if j < lineHi, ns.character(at: j) == 46 || ns.character(at: j) == 41 /* . ) */,
                    j + 1 < lineHi, isMarkerSpace(ns.character(at: j + 1)) {
-                    return skipTaskBox(j + 2, lineHi)
+                    return marker(afterBulletAt: j + 2, lineHi)
                 }
-                return i  // a bare number is content, not a marker
+                return LineMarker(prefixEnd: i, taskBox: nil)  // a bare number is content, not a marker
             }
-            return i
+            return LineMarker(prefixEnd: i, taskBox: nil)
         }
-        return min(i, lineHi)
+        return LineMarker(prefixEnd: min(i, lineHi), taskBox: nil)
+    }
+
+    /// Resolve the marker end + task box given `start` = the index right after a `- `/`1. ` bullet.
+    private func marker(afterBulletAt start: Int, _ lineHi: Int) -> LineMarker {
+        let box = taskBoxAt(start, lineHi)
+        return LineMarker(prefixEnd: box != nil ? start + 4 : start, taskBox: box)
+    }
+
+    /// The index where the line's leading marker prefix ends (indent + bullet/number/quote markers,
+    /// incl. a task-box). A bare number with no `.`/`)` delimiter is content, not a marker.
+    func markerPrefixEnd(_ lineLo: Int, _ lineHi: Int) -> Int {
+        lineMarker(lineLo, lineHi).prefixEnd
+    }
+
+    /// The GFM task checkbox on this line (list item with a `[ ]`/`[x]` right after the bullet), or nil.
+    func taskBox(onLine lineLo: Int, _ lineHi: Int) -> TaskBox? {
+        lineMarker(lineLo, lineHi).taskBox
+    }
+
+    /// Every task checkbox in the half-open UTF-16 range `[lo, hi)` (a List block's clamped span),
+    /// scanned line by line, as `innerIndex → checked`. The KEY is the inner char's UTF-16 index (the
+    /// char to substitute with ☐/☑ and the char a toggle rewrites); the brackets are at `inner ∓ 1`.
+    func boxes(in lo: Int, _ hi: Int) -> [Int: Bool] {
+        var found: [Int: Bool] = [:]
+        let rangeHi = min(hi, ns.length)
+        var lineStart = max(0, lo)
+        while lineStart < rangeHi {
+            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+            let lineHi = min(line.location + line.length, rangeHi)
+            if let b = taskBox(onLine: line.location, lineHi) { found[b.inner] = b.checked }
+            if line.length == 0 { break }   // guard against a zero-length tail loop
+            lineStart = line.location + line.length
+        }
+        return found
+    }
+
+    /// Scan ALL `List` blocks in one parse and return the merged `innerIndex → checked` map.
+    /// `byteToUTF16` bridges each block's engine BYTE range to UTF-16 (same as recomputeHidden).
+    func allBoxes(_ blocks: [PBlock], map: [Int]) -> [Int: Bool] {
+        var out: [Int: Bool] = [:]
+        for block in blocks where block.kindTag == "List" {
+            let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: ns.length)
+            for (inner, checked) in boxes(in: bLo, bHi) { out[inner] = checked }
+        }
+        return out
     }
 
     /// The set of UTF-16 indices in `[bLo, bHi)` that are line-leading marker chars (kept visible).
@@ -290,7 +355,7 @@ struct HiddenSyntaxCollector {
 /// The "no raw table markers" scan over GFM `Table` blocks (a true cell-bordered grid needs engine cell
 /// ranges, absent today). Pure over the NSString; for every table it collects the UTF-16 indices of each
 /// `|` bar on a content row (→ rendered as a space, keeping monospace columns aligned) and of every char
-/// on the `|---|` delimiter row (→ hidden). Mirrors `TaskBoxScanner`: detection only, no mutation.
+/// on the `|---|` delimiter row (→ hidden). Like `MarkerGrammar`'s box scan: detection only, no mutation.
 struct TablePipeScanner {
     let ns: CharBuffer
     let total: Int
@@ -389,7 +454,7 @@ enum HiddenSyntax {
         result.bulletMarks = bullets
 
         var boxes = [Int: Bool]()
-        for (inner, checked) in TaskBoxScanner(s).allBoxes(blocks, map: map) {
+        for (inner, checked) in grammar.allBoxes(blocks, map: map) {
             boxes[inner] = checked
             collector.hidden.insert(inner - 1)   // [
             collector.hidden.insert(inner + 1)   // ]

@@ -4,13 +4,12 @@
 // GFM task lists are parsed by the engine as ordinary `List` blocks whose items start with a literal
 // `[ ]` / `[x]` / `[X]` right after the bullet (`- [ ] do thing`). This file provides:
 //
-//   1. Detection (`TaskBoxScanner`): a PURE scanner that walks each list item's line-leading marker
-//      prefix (indent → nested `>` → bullet → `[ ]`) and returns, for every checkbox, the UTF-16
-//      index of its INNER character (the ` `/`x`/`X` between the brackets) and whether it is checked.
-//      NOTE (duplication debt): this re-derives the same walk as `MarkerGrammar.skipTaskBox`
-//      (HiddenSyntax.swift — internal, so it IS reachable now; the walks are kept in lockstep by
-//      hand until they are unified). If either walk changes, change both or the box the hide pass
-//      keeps visible drifts from the box the click toggles.
+//   1. Detection (`MarkerGrammar.boxes(in:)` / `.taskBox(onLine:)` in HiddenSyntax.swift): the ONE
+//      line-leading marker walk (indent → nested `>` → bullet → `[ ]`) returns, for every checkbox, the
+//      UTF-16 index of its INNER character (the ` `/`x`/`X` between the brackets) and whether it is
+//      checked. The hide pass (which box to keep visible) and this file's click-toggle (which box to
+//      flip) both read that one walk, so they cannot drift. (This detection used to be a second copy —
+//      TaskBoxScanner — kept in lockstep by hand; it was collapsed onto MarkerGrammar.)
 //
 //   2. Rendering (wired via HiddenSyntax + EditorLayoutDelegate): the two brackets are HIDDEN
 //      (zero-width) and the inner char is SUBSTITUTED with ☐ U+2610 / ☑ U+2611 — 3 source chars →
@@ -24,113 +23,10 @@
 import AppKit
 import CoreText
 
-// MARK: - Detection (pure)
-
-/// A pure scanner over the buffer that finds GFM task-list checkboxes inside `List` blocks and reports
-/// each one's inner-character UTF-16 index + checked state. It owns no editor state; feed it the source
-/// string and the parsed blocks. Mirrors EditorViewModel's private `MarkerGrammar` marker walk so the
-/// boxes it finds are exactly the ones the marker pass keeps visible (no drift between the two walks).
-///
-/// All indices are UTF-16 (NSString domain), consistent with `hiddenChars` / `bulletMarks`.
-struct TaskBoxScanner {
-    let ns: CharBuffer     // bulk-read [unichar] snapshot of the source, for fast character access
-
-    init(_ s: String) {
-        self.ns = CharBuffer(s as NSString)
-    }
-
-    /// Marker whitespace: ASCII space (32) or tab (9). (Same predicate as `MarkerGrammar.isMarkerSpace`.)
-    private func isMarkerSpace(_ c: unichar) -> Bool { c == 32 || c == 9 }
-
-    /// If a checkbox `[ ]` / `[x] `/ `[X]` opens at UTF-16 index `start` (must be followed by a marker
-    /// space, so it is a real task box and not e.g. `[link]`), return its layout:
-    ///   - `box`     = index of `[`            (= `start`)            → HIDE
-    ///   - `inner`   = index of the inner char (= `start + 1`)        → SUBSTITUTE with ☐/☑
-    ///   - `close`   = index of `]`            (= `start + 2`)        → HIDE
-    ///   - `checked` = inner char is `x`/`X`
-    /// Returns nil when `start` does not open a checkbox. This is the per-box analogue of
-    /// `MarkerGrammar.skipTaskBox`, but it RECORDS the indices instead of just skipping them.
-    private func taskBoxAt(_ start: Int, _ lineHi: Int)
-        -> (box: Int, inner: Int, close: Int, checked: Bool)? {
-        // Need `[ X ] <space>` → at least 4 chars ([ , inner, ], space) available before lineHi.
-        guard start + 3 < lineHi, ns.character(at: start) == 91 /* [ */ else { return nil }
-        let inner = ns.character(at: start + 1)
-        let isSpace = inner == 32
-        let isChecked = inner == 120 || inner == 88   // x / X
-        guard isSpace || isChecked,
-              ns.character(at: start + 2) == 93 /* ] */,
-              isMarkerSpace(ns.character(at: start + 3)) else { return nil }
-        return (box: start, inner: start + 1, close: start + 2, checked: isChecked)
-    }
-
-    /// Walk a single line's leading marker prefix exactly like `MarkerGrammar.markerPrefixEnd`
-    /// (indent → nested `>` → bullet `-`/`*`/`+` OR ordered `N.`/`N)`), and if a task box opens right
-    /// after the bullet/number, return its layout. Returns nil for non-task list lines / paragraphs.
-    ///
-    /// `lineLo` / `lineHi` are the UTF-16 bounds of the line (clamped to the block in the caller).
-    private func taskBoxOnLine(_ lineLo: Int, _ lineHi: Int)
-        -> (box: Int, inner: Int, close: Int, checked: Bool)? {
-        var i = lineLo
-        while i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }   // indent
-        while i < lineHi {
-            let c = ns.character(at: i)
-            if c == 62 /* > */ {                         // blockquote prefix (may nest: `> > `, `> - `)
-                i += 1
-                if i < lineHi && isMarkerSpace(ns.character(at: i)) { i += 1 }
-                continue
-            }
-            if c == 45 || c == 42 || c == 43 /* - * + */,
-               i + 1 < lineHi, isMarkerSpace(ns.character(at: i + 1)) {
-                return taskBoxAt(i + 2, lineHi)          // box (if any) sits right after `- `
-            }
-            if c >= 48 && c <= 57 /* digit */ {          // ordered list: `N.` / `N)` then a box
-                var j = i
-                while j < lineHi && ns.character(at: j) >= 48 && ns.character(at: j) <= 57 { j += 1 }
-                if j < lineHi, ns.character(at: j) == 46 || ns.character(at: j) == 41 /* . ) */,
-                   j + 1 < lineHi, isMarkerSpace(ns.character(at: j + 1)) {
-                    return taskBoxAt(j + 2, lineHi)
-                }
-                return nil                               // bare number = content, not a marker
-            }
-            return nil                                   // first non-quote char isn't a list marker
-        }
-        return nil
-    }
-
-    /// Scan the half-open UTF-16 range `[lo, hi)` (a single List block's span, clamped) line by line,
-    /// collecting every checkbox as `innerIndex → checked`. The KEY is the inner char's UTF-16 index
-    /// (the char to substitute with ☐/☑ and the char a toggle rewrites); the close/open brackets are at
-    /// `inner-1` / `inner+1`, so the caller can derive them without a richer struct.
-    func boxes(in lo: Int, _ hi: Int) -> [Int: Bool] {
-        var found: [Int: Bool] = [:]
-        let total = ns.length
-        let rangeHi = min(hi, total)
-        var lineStart = max(0, lo)
-        while lineStart < rangeHi {
-            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
-            let lineHi = min(line.location + line.length, rangeHi)
-            if let b = taskBoxOnLine(line.location, lineHi) {
-                found[b.inner] = b.checked
-            }
-            if line.length == 0 { break }                // guard against a zero-length tail loop
-            lineStart = line.location + line.length
-        }
-        return found
-    }
-
-    /// Convenience: scan ALL `List` blocks in one parse and return the merged `innerIndex → checked`
-    /// map. `byteToUTF16` bridges each block's engine BYTE range to UTF-16 (same as recomputeHidden).
-    /// EditorViewModel should call this from `recomputeHidden` and store the result in `vm.taskBoxes`,
-    /// dropping any box on the caret's own line (so the raw `[ ]` is editable there) — see notes below.
-    func allBoxes(_ blocks: [PBlock], map: [Int]) -> [Int: Bool] {
-        var out: [Int: Bool] = [:]
-        for block in blocks where block.kindTag == "List" {
-            let (bLo, bHi) = block.range.utf16Bounds(map: map, clampedTo: ns.length)
-            for (inner, checked) in boxes(in: bLo, bHi) { out[inner] = checked }
-        }
-        return out
-    }
-}
+// Task-list checkbox DETECTION lives in `MarkerGrammar` (HiddenSyntax.swift): `boxes(in:)` /
+// `allBoxes(_:map:)` / `taskBox(onLine:)`. It was previously a second copy here (`TaskBoxScanner`) that
+// re-derived MarkerGrammar's marker walk and had to be kept in lockstep by hand; it was collapsed onto
+// the one walk so the box the hide pass keeps visible can't drift from the box a click toggles.
 
 // MARK: - Glyph substitution helper (for the layout-manager delegate)
 
@@ -203,7 +99,7 @@ extension MarkdownEditor.Coordinator {
         // indices; the line walk guarantees they are genuine task boxes, not arbitrary `[` chars.
         let probe = max(0, min(charIndex, total - 1))
         let line = ns.lineRange(for: NSRange(location: probe, length: 0))
-        let lineBoxes = TaskBoxScanner(s).boxes(in: line.location, line.location + line.length)
+        let lineBoxes = MarkerGrammar(ns: CharBuffer(ns)).boxes(in: line.location, line.location + line.length)
         guard !lineBoxes.isEmpty else { return false }
 
         // A click resolves to an insertion index; accept a hit on the inner char or either bracket so the
