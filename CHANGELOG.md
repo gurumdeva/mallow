@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.2.2] - 2026-07-03
+
+Korean/Japanese input robustness + internal hardening from a whole-codebase modifiability review. Signed with a Developer ID and notarized by Apple.
+
+### Fixed
+- **Focus mode no longer disturbs Korean/Japanese input.** With focus mode on, every keystroke of a live IME composition re-styled the whole document (the composition underline flickered or dropped). Styling now refuses to run during a composition at the pipeline level — the same protection also covers the focus/fold/zoom menu items if invoked mid-composition.
+- **Resizing a window in focus mode no longer drops the dimming.** The dim used to disappear on resize until the next caret move.
+
+### Changed (internal)
+- One shared definition now drives how hidden syntax renders AND how tables measure it (previously three hand-synced copies — the root cause of past table/pill regressions), one owner for the editor-width formulas, and single definitions for the body size/color and inline-code styling. Four new contract tests pin these down (44 total). No visual change.
+
 ## [1.2.1] - 2026-07-02
 
 A document-opening polish. Signed with a Developer ID and notarized by Apple.
