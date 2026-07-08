@@ -53,9 +53,13 @@ extension EditorDocument {
         guard !Self.syncing.contains(id) else { return }   // already reconciling this window
         guard let path = vm.filePath else { return }        // unsaved document — nothing to compare
 
-        // Read the file fresh. If it was deleted/moved/temporarily unreadable, keep the editor as-is and
-        // stay silent (we'll retry on the next focus; saving recreates it) — like the reference.
-        guard let disk = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        // Read the file fresh through the shared guarded reader (so reconcile applies the same 50MB cap
+        // and BOM handling as open/restore). If it was deleted/moved/temporarily unreadable, non-UTF-8,
+        // or over the cap, `boundPathAllowed` is false → keep the editor as-is and stay silent (retry on
+        // the next focus; a save recreates it) — matching the reference's bail-on-unreadable.
+        let read = EditorDocument.readFile(atPath: path, recordRecent: false)
+        guard read.boundPathAllowed else { return }
+        let disk = read.text
 
         // Compare disk against the LIVE buffer (literal bytes) and against the saved baseline (engine
         // equality, via vm.isDirty — the same primitive the dirty dot uses).
@@ -69,7 +73,7 @@ extension EditorDocument {
 
         case .silent:
             // No local edits, so adopting disk loses nothing. Replace the buffer and re-baseline.
-            applyReload(disk, path: path)
+            applyReload(disk, path: path, hadBOM: read.hadBOM)
 
         case .prompt:
             // Local edits AND an external change — one side must lose, so ask first. The guard keeps the
@@ -83,7 +87,7 @@ extension EditorDocument {
             alert.addButton(withTitle: L.t("reload.confirm"))    // first button → reload (accept disk)
             alert.addButton(withTitle: L.t("reload.keepMine"))   // second button → keep local edits
             if alert.runModal() == .alertFirstButtonReturn {
-                applyReload(disk, path: path)   // accept the disk version
+                applyReload(disk, path: path, hadBOM: read.hadBOM)   // accept the disk version
             } else {
                 // Kept local edits: record that we've seen this disk version so the same content won't
                 // re-prompt on every focus. markSaved re-baselines to disk; the buffer still differs from
@@ -103,7 +107,7 @@ extension EditorDocument {
     /// existing undo stack is preserved (the same undoable seam EditorViewModel.replace(with:) uses for
     /// engine commands; DocumentActions warns that `string =` registers no undo and wipes the stack).
     /// The caret is clamped to the new length first, since the old offset may now be out of range.
-    private func applyReload(_ disk: String, path: String) {
+    private func applyReload(_ disk: String, path: String, hadBOM: Bool) {
         // If focus returned while an IME composition is still marked, replacing the whole buffer now would
         // desync the input context (crash / mangled composition). Skip — reloadFromDiskIfChanged runs again
         // on the next focus, by which point the composition has committed.
@@ -118,6 +122,7 @@ extension EditorDocument {
         let len = (disk as NSString).length
         let caret = min(priorCaret, len)
         textView.setSelectedRange(NSRange(location: caret, length: 0))
+        vm.hadBOM = hadBOM                         // adopt disk's BOM state so the next save round-trips it
         vm.markSaved(path: path, content: disk)   // disk is now the clean baseline (not dirty)
         vm.refresh()                              // re-parse, restyle, recompute hidden glyphs, focus
         markEdited()                            // chrome re-renders title / dirty dot

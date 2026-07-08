@@ -48,8 +48,9 @@ private struct SessionState: Codable {
 /// NOTE: explicit Finder/CLI opens do NOT flow through here — they arrive via the AppDelegate
 /// open-event route (LaunchOpen supersede); this plan covers only the restored/first-run window.
 enum StartupPlan {
-    /// Silently reopen the last session's document (already read); failures upstream fall to `.blank`.
-    case restore(content: String, path: String)
+    /// Silently reopen the last session's document (already read via the shared guarded reader, so it
+    /// honors the 50MB cap and carries `hadBOM`); failures upstream fall to `.blank`.
+    case restore(content: String, path: String, hadBOM: Bool)
     /// First run, nothing to open → the welcome demo (untitled).
     case welcome
     /// A re-run with no last file → an empty untitled document.
@@ -166,11 +167,15 @@ enum SessionStore {
     /// Finder/CLI opens never reach this — they arrive via the AppDelegate open-event route.)
     static func planStartup(demo: String) -> StartupPlan {
         // (1) Restore last document — only once the welcome demo has been seen (so a first run can't be
-        //     hijacked by a stale path) and only if the file still exists + reads. Silent on failure.
+        //     hijacked by a stale path) and only if the file still exists + reads as a bindable UTF-8 file
+        //     within the size cap. Reads through the shared guarded reader so restore honors the 50MB cap
+        //     and preserves a BOM (previously a bare UTF-8 read that skipped both). Silent on failure.
         if state.welcomed == true, let path = state.lastFile,
-           FileManager.default.fileExists(atPath: path),
-           let content = try? String(contentsOfFile: path, encoding: .utf8) {
-            return .restore(content: content, path: path)
+           FileManager.default.fileExists(atPath: path) {
+            let read = EditorDocument.readFile(atPath: path, recordRecent: false)
+            if read.boundPathAllowed {
+                return .restore(content: read.text, path: path, hadBOM: read.hadBOM)
+            }
         }
 
         // (2) First run, nothing to open → welcome demo once; record it so future launches restore.
