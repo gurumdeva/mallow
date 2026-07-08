@@ -75,24 +75,44 @@ extension EditorDocument {
     }
 
     private func write(to url: URL) {
-        // Refuse to write onto a file another window is already editing (its autosave would clobber this,
-        // and vice-versa). Saving to OUR OWN current path is allowed (excluding: self).
-        if pathOpenInOtherWindow(url.path, excluding: self) {
-            presentPathInUseAlert(path: url.path, anchor: hostWindow)
-            return
+        // Manual save is loud: surface the other-window conflict and any write error via an alert.
+        // (RecentFiles is bumped here, not inside `persist`, because recency should track explicit
+        // saves — a background autosave shouldn't reorder the Open Recent menu.)
+        switch persist(to: url) {
+        case .saved:      RecentFiles.add(url.path)
+        case .pathInUse:  presentPathInUseAlert(path: url.path, anchor: hostWindow)
+        case .failed(let error): presentError(error)
         }
+    }
+
+    /// Outcome of a `persist(to:)` attempt, so the two callers can react differently: manual save
+    /// alerts on `.pathInUse` / `.failed`; debounced autosave ignores every outcome (stays silent).
+    enum PersistResult {
+        case saved
+        case pathInUse        // another window is the live writer for this path — don't clobber it
+        case failed(Error)    // the atomic write threw
+    }
+
+    /// The single write routine shared by manual save (`write(to:)`) and debounced autosave
+    /// (`EditorBehaviors.performAutosave`). Both need the same five steps and previously duplicated
+    /// them: the other-window guard (single-writer-per-file), the UTF-8 BOM re-prepend (so a file that
+    /// opened with a BOM keeps its exact bytes while the saved baseline stays BOM-free), the atomic
+    /// utf8 write, the `markSaved` baseline update, and the chrome bump. Returns the outcome; callers
+    /// decide how loudly to surface it.
+    func persist(to url: URL) -> PersistResult {
+        // Refuse to write onto a file another window is already editing (its autosave would clobber
+        // this, and vice-versa). Saving to OUR OWN current path is allowed (excluding: self).
+        if pathOpenInOtherWindow(url.path, excluding: self) { return .pathInUse }
         let content = textView.string
+        let onDisk = vm.hadBOM ? "\u{FEFF}" + content : content
         do {
-            // Re-prepend the UTF-8 BOM if the file opened with one (the buffer text is BOM-free), so the
-            // file's exact bytes are preserved; the saved baseline is the BOM-free buffer text.
-            let onDisk = vm.hadBOM ? "\u{FEFF}" + content : content
             try onDisk.write(to: url, atomically: true, encoding: .utf8)
-            vm.markSaved(path: url.path, content: content)
-            RecentFiles.add(url.path)
-            markEdited()   // .navigationTitle(doc.title) re-renders the window title + chrome dirty dot
         } catch {
-            presentError(error)
+            return .failed(error)
         }
+        vm.markSaved(path: url.path, content: content)
+        markEdited()   // .navigationTitle(doc.title) re-renders the window title + chrome dirty dot
+        return .saved
     }
 
     // MARK: File ▸ Export

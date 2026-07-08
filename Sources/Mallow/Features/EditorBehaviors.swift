@@ -74,25 +74,14 @@ final class EditorBehaviors {
         // (Mirrors the hasMarkedText guard every other buffer-touching path already has.)
         guard !doc.textView.hasMarkedText() else { return }
 
-        // Don't let a background autosave clobber a file another window now owns (the manual Save path in
-        // DocumentActions.write guards this the same way). Skip silently — the other window is the live
-        // writer; a later edit reschedules, and a manual ⌘S would surface the conflict via an alert.
-        if pathOpenInOtherWindow(path, excluding: doc) { return }
-
         isSaving = true
         defer { isSaving = false }
 
-        let content = doc.textView.string
-        do {
-            // Preserve a leading UTF-8 BOM the file opened with (buffer text is BOM-free); baseline stays BOM-free.
-            let onDisk = doc.vm.hadBOM ? "\u{FEFF}" + content : content
-            try onDisk.write(to: URL(fileURLWithPath: path), atomically: true, encoding: .utf8)
-            doc.vm.markSaved(path: path, content: content)
-            doc.markEdited()   // chrome re-renders the ● dirty dot now that the baseline matches
-        } catch {
-            // A failed background write stays silent (no surprise dialog from an autosave); the doc
-            // remains dirty, so a later edit reschedules and the next manual ⌘S surfaces any error.
-        }
+        // Share the exact write routine manual save uses (other-window guard, BOM re-prepend, atomic
+        // utf8 write, markSaved, chrome bump) via `persist`. Autosave stays silent on EVERY outcome:
+        // a `.pathInUse` conflict or a `.failed` write leaves the doc dirty, so a later edit reschedules
+        // and the next manual ⌘S surfaces any error — no surprise dialog from a background save.
+        _ = doc.persist(to: URL(fileURLWithPath: path))
     }
 
     /// Cancel a pending debounced autosave. Called by the close-with-discard path: a timer suspended
