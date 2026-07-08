@@ -119,176 +119,65 @@ final class MarkdownTextView: NSTextView {
         registerForDraggedTypes([.fileURL, .png, .tiff])
     }
 
-    /// Vertical anchors (text-container coords) for a block decoration spanning `cr`, measured from the
-    /// actual glyphs — NOT from `boundingRect`, whose full LINE-FRAGMENT rects include the airy
-    /// `lineHeightMultiple` leading above each line AND the font's ascent/descent slack. Returns the
-    /// first content line's CAP top (the visible letter tops, not the much-higher font ascender), the
-    /// last content line's BASELINE, and the last line's descender bottom. Zero-height lines (folded
-    /// sections + the hidden ``` fence lines) are skipped, so the top is the first REAL code line.
-    private func decorationAnchors(forCharacterRange cr: NSRange) -> (capTop: CGFloat, baseline: CGFloat, descBottom: CGFloat)? {
-        guard let lm = layoutManager, let ts = textStorage else { return nil }
-        let gr = lm.glyphRange(forCharacterRange: cr, actualCharacterRange: nil)
-        guard gr.length > 0 else { return nil }
-        var capTop = CGFloat.greatestFiniteMagnitude
-        var lastBaseline = -CGFloat.greatestFiniteMagnitude
-        var descBottom = -CGFloat.greatestFiniteMagnitude
-        lm.enumerateLineFragments(forGlyphRange: gr) { fragRect, _, _, lineGlyphRange, _ in
-            guard fragRect.height > 0 else { return }   // skip folded / collapsed-fence (zero-height) lines
-            // Measure from the first glyph that is BOTH inside `cr` AND visible. Two reasons it may not be
-            // `gr`'s first glyph: (1) `glyphRange(forCharacterRange:)` snaps a range that starts on a hidden
-            // (zero-width) glyph — a blockquote's `>` marker, an inline-code backtick — back to the
-            // previous visible glyph, which can be the char (or whole line) BEFORE `cr`; (2) a hidden glyph's
-            // `location(forGlyphAt:)` reports the line-fragment TOP as the baseline, not the real text
-            // baseline, which would push `capTop` a line-leading above the text. Advancing past both gives
-            // the true first-letter baseline, so the bar/pill hugs the text instead of towering above it.
-            // Skip glyphs the render model marks invisible (hidden markers + the task-box fallback) —
-            // the property choices live in RenderModel so this can't drift from what the delegate sets.
-            let lineEnd = lineGlyphRange.location + lineGlyphRange.length
-            var g = max(lineGlyphRange.location, gr.location)
-            while g < lineEnd {
-                guard lm.characterIndexForGlyph(at: g) < cr.location
-                    || RenderModel.isInvisible(lm.propertyForGlyph(at: g)) else { break }
-                g += 1
-            }
-            guard g < lineEnd else { return }                              // nothing visible inside cr on this line
-            let ci = lm.characterIndexForGlyph(at: g)
-            guard ci < cr.location + cr.length else { return }             // first visible glyph is past cr
-            let font = (ci < ts.length ? ts.attribute(.font, at: ci, effectiveRange: nil) as? NSFont : nil)
-                ?? self.font ?? NSFont.systemFont(ofSize: mallowBodySize)
-            let baseline = fragRect.minY + lm.location(forGlyphAt: g).y   // baseline in container coords
-            capTop = min(capTop, baseline - font.capHeight)               // visible letter tops
-            if baseline > lastBaseline {
-                lastBaseline = baseline
-                descBottom = baseline - font.descender                    // descender < 0 → adds |descent|
-            }
-        }
-        guard capTop < lastBaseline else { return nil }   // no measurable content line
-        return (capTop, lastBaseline, descBottom)
-    }
-
-    // Draw the block decorations under the text: the blockquote bar and the thematic-break rule.
+    // Draw the block/inline decorations under the text. This is now a THIN painter: all geometry lives
+    // in `DecorationRenderer` (pure, headless-testable); here we only set colors and fill/stroke the
+    // rects it returns, in the same order + colors as before the extraction.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard let lm = layoutManager, let tc = textContainer else { return }
-        let origin = textContainerOrigin
+        guard let lm = layoutManager, let tc = textContainer, let ts = textStorage else { return }
         // Width for decorations that track the WINDOW (code card, thematic rule): the container can be wider
         // than the viewport when a wide table scrolls horizontally, but those blocks' text wraps at the
         // viewport, so their card/rule must too. Clamp to the viewport width (fall back to the container when
         // it's unknown — no wide table ⇒ they're equal, so this is byte-identical to before).
         let decoWidth = viewportContainerWidth > 0 ? min(tc.size.width, viewportContainerWidth) : tc.size.width
+        let renderer = DecorationRenderer(
+            lm: lm, tc: tc, ts: ts, origin: textContainerOrigin,
+            fallbackFont: self.font ?? NSFont.systemFont(ofSize: mallowBodySize), decoWidth: decoWidth)
 
-        // Code blocks: a rounded elevated card behind the code (corners + a right inset the
-        // text-attribute background can't give). The card's vertical padding (cap line → top edge,
-        // baseline → bottom edge) matches the text's horizontal inset, so the breathing room is even on
-        // all four sides. `cardPadding` == the code paragraph style's left head-indent.
-        let cardPadding = mallowCodeParagraphStyle.headIndent   // = the 12pt left text inset
+        // Code blocks: a rounded elevated card behind the code.
         mallowElevated.setFill()
-        for r in codeCards {
-            guard let a = decorationAnchors(forCharacterRange: r) else { continue }
-            let top = a.capTop - cardPadding, bottom = a.baseline + cardPadding
-            let card = NSRect(x: origin.x, y: origin.y + top, width: decoWidth - 8, height: bottom - top)
+        for card in renderer.codeCardRects(codeCards) {
             NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
         }
+
         // GFM tables: an elevated card + a 1px grid (outer border + a horizontal rule at each row boundary +
-        // a rule at each interior column boundary). The card spans the table's line fragments (the `|---|`
-        // delimiter row is collapsed to zero height, so it's skipped); the horizontal rules anchor to
-        // SOURCE-row starts (`grid.rowStartChars`), so a long last column that WRAPS into several fragments
-        // still gets exactly ONE rule at its row's top — not one per wrapped fragment. The column rules come
-        // from TableRendering's computed `interiorEdges` — x-offsets from the table's left text edge that
-        // share the SAME column-width model the cell kern uses, so rules and text can't drift (the old
-        // per-row `|`-glyph probe was ragged for CJK). They're anchored to the table's first glyph (left edge).
-        for grid in tableGrids {
-            let r = grid.blockRange
-            let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
-            guard gr.length > 0 else { continue }
-            var rows: [NSRect] = []
-            lm.enumerateLineFragments(forGlyphRange: gr) { frag, _, _, _, _ in
-                if frag.height > 0 { rows.append(frag) }   // skip the collapsed delimiter row
-            }
-            guard let first = rows.first, let last = rows.last else { continue }
-            // The table's left edge, probed from its first glyph — anchors the card AND the column rules,
-            // so both absorb the container/line insets and share one column model (no drift).
-            let leftGlyph = lm.glyphRange(forCharacterRange: NSRange(location: r.location, length: 1),
-                                          actualCharacterRange: nil)
-            let leftX = origin.x + lm.boundingRect(forGlyphRange: leftGlyph, in: tc).minX
-            // Card hugs the table's actual width (not the page width), so a narrow table doesn't trail a
-            // wide empty card. Clamp the width so it can't overrun the text container.
-            let width = min(grid.totalWidth, tc.size.width - (leftX - origin.x) - 4)
-            let card = NSRect(x: leftX, y: origin.y + first.minY, width: width, height: last.maxY - first.minY)
+        // a rule at each interior column boundary). Colors are re-set per table exactly as before.
+        for table in renderer.tableDecorations(tableGrids) {
             mallowElevated.setFill()
-            NSBezierPath(roundedRect: card, xRadius: 6, yRadius: 6).fill()
+            NSBezierPath(roundedRect: table.card, xRadius: 6, yRadius: 6).fill()
             mallowBorderColor.setStroke()
-            let border = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+            let border = NSBezierPath(roundedRect: table.card.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
             border.lineWidth = 1
             border.stroke()
             let rules = NSBezierPath()
             rules.lineWidth = 1
-            // Horizontal rule at the TOP of each content row after the header (header rule + row separators),
-            // anchored to SOURCE-row starts so a wrapped row spanning several fragments gets ONE rule at its
-            // top, not one per fragment (a fitting table's rows are one fragment each → same result as before).
-            for rc in grid.rowStartChars {
-                let g = lm.glyphRange(forCharacterRange: NSRange(location: rc, length: 1),
-                                      actualCharacterRange: nil)
-                guard g.length > 0 else { continue }
-                let y = (origin.y + lm.lineFragmentRect(forGlyphAt: g.location, effectiveRange: nil).minY)
-                    .rounded() + 0.5
-                rules.move(to: NSPoint(x: card.minX, y: y))
-                rules.line(to: NSPoint(x: card.maxX, y: y))
+            for y in table.horizontalRuleYs {
+                rules.move(to: NSPoint(x: table.card.minX, y: y))
+                rules.line(to: NSPoint(x: table.card.maxX, y: y))
             }
-            for edge in grid.interiorEdges {   // vertical column rules at the computed interior offsets
-                let x = (leftX + edge).rounded() + 0.5
-                guard x > card.minX + 1, x < card.maxX - 1 else { continue }
-                rules.move(to: NSPoint(x: x, y: card.minY))
-                rules.line(to: NSPoint(x: x, y: card.maxY))
+            for x in table.verticalRuleXs {
+                rules.move(to: NSPoint(x: x, y: table.card.minY))
+                rules.line(to: NSPoint(x: x, y: table.card.maxY))
             }
             rules.stroke()
         }
 
         // Blockquote: a 3pt left bar spanning cap line → baseline, i.e. the height of the quoted text.
         mallowFaint.setFill()
-        for r in quoteBars {
-            guard let a = decorationAnchors(forCharacterRange: r) else { continue }
-            let bar = NSRect(x: origin.x + 6, y: origin.y + a.capTop,
-                             width: 3, height: max(1, a.baseline - a.capTop))
+        for bar in renderer.quoteBarRects(quoteBars) {
             NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
         }
 
-        // Inline `code`: a small rounded pill hugging the run (cap → baseline + 2pt), drawn here rather than
-        // via a `.backgroundColor` attribute — that fills the whole airy line fragment, leaving a tall gap
-        // above the text. boundingRect gives the horizontal extent; decorationAnchors the tight vertical.
+        // Inline `code`: a small rounded pill hugging the run (one per wrapped line fragment).
         mallowElevated.setFill()
-        for r in inlineCodeRuns {
-            let gr = lm.glyphRange(forCharacterRange: r, actualCharacterRange: nil)
-            guard gr.length > 0 else { continue }
-            // Draw one pill PER line fragment the run occupies. A long inline-code span that WRAPS must get
-            // a pill on each visual line; the old single `boundingRect` union spanned the whole wrap as one
-            // tall rectangle that bled over the lines between. Each fragment hugs its own cap→baseline.
-            lm.enumerateLineFragments(forGlyphRange: gr) { _, _, _, fragGlyphRange, _ in
-                let lineGlyphs = NSIntersectionRange(gr, fragGlyphRange)
-                guard lineGlyphs.length > 0 else { return }
-                let lineChars = lm.characterRange(forGlyphRange: lineGlyphs, actualGlyphRange: nil)
-                guard let a = self.decorationAnchors(forCharacterRange: lineChars) else { return }
-                // 3.5pt of horizontal padding: the hidden backticks are zero-width, so the box hugs the
-                // text exactly — a drawn pad gives the pill air without shifting layout. Safe because code
-                // spans are almost always space-separated from prose (corpus: ~1% direct-adjacent); in that
-                // rare case the pill juts a hair toward the neighbor, which beats real flow-shifting space.
-                let box = lm.boundingRect(forGlyphRange: lineGlyphs, in: tc)
-                let pill = NSRect(x: origin.x + box.minX - InlineCodeStyle.pillPadX,
-                                  y: origin.y + a.capTop - InlineCodeStyle.pillPadY,
-                                  width: box.width + 2 * InlineCodeStyle.pillPadX,
-                                  height: (a.baseline - a.capTop) + 2 * InlineCodeStyle.pillPadY)
-                NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
-            }
+        for pill in renderer.inlineCodePillRects(inlineCodeRuns) {
+            NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
         }
 
+        // Thematic breaks: a 1px hairline centered on each rule line.
         mallowBorderColor.setFill()
-        let glyphCount = lm.numberOfGlyphs
-        for r in ruleLines where glyphCount > 0 {
-            let gi = min(lm.glyphIndexForCharacter(at: r.location), glyphCount - 1)
-            var eff = NSRange()
-            let line = lm.lineFragmentRect(forGlyphAt: gi, effectiveRange: &eff)
-            let y = (origin.y + line.midY).rounded() + 0.5   // crisp 1px hairline
-            NSRect(x: origin.x, y: y, width: decoWidth - 8, height: 1).fill()
+        for line in renderer.ruleLineRects(ruleLines) {
+            line.fill()
         }
     }
 

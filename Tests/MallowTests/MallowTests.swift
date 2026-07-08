@@ -598,6 +598,50 @@ final class MallowTests: XCTestCase {
         }
     }
 
+    // MARK: DecorationRenderer geometry (pure, headless — extracted from drawBackground)
+
+    func testDecorationRenderer_geometryIsHeadlessAndSane() {
+        // The decoration geometry is now computable WITHOUT a drawing context — the whole point of the
+        // extraction. Lay out a doc with a table, an inline-code span, and a thematic break, then assert
+        // the renderer returns the same count of decorations drawBackground would draw, each finite.
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        tv.textContainer?.size = NSSize(width: 700, height: 100_000)
+        tv.string = "before `code` after\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n"
+        vm.refresh()
+        guard let lm = tv.layoutManager, let tc = tv.textContainer, let ts = tv.textStorage
+        else { return XCTFail("no layout objects") }
+        lm.ensureLayout(for: tc)
+        let renderer = DecorationRenderer(
+            lm: lm, tc: tc, ts: ts, origin: tv.textContainerOrigin,
+            fallbackFont: tv.font ?? NSFont.systemFont(ofSize: mallowBodySize), decoWidth: tc.size.width)
+
+        // One inline-code run → exactly one pill, with positive extent.
+        XCTAssertEqual(tv.inlineCodeRuns.count, 1, "one `code` span")
+        let pills = renderer.inlineCodePillRects(tv.inlineCodeRuns)
+        XCTAssertEqual(pills.count, 1, "an un-wrapped code span draws one pill")
+        XCTAssertGreaterThan(pills[0].width, 0)
+        XCTAssertGreaterThan(pills[0].height, 0)
+
+        // One thematic break → one 1px hairline spanning the deco width.
+        let rules = renderer.ruleLineRects(tv.ruleLines)
+        XCTAssertEqual(rules.count, tv.ruleLines.count)
+        for r in rules {
+            XCTAssertEqual(r.height, 1, accuracy: 0.001)
+            XCTAssertEqual(r.width, tc.size.width - 8, accuracy: 0.001)
+        }
+
+        // The table → one card decoration whose card is a positive, finite rect with ≥1 column rule.
+        let tables = renderer.tableDecorations(tv.tableGrids)
+        XCTAssertEqual(tables.count, tv.tableGrids.count)
+        if let t = tables.first {
+            XCTAssertGreaterThan(t.card.width, 0)
+            XCTAssertGreaterThan(t.card.height, 0)
+            XCTAssertTrue(t.card.origin.x.isFinite && t.card.origin.y.isFinite)
+            XCTAssertFalse(t.verticalRuleXs.isEmpty, "a 2-column table has an interior rule")
+        }
+    }
+
     // Hidden syntax markers are truly ZERO-WIDTH in layout, not just invisible. Regression for the
     // ghost-advance bug: `.null`-property glyphs kept their font advances, so backticks widened every
     // inline-code pill by ~2 characters, `**` left holes around bold text, `# ` indented headings off
