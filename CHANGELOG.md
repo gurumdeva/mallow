@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.2.3] - 2026-07-08
+
+Internal hardening from the second half of the whole-codebase modifiability review. No visible change — the app looks and behaves exactly as 1.2.2. Signed with a Developer ID and notarized by Apple.
+
+### Changed (internal)
+- Five load-bearing conventions became single, enforced chokepoints instead of hand-synced copies scattered across files — the class of change that had been quietly causing "fix one feature, break another": the engine command names, the chrome-refresh signal, the save routine (manual save and autosave now share one), the file reader (opening, session restore, and external reload now share one guarded reader, so a restored file keeps its byte-for-byte encoding and respects the same size cap), and task-checkbox detection. A restored or externally-reloaded file now also preserves a leading byte-order mark on the next save, and the document statistics count paragraphs from the engine's own parse rather than a parallel set of pattern matches. Decoration drawing and the window launch/open logic were split into focused, testable pieces, and the Document Info panel now reuses the live parse instead of re-parsing on every keystroke while open. Three new tests were added (47 total).
+
 ## [1.2.2] - 2026-07-03
 
 Korean/Japanese input robustness + internal hardening from a whole-codebase modifiability review. Signed with a Developer ID and notarized by Apple.
