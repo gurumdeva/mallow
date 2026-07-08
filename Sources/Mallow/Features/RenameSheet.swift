@@ -144,7 +144,7 @@ struct RenameSheet: View {
             // setPath updates vm.filePath (+ displayName) WITHOUT touching the dirty baseline (a clean doc
             // stays clean after a rename); bumping revision re-renders the chrome's filename.
             doc.vm.setPath(newURL.path)
-            doc.revision &+= 1
+            doc.markEdited()
             RecentFiles.add(newURL.path)   // also drops the now-stale old path (filtered: missing on disk)
             dismiss()
         } catch {

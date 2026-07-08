@@ -14,14 +14,14 @@ extension EditorDocument {
         vm.focusMode.toggle()
         vm.restyle()
         if vm.focusMode { vm.applyFocus() }
-        revision &+= 1
+        markEdited()
     }
 
     /// Pin this window above other apps (per-window, transient). Sets the live NSWindow level.
     func toggleKeepOnTop() {
         vm.keepOnTop.toggle()
         hostWindow?.level = vm.keepOnTop ? .floating : .normal
-        revision &+= 1
+        markEdited()
     }
 
     /// Fold All Sections: collapse every heading's body to a document outline (View ▸ Fold All Sections).
@@ -32,14 +32,14 @@ extension EditorDocument {
         vm.refresh()
         vm.parkCaretOutOfFold()   // park on the enclosing heading if the caret landed in a now-folded body
         vm.selectionChanged()     // snaps the caret out of a collapsed (hidden) inline run if it landed in one
-        revision &+= 1
+        markEdited()
     }
 
     /// Fold/unfold just the section the caret is in (View ▸ Fold Section) — its enclosing heading's body.
     /// Independent of Fold All; per-section folds reset on edit (the VM owns that — see clearSectionFolds).
     func toggleFoldSection() {
         vm.toggleFoldSectionAtCaret()
-        revision &+= 1
+        markEdited()
     }
 
     // MARK: Zoom (View ▸ Zoom In/Out/Actual Size) — clamp 0.5…3.0, step 1.1×, then re-render at scale.
@@ -50,7 +50,7 @@ extension EditorDocument {
     private func setZoom(_ z: CGFloat) {
         vm.zoomFactor = min(max(z, 0.5), 3.0)
         vm.refresh()
-        revision &+= 1
+        markEdited()
     }
 
     // MARK: File ▸ Save / Save As
@@ -89,7 +89,7 @@ extension EditorDocument {
             try onDisk.write(to: url, atomically: true, encoding: .utf8)
             vm.markSaved(path: url.path, content: content)
             RecentFiles.add(url.path)
-            revision &+= 1   // .navigationTitle(doc.title) re-renders the window title + chrome dirty dot
+            markEdited()   // .navigationTitle(doc.title) re-renders the window title + chrome dirty dot
         } catch {
             presentError(error)
         }

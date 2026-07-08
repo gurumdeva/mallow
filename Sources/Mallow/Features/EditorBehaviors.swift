@@ -88,7 +88,7 @@ final class EditorBehaviors {
             let onDisk = doc.vm.hadBOM ? "\u{FEFF}" + content : content
             try onDisk.write(to: URL(fileURLWithPath: path), atomically: true, encoding: .utf8)
             doc.vm.markSaved(path: path, content: content)
-            doc.revision &+= 1   // chrome re-renders the ● dirty dot now that the baseline matches
+            doc.markEdited()   // chrome re-renders the ● dirty dot now that the baseline matches
         } catch {
             // A failed background write stays silent (no surprise dialog from an autosave); the doc
             // remains dirty, so a later edit reschedules and the next manual ⌘S surfaces any error.
@@ -128,7 +128,7 @@ extension EditorDocument {
     /// the internal `centerCaretLine(_:)` free function below, so enable-now and on-move stay identical.
     func toggleTypewriter() {
         vm.typewriterOn.toggle()
-        revision &+= 1
+        markEdited()
         if vm.typewriterOn { centerCaretLine(self) }
     }
 }

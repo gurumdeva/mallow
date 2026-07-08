@@ -16,8 +16,15 @@ final class EditorDocument: Identifiable {
 
     /// A monotonically-increasing counter the editor bumps on every text/selection change. The chrome
     /// reads it so SwiftUI re-evaluates the derived `vm` getters (displayName / isDirty), which depend
-    /// on the NSTextView's contents — state SwiftUI can't observe directly.
+    /// on the NSTextView's contents — state SwiftUI can't observe directly. Bump it through
+    /// `markEdited()`, never by hand: a forgotten bump freezes the title and dirty dot.
     var revision = 0
+
+    /// Announce that this document's contents/selection/save-state changed, so the SwiftUI chrome
+    /// re-derives `title` / `isDirty`. This is the ONE place the chrome-refresh counter is advanced —
+    /// every mutation, save, reload, and rename path funnels through here (replacing 16 hand-written
+    /// `revision &+= 1` sites, any one of which was a silent freeze when forgotten).
+    func markEdited() { revision &+= 1 }
 
     init(text: String = "", path: String? = nil, hadBOM: Bool = false) {
         let tv = MarkdownTextView()

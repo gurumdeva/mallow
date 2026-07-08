@@ -195,7 +195,7 @@ struct MarkdownEditor: NSViewRepresentable {
                 vm.clearSectionFolds()   // per-section fold offsets would go stale against the edit; drop them
                 vm.refresh()
             }
-            doc.revision &+= 1   // chrome re-renders title/dirty
+            doc.markEdited()   // chrome re-renders title/dirty
             behaviors.textChanged(doc)   // schedule debounced autosave
         }
 

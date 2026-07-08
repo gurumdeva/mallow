@@ -242,7 +242,7 @@ extension MarkdownEditor.Coordinator {
         // textDidChange would also fire from didChangeText and call refresh; calling it here as well is
         // harmless and makes the toggle self-contained, but the lead may rely on the delegate instead.)
         doc.vm.refresh()
-        doc.revision &+= 1
+        doc.markEdited()
         return true
     }
 }

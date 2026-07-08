@@ -89,7 +89,7 @@ extension EditorDocument {
                 // re-prompt on every focus. markSaved re-baselines to disk; the buffer still differs from
                 // it, so the document stays correctly dirty (and the dot stays lit).
                 vm.markSaved(path: path, content: disk)
-                revision &+= 1
+                markEdited()
             }
         }
     }
@@ -120,6 +120,6 @@ extension EditorDocument {
         textView.setSelectedRange(NSRange(location: caret, length: 0))
         vm.markSaved(path: path, content: disk)   // disk is now the clean baseline (not dirty)
         vm.refresh()                              // re-parse, restyle, recompute hidden glyphs, focus
-        revision &+= 1                            // chrome re-renders title / dirty dot
+        markEdited()                            // chrome re-renders title / dirty dot
     }
 }

@@ -186,7 +186,7 @@ extension MarkdownEditor.Coordinator {
             // Place the caret just past the inserted link (after the closing paren), matching a paste.
             view.setSelectedRange(NSRange(location: sel.location + (replacement as NSString).length,
                                           length: 0))
-            doc.revision &+= 1   // nudge the SwiftUI chrome (title / dirty dot)
+            doc.markEdited()   // nudge the SwiftUI chrome (title / dirty dot)
             return true
         }
 
@@ -236,7 +236,7 @@ extension MarkdownEditor.Coordinator {
         let view = doc.textView
         let r = view.selectedRange()
         guard view.insertTextUndoably(plain, replacing: r) else { return }   // replaces the selection, undoable, fires refresh
-        doc.revision &+= 1
+        doc.markEdited()
     }
 
     // MARK: Copy as Rich Text (⌥⌘C)
@@ -339,6 +339,6 @@ extension MarkdownEditor.Coordinator {
             insertedAny = true
         }
 
-        if insertedAny { doc.revision &+= 1 }
+        if insertedAny { doc.markEdited() }
     }
 }
