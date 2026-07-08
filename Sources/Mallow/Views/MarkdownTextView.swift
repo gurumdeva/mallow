@@ -86,7 +86,7 @@ final class MarkdownTextView: NSTextView {
         let loc = selectedRange().location
         let font = (len == 0 ? nil
                     : textStorage?.attribute(.font, at: min(loc, len - 1), effectiveRange: nil) as? NSFont)
-            ?? (typingAttributes[.font] as? NSFont) ?? self.font ?? NSFont.systemFont(ofSize: 16)
+            ?? (typingAttributes[.font] as? NSFont) ?? self.font ?? NSFont.systemFont(ofSize: mallowBodySize)
         let glyphHeight = font.ascender - font.descender   // ascent + |descent| — the visible glyph box
         if r.height > glyphHeight + 1 {
             var newY = rect.minY + (r.height - glyphHeight) / 2   // sane default: centered in the fragment
@@ -141,21 +141,20 @@ final class MarkdownTextView: NSTextView {
             // `location(forGlyphAt:)` reports the line-fragment TOP as the baseline, not the real text
             // baseline, which would push `capTop` a line-leading above the text. Advancing past both gives
             // the true first-letter baseline, so the bar/pill hugs the text instead of towering above it.
-            // Hidden markers carry `.controlCharacter` (zero-advance); `.null` remains for the task-box
-            // fallback glyph — skip both.
+            // Skip glyphs the render model marks invisible (hidden markers + the task-box fallback) —
+            // the property choices live in RenderModel so this can't drift from what the delegate sets.
             let lineEnd = lineGlyphRange.location + lineGlyphRange.length
             var g = max(lineGlyphRange.location, gr.location)
             while g < lineEnd {
-                let p = lm.propertyForGlyph(at: g)
                 guard lm.characterIndexForGlyph(at: g) < cr.location
-                    || p.contains(.null) || p.contains(.controlCharacter) else { break }
+                    || RenderModel.isInvisible(lm.propertyForGlyph(at: g)) else { break }
                 g += 1
             }
             guard g < lineEnd else { return }                              // nothing visible inside cr on this line
             let ci = lm.characterIndexForGlyph(at: g)
             guard ci < cr.location + cr.length else { return }             // first visible glyph is past cr
             let font = (ci < ts.length ? ts.attribute(.font, at: ci, effectiveRange: nil) as? NSFont : nil)
-                ?? self.font ?? NSFont.systemFont(ofSize: 16)
+                ?? self.font ?? NSFont.systemFont(ofSize: mallowBodySize)
             let baseline = fragRect.minY + lm.location(forGlyphAt: g).y   // baseline in container coords
             capTop = min(capTop, baseline - font.capHeight)               // visible letter tops
             if baseline > lastBaseline {
@@ -274,8 +273,10 @@ final class MarkdownTextView: NSTextView {
                 // spans are almost always space-separated from prose (corpus: ~1% direct-adjacent); in that
                 // rare case the pill juts a hair toward the neighbor, which beats real flow-shifting space.
                 let box = lm.boundingRect(forGlyphRange: lineGlyphs, in: tc)
-                let pill = NSRect(x: origin.x + box.minX - 3.5, y: origin.y + a.capTop - 2,
-                                  width: box.width + 7, height: (a.baseline - a.capTop) + 4)
+                let pill = NSRect(x: origin.x + box.minX - InlineCodeStyle.pillPadX,
+                                  y: origin.y + a.capTop - InlineCodeStyle.pillPadY,
+                                  width: box.width + 2 * InlineCodeStyle.pillPadX,
+                                  height: (a.baseline - a.capTop) + 2 * InlineCodeStyle.pillPadY)
                 NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
             }
         }
@@ -345,11 +346,11 @@ func configureTextView(_ textView: MarkdownTextView) {
     // BEFORE the Restyler's first style pass (file open paints raw markdown once — see the first-paint
     // gate in MarkdownEditor.makeNSView) is already at the right size and color, not the tiny NSTextView
     // default font that used to flash on large documents. restyle() re-asserts these as attributes.
-    let bodyFont = NSFont.systemFont(ofSize: 16, weight: .regular)   // = the Restyler's base body size
+    let bodyFont = NSFont.systemFont(ofSize: mallowBodySize, weight: .regular)
     textView.font = bodyFont
-    textView.textColor = mallowText
+    textView.textColor = mallowBodyTextColor
     textView.typingAttributes[.font] = bodyFont
-    textView.typingAttributes[.foregroundColor] = mallowText
+    textView.typingAttributes[.foregroundColor] = mallowBodyTextColor
 }
 
 // MARK: - Undoable mutation seam

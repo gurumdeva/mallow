@@ -94,6 +94,31 @@ let mallowCodeParagraphStyle: NSParagraphStyle = {
     return p
 }()
 
+// MARK: - Body typography + inline-code style (single definitions)
+
+/// The Mallow body text size — THE one definition. Consumed by the Restyler's base pass AND
+/// `configureTextView`'s first-paint view defaults (which must match, or the pre-style frame renders
+/// at a different size), plus the caret/anchor fallbacks. Zoom multiplies it at apply time.
+let mallowBodySize: CGFloat = 16
+
+/// The body text color the Restyler's base pass paints — the view defaults (`configureTextView`) and
+/// typing attributes reference the SAME token so "body color" has exactly one truth. (`mallowText`
+/// remains the chrome/caret tint; the flowed TEXT is this.)
+let mallowBodyTextColor = NSColor.labelColor
+
+/// Inline `code` styling — both knobs in ONE place. The font size is applied by the Restyler's inline
+/// pass; the pill inflation is drawn by MarkdownTextView. They tune as a pair (a bigger font wants
+/// more pill air), and splitting them across files previously caused mistuned combinations.
+enum InlineCodeStyle {
+    /// Mono font = body size × this (mono advances wide, so it sits under the body size).
+    static let em: CGFloat = 0.9
+    /// Drawn horizontal pill padding per side (layout-neutral; safe because code spans are almost
+    /// always space-separated from prose — ~1% direct-adjacency in the reference corpus).
+    static let pillPadX: CGFloat = 3.5
+    /// Drawn vertical padding above the cap line / below the baseline.
+    static let pillPadY: CGFloat = 2
+}
+
 // MARK: - SwiftUI color tokens
 
 /// The SwiftUI face of the palette: every token wraps the matching dynamic NSColor above, so the

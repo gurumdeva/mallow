@@ -581,4 +581,133 @@ final class MallowTests: XCTestCase {
         XCTAssertEqual(x(tickOpen + 6), x(tickOpen + 5), accuracy: 0.5, "no ghost gap at the code span's right")
     }
 
+    // MARK: - contract-pinning tests (from the modifiability review)
+
+    // C2/C3: a table whose cells contain hidden markers (bold/code/link) still aligns its columns — the
+    // measurement pass (visible width, hidden markers dropped) matches the render (zero-advance markers),
+    // and recomputeHidden ran BEFORE restyle (the refresh() ordering). No prior test had marked-up cells,
+    // so a pipeline reorder or a render/measure desync shipped green.
+    func testContract_markedUpTableCells_columnsStayAligned() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        tv.textContainer?.size = NSSize(width: 700, height: 100_000)
+        // Header widest per column (so header edges ARE the column edges); marked-up cells below.
+        tv.string = "| 첫번째열헤더 | 두번째열헤더 |\n|---|---|\n| **볼드텍스트** | `codespan` |\n| [링크](https://e.com) | 평문 |"
+        vm.refresh()
+        guard let grid = tv.tableGrids.first, let lm = tv.layoutManager, let tc = tv.textContainer
+        else { return XCTFail("no grid") }
+        lm.ensureLayout(for: tc)
+        let ns = tv.string as NSString
+        let leftG = lm.glyphRange(forCharacterRange: NSRange(location: grid.blockRange.location, length: 1),
+                                  actualCharacterRange: nil)
+        let leftX = lm.boundingRect(forGlyphRange: leftG, in: tc).minX
+        XCTAssertEqual(grid.interiorEdges.count, 1)
+        let ruleX = leftX + grid.interiorEdges[0]
+        // Every row's SECOND cell must start right of the rule with sane padding — if a marked-up first
+        // cell mis-measured (render/measure desync), its row's second cell drifts off the rule.
+        var lineStart = 0
+        var rowIdx = 0
+        while lineStart < ns.length {
+            let line = ns.lineRange(for: NSRange(location: lineStart, length: 0))
+            defer { lineStart = line.location + line.length; rowIdx += 1 }
+            if rowIdx == 1 { continue }   // delimiter row (collapsed)
+            // first visible ink RIGHT of the rule on this line
+            var minRight = CGFloat.greatestFiniteMagnitude
+            for i in line.location ..< (line.location + line.length) {
+                let ch = ns.character(at: i)
+                if ch == 32 || ch == 124 || ch == 10 || vm.hiddenChars.contains(i) { continue }
+                let g = lm.glyphRange(forCharacterRange: NSRange(location: i, length: 1), actualCharacterRange: nil)
+                let r = lm.boundingRect(forGlyphRange: g, in: tc)
+                if r.minX >= ruleX - 0.5 { minRight = min(minRight, r.minX) }
+            }
+            guard minRight < .greatestFiniteMagnitude else { continue }
+            let pad = minRight - ruleX
+            XCTAssertGreaterThan(pad, 4, "row \(rowIdx): second cell too close to the rule (\(pad))")
+            XCTAssertLessThan(pad, 14, "row \(rowIdx): second cell drifted off the rule (\(pad)) — measure/render desync")
+        }
+    }
+
+    // C8: restyle is idempotent — the base pass's full-range setAttributes WIPES last pass's .kern before
+    // this pass measures, so re-running restyle must yield identical table geometry. An "optimization"
+    // that switches the wipe to targeted addAttribute calls would compound kern per pass and fail here.
+    func testContract_restyleIsIdempotent_tableGeometryStable() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        tv.textContainer?.size = NSSize(width: 700, height: 100_000)
+        tv.string = "| 헷갈림 | 정리 |\n|---|---|\n| 401 vs 403 | 인증 vs 인가 |"
+        vm.refresh()
+        guard let first = tv.tableGrids.first else { return XCTFail() }
+        let w1 = first.totalWidth, e1 = first.interiorEdges
+        vm.restyle()   // second pass over the SAME text
+        vm.restyle()   // and a third
+        guard let after = tv.tableGrids.first else { return XCTFail() }
+        XCTAssertEqual(after.totalWidth, w1, accuracy: 0.01, "totalWidth drifted across restyles (stale kern?)")
+        XCTAssertEqual(after.interiorEdges.count, e1.count)
+        for (a, b) in zip(after.interiorEdges, e1) {
+            XCTAssertEqual(a, b, accuracy: 0.01, "rule offset drifted across restyles")
+        }
+    }
+
+    // C11: the zoom partition is a DESIGN DECISION made executable — body/heading/inline-code scale with
+    // zoom; the table font deliberately stays fixed (its geometry is zoom-naive). If someone "fixes"
+    // table zoom, this test forces them to do it deliberately (and completely), not by accident.
+    func testContract_zoomPartition_scaledAndFixedSizes() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 700, height: 400))
+        let vm = EditorViewModel(textView: tv)
+        tv.textContainer?.size = NSSize(width: 700, height: 100_000)
+        tv.string = "# 헤딩\n\n본문 `code` 텍스트\n\n| 열 | 값 |\n|---|---|\n| A | B |"
+        vm.zoomFactor = 1.5
+        vm.refresh()
+        guard let storage = tv.textStorage else { return XCTFail() }
+        let ns = tv.string as NSString
+        func fontAt(_ i: Int) -> CGFloat {
+            (storage.attribute(.font, at: i, effectiveRange: nil) as? NSFont)?.pointSize ?? -1
+        }
+        XCTAssertEqual(fontAt(ns.range(of: "헤딩").location), 28 * 1.5, accuracy: 0.01, "H1 scales with zoom")
+        XCTAssertEqual(fontAt(ns.range(of: "본문").location), mallowBodySize * 1.5, accuracy: 0.01, "body scales")
+        XCTAssertEqual(fontAt(ns.range(of: "code").location), mallowBodySize * InlineCodeStyle.em * 1.5,
+                       accuracy: 0.01, "inline code scales")
+        XCTAssertEqual(fontAt(ns.range(of: "| A").location + 2), 15, accuracy: 0.01,
+                       "table font is deliberately zoom-FIXED (change this test only with a complete table-zoom design)")
+    }
+
+    // C13: serde tag canary — the engine's block/inline kind and mark strings are matched as raw literals
+    // across ~10 Swift sites, and unknown tags silently decode to "Other" (features just stop matching).
+    // This pins the vocabulary: an inkstone enum rename now fails a test instead of blanking a feature.
+    func testContract_serdeTagVocabulary_kitchenSink() {
+        let doc = """
+        # Heading
+
+        Paragraph with **strong**, *emph*, `code`, ~~strike~~, and a [link](https://e.com).
+
+        - list item
+
+        > quoted
+
+        ```
+        fenced
+        ```
+
+        ---
+
+        | a | b |
+        |---|---|
+        | 1 | 2 |
+        """
+        let blocks = inkParseBlocks(doc)
+        let kinds = Set(blocks.map(\.kindTag))
+        for expected in ["Heading", "Paragraph", "List", "BlockQuote", "CodeBlock", "ThematicBreak", "Table"] {
+            XCTAssertTrue(kinds.contains(expected), "engine no longer emits kind '\(expected)' — renamed? Swift matches it as a literal")
+        }
+        XCTAssertFalse(kinds.contains("Other"), "some block decoded to 'Other' — the serde vocabulary drifted")
+        let para = blocks.first { $0.kindTag == "Paragraph" }
+        let marks = Set(para?.inlines.flatMap(\.marks) ?? [])
+        for expected in ["Strong", "Emphasis", "Code", "Strikethrough"] {
+            XCTAssertTrue(marks.contains(expected), "engine no longer emits mark '\(expected)'")
+        }
+        XCTAssertTrue(para?.inlines.contains { $0.kindTag == "Link" } ?? false, "engine no longer emits inline kind 'Link'")
+        let table = blocks.first { $0.kindTag == "Table" }
+        XCTAssertFalse(table?.cells.isEmpty ?? true, "table cells stopped decoding — serde shape drifted")
+    }
+
 }

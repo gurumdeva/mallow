@@ -148,9 +148,12 @@ struct MarkdownEditor: NSViewRepresentable {
             // Immediate + cheap: keep the container filling the viewport so PROSE re-wraps live during a
             // drag — but never below a horizontally-scrolling table's width (that width holds until the
             // debounced restyle re-measures). This is just the container box; no text is re-measured here.
+            // Formulas owned by ViewportGeometry (shared with the Restyler's per-pass writer).
             let tv = doc.textView
-            let viewportContainerW = max(0, clipWidth - 2 * tv.textContainerInset.width)
-            tv.textContainer?.size.width = max(viewportContainerW, tv.tableContainerWidth)
+            let viewportContainerW = ViewportGeometry.viewportContainerWidth(
+                clipWidth: clipWidth, insetWidth: tv.textContainerInset.width)
+            tv.textContainer?.size.width = ViewportGeometry.containerWidth(
+                viewport: viewportContainerW, tableNeed: tv.tableContainerWidth)
             // Debounced + expensive: re-measure table kern / wrap edge / card / rules at the new width.
             // applyFocus follows because restyle's base pass wipes the focus dim (no-op when focus is off);
             // without it, resizing a focused window dropped the dim until the next caret move.

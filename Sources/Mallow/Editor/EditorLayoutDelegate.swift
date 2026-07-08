@@ -59,14 +59,14 @@ final class EditorLayoutDelegate: NSObject, NSLayoutManagerDelegate {
             if ch >= markedLo {
                 newGlyphs[i] = glyphs[i]; newProps[i] = props[i]   // composing region: render as typed
             } else if hidden.contains(ch) {
-                newGlyphs[i] = glyphs[i]; newProps[i] = .controlCharacter; changed = true
+                newGlyphs[i] = glyphs[i]; newProps[i] = RenderModel.hiddenGlyphProperty; changed = true
             } else if let tg = taskGlyphs, let checked = taskBoxes[ch] {
-                // Substitute ☐/☑ — or, if the font lacks the glyph (0), HIDE the inner char (.null:
-                // invisible, advance kept — it's not in `hidden`, so the zero-advance path never sees it)
-                // rather than leak the raw `[ ]`/`[x]` content (the brackets are already hidden).
+                // Substitute ☐/☑ — or, if the font lacks the glyph (0), HIDE the inner char (the task
+                // fallback property: invisible, advance kept — see RenderModel) rather than leak the
+                // raw `[ ]`/`[x]` content (the brackets are already hidden).
                 let g = tg.glyph(checked: checked)
                 if g != 0 { newGlyphs[i] = g; newProps[i] = props[i] }
-                else { newGlyphs[i] = glyphs[i]; newProps[i] = .null }
+                else { newGlyphs[i] = glyphs[i]; newProps[i] = RenderModel.taskFallbackProperty }
                 changed = true
             } else if bulletGlyph != 0, bullets.contains(ch) {
                 newGlyphs[i] = bulletGlyph; newProps[i] = props[i]; changed = true
@@ -95,7 +95,7 @@ final class EditorLayoutDelegate: NSObject, NSLayoutManagerDelegate {
               charIndex < ts.length else { return action }
         let ch = ts.mutableString.character(at: charIndex)
         if ch == 10 || ch == 13 || ch == 9 { return action }   // \n \r \t — never zero a real break
-        return .zeroAdvancement
+        return RenderModel.hiddenAction
     }
 
     /// Custom line-fragment geometry for two cases, keyed by the line's first character:
@@ -127,7 +127,7 @@ final class EditorLayoutDelegate: NSObject, NSLayoutManagerDelegate {
             return true
         }
         if vm.tableRowChars.contains(charStart) {
-            let pad: CGFloat = 6
+            let pad = TableRendering.rowPad   // the table rhythm's vertical half, owned by TableRendering
             lineFragmentRect.pointee.size.height += 2 * pad
             lineFragmentUsedRect.pointee.size.height += 2 * pad
             baselineOffset.pointee += pad

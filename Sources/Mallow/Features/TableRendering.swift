@@ -294,21 +294,24 @@ enum TableRendering {
         return ns.range(of: "|", options: [], range: line).location != NSNotFound
     }
 
-    /// The rendered width of source characters `[lo, hi)` as the layout advances them: each table `|` is
-    /// measured as a SPACE (the glyph substitution draws it as one), and any `hidden` marker char drops to
-    /// zero width. Used to measure the real inter-cell separators so a grid rule can sit at the true centre
-    /// of the gap between two columns (a fixed estimate drifts off the glyphs).
+    /// The rendered width of source characters `[lo, hi)` as the layout advances them, simulating the
+    /// glyph substitutions via `RenderModel` (the ONE definition shared with the layout delegate): each
+    /// table `|` is measured as a SPACE, hidden marker chars drop to zero width. Used to measure the real
+    /// inter-cell separators so a grid rule can sit at the true centre of the gap between two columns.
     private static func spanWidth(_ lo: Int, _ hi: Int, storage: NSTextStorage, hidden: Set<Int>) -> CGFloat {
         guard hi > lo else { return 0 }
+        let ns = storage.string as NSString
         let sub = storage.attributedSubstring(from: NSRange(location: lo, length: hi - lo))
         let out = NSMutableAttributedString()
-        for k in 0 ..< (hi - lo) where !hidden.contains(lo + k) {
-            let piece = sub.attributedSubstring(from: NSRange(location: k, length: 1))
-            if piece.string == "|", piece.length > 0 {
-                out.append(NSAttributedString(string: " ",
+        for k in 0 ..< (hi - lo) {
+            let isHidden = hidden.contains(lo + k)
+            if let standIn = RenderModel.measurementStandIn(char: ns.character(at: lo + k),
+                                                            isHidden: isHidden, pipesAsSpaces: true) {
+                let piece = sub.attributedSubstring(from: NSRange(location: k, length: 1))
+                out.append(NSAttributedString(string: standIn,
                                               attributes: piece.attributes(at: 0, effectiveRange: nil)))
-            } else {
-                out.append(piece)
+            } else if !isHidden {
+                out.append(sub.attributedSubstring(from: NSRange(location: k, length: 1)))
             }
         }
         guard out.length > 0 else { return 0 }
@@ -353,6 +356,12 @@ enum TableRendering {
     /// the table scrolls horizontally instead; above `lastCap` a single long cell would sprawl, so it wraps.
     private static let minLast: CGFloat = 110
     private static let lastCap: CGFloat = 420
+
+    /// Vertical padding (points) the LAYOUT DELEGATE adds above and below each table content row
+    /// (EditorLayoutDelegate.shouldSetLineFragmentRect keys rows off `tableRowChars`). Lives HERE so the
+    /// whole table rhythm — this row pad + `lineSpacing 5` on the table paragraph + the horizontal
+    /// metrics below — tunes in one file even though the delegate applies it.
+    static let rowPad: CGFloat = 6
 
     /// Trailing breathing room (points) added to every non-last column slot. With centred rules (see
     /// `geometry`) each interior rule ends up with `(separator + slotPad)/2` of padding on BOTH sides, so

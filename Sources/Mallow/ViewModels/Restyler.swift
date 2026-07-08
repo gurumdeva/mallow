@@ -6,7 +6,7 @@
 import AppKit
 
 final class Restyler {
-    private let baseSize: CGFloat = 16   // Mallow body size; SANS (mono only for code)
+    private let baseSize = mallowBodySize   // Mallow body size (single definition in Theme); SANS (mono only for code)
     private let fm = NSFontManager.shared
     /// Current text-zoom, kept in sync by the view model; `font(for:)` / `baseFont` read it. Set at the top
     /// of `restyle`; the VM clears the cache whenever zoom changes (the only thing altering resolved sizes).
@@ -43,7 +43,7 @@ final class Restyler {
         var f = code   // inline code in mono at 0.9em — slightly under the body so mono's wide advances read
                        // inline. (0.85 was an overcorrection from the ghost-advance era: with the hidden
                        // backticks now truly zero-width the pill hugs the text, and 0.85 read too small.)
-            ? NSFont.monospacedSystemFont(ofSize: baseSize * 0.9 * zoom, weight: .regular) : baseFont
+            ? NSFont.monospacedSystemFont(ofSize: baseSize * InlineCodeStyle.em * zoom, weight: .regular) : baseFont
         if strong { f = fm.convert(f, toHaveTrait: .boldFontMask) }
         if emph { f = fm.convert(f, toHaveTrait: .italicFontMask) }
         fontCache[key] = f
@@ -90,13 +90,13 @@ final class Restyler {
         // inside the viewport (the table's own inset already subtracted). On first paint (no laid-out clip
         // yet) it's huge → every table takes the fits path, corrected on the next restyle once laid out.
         let padding = textView.textContainer?.lineFragmentPadding ?? 5
-        let inset = textView.textContainerInset.width
-        // The width of a container that exactly fills the viewport: from the scroll view's clip in the real
-        // app; fall back to the text container's own width when there's no scroll view (headless tests /
-        // detached view). 0 ⇒ not laid out yet → every table takes the fits path (availableWidth huge).
-        let clipContentWidth = textView.enclosingScrollView?.contentView.bounds.width ?? 0
-        let viewportContainerWidth = clipContentWidth > 0 ? clipContentWidth - 2 * inset
-                                                          : (textView.textContainer?.size.width ?? 0)
+        // The width of a container that exactly fills the viewport — formula owned by ViewportGeometry
+        // (shared with the Coordinator's live-resize writer). Fall back to the text container's own width
+        // when there's no scroll view (headless tests / detached view). 0 ⇒ not laid out yet → every
+        // table takes the fits path (availableWidth huge).
+        let clipDerived = ViewportGeometry.viewportContainerWidth(for: textView)
+        let viewportContainerWidth = clipDerived > 0 ? clipDerived
+                                                     : (textView.textContainer?.size.width ?? 0)
         let availableWidth: CGFloat = viewportContainerWidth > 0
             ? viewportContainerWidth - 2 * padding - TableRendering.tableInset
             : .greatestFiniteMagnitude
@@ -109,7 +109,7 @@ final class Restyler {
         var inlineCode: [NSRange] = [] // inline `code` ranges → rounded pill drawn by the text view (tight)
 
         storage.beginEditing()
-        storage.setAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor,
+        storage.setAttributes([.font: baseFont, .foregroundColor: mallowBodyTextColor,
                                .paragraphStyle: mallowBodyParagraphStyle],
                               range: NSRange(location: 0, length: nsLen))
         for block in blocks {
@@ -208,8 +208,9 @@ final class Restyler {
         let neededContainerWidth = (availableWidth > 0 && maxTableRight > availableWidth)
             ? 2 * padding + TableRendering.tableInset + maxTableRight + 8
             : 0
-        let containerWidth = viewportContainerWidth > 0 ? max(viewportContainerWidth, neededContainerWidth)
-                                                        : max(textView.bounds.width, neededContainerWidth)
+        let containerWidth = viewportContainerWidth > 0
+            ? ViewportGeometry.containerWidth(viewport: viewportContainerWidth, tableNeed: neededContainerWidth)
+            : ViewportGeometry.containerWidth(viewport: textView.bounds.width, tableNeed: neededContainerWidth)
         if viewportContainerWidth > 0, containerWidth > viewportContainerWidth + 0.5 {
             let proseTail = viewportContainerWidth - 2 * padding   // the viewport's text-area right edge (absolute)
             let tableRanges = tableGrids.map(\.blockRange)
