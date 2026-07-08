@@ -115,6 +115,23 @@ final class MallowTests: XCTestCase {
         XCTAssertTrue(home!.hasPrefix("/"), "tilde must expand to an absolute path")
     }
 
+    func testWindowRegistry_registerDetectsCanonicalPathCollision() {
+        // Two windows on the SAME file are the single-writer invariant the open/Save call sites exist to
+        // prevent. If one slips through, register() must DETECT the collision (return true) — previously
+        // it deduped by object identity only, so a second writer registered silently.
+        let registry = WindowRegistry.shared
+        let path = "/tmp/mallow-collision-\(UUID().uuidString).md"
+        let a = EditorDocument(text: "", path: path)
+        let b = EditorDocument(text: "", path: path)   // distinct doc, same on-disk file
+        let unrelated = EditorDocument(text: "", path: "/tmp/mallow-other-\(UUID().uuidString).md")
+        defer { registry.unregister(a); registry.unregister(b); registry.unregister(unrelated) }
+
+        XCTAssertFalse(registry.register(a), "first window on the file → no collision")
+        XCTAssertFalse(registry.register(unrelated), "a different file → no collision")
+        XCTAssertTrue(registry.register(b), "second window on the SAME file → collision detected")
+        XCTAssertFalse(registry.register(a), "re-registering an existing doc is not a collision")
+    }
+
     // MARK: byte ↔ UTF-16 ↔ scalar offset conversions (engine ranges ↔ NSTextView ranges)
 
     func testOffsetConversions_asciiIsIdentity() {

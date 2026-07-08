@@ -24,6 +24,7 @@
 // functions all live here.
 
 import AppKit
+import os
 
 // MARK: - Registry
 
@@ -47,13 +48,31 @@ final class WindowRegistry {
 
     // MARK: registration (called on window open / close)
 
+    /// Log channel for registry invariant violations (a collision is a bug in the open/save conventions,
+    /// not a user error — so it's logged, not surfaced).
+    private static let log = Logger(subsystem: "com.gurumdeva.mallow", category: "WindowRegistry")
+
     /// Record a newly-opened window's document. Idempotent: registering the same document twice (e.g. a
     /// re-entrant `.onAppear`) does not create a duplicate entry.
-    func register(_ doc: EditorDocument) {
+    ///
+    /// COLLISION DETECTION (single-writer-per-file): the open / Save call sites are supposed to focus the
+    /// existing window rather than open a second one on the same on-disk file (canonical path). If one
+    /// slips through, a second document lands here for a path another LIVE window already holds — two
+    /// autosaving writers over one file, the exact data-loss this registry exists to prevent. `register`
+    /// now DETECTS that (previously it deduped by object identity only) and returns `true`. It still
+    /// appends the entry: an untracked dirty window is invisible to the ⌘Q guard (silent loss), which is
+    /// worse than the collision. The verdict lets callers/tests assert the invariant; here we log it.
+    @discardableResult
+    func register(_ doc: EditorDocument) -> Bool {
         let key = ObjectIdentifier(doc)
         compact()
-        guard !entries.contains(where: { $0.key == key }) else { return }
+        guard !entries.contains(where: { $0.key == key }) else { return false }  // re-register → not a collision
+        let collided = otherDocument(sharingFileWith: doc) != nil
+        if collided {
+            Self.log.error("two windows now editing the same file: \(doc.vm.filePath ?? "?", privacy: .public)")
+        }
         entries.append(Entry(doc: doc, key: key))
+        return collided
     }
 
     /// Drop a closing window's document from the registry. Safe to call for a document that was never
