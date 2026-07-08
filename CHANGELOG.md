@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.2.1] - 2026-07-02
+
+A document-opening polish. Signed with a Developer ID and notarized by Apple.
+
+### Fixed
+- **Opening a document no longer flashes small, raw markdown before the styled text appears.** The first frame used to paint the unstyled source at the text view's small default font, then jump to the styled document a beat later — increasingly visible the larger the file. The editor now keeps the text hidden until the first style pass completes and fades it in briefly, so opening reads as "background → document". Typing, reload, and resize behavior are unchanged.
+
 ## [1.2.0] - 2026-07-02
 
 Tables reworked — one size, in-column wrapping, and horizontal scroll for wide tables. Signed with a Developer ID and notarized by Apple.
