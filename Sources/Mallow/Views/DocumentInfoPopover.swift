@@ -4,10 +4,11 @@
 // document's headings; clicking a row moves the caret to that heading and scrolls it into view).
 //
 // This view OWNS no model layer of its own: the pure counting / heading-extraction logic is reused
-// in Analysis/DocAnalysis.swift — `DocStats(markdown:)` and `DocOutline.extract(_:blocks:)` (with
-// `OutlineItem`) are top-level there. Stats + outline are recomputed from `doc.textView.string` in the
-// body each time the popover renders (cheap, and keeps the numbers in step with the live buffer; the
-// buffer is never mutated — markdown stays the source of truth, the TOC only reads the engine parse).
+// in Analysis/DocAnalysis.swift — `DocStats(markdown:blocks:)` and `DocOutline.extract(_:blocks:)` (with
+// `OutlineItem`) are top-level there. Stats + outline are recomputed in the body each render, but off the
+// document's CACHED parse (`doc.vm.blocks`, fresh by revision) — not a fresh per-render FFI parse — so
+// keeping the popover open while typing no longer re-parses the whole document every keystroke. The
+// buffer is never mutated (markdown stays the source of truth; the TOC only reads the parse).
 // Colors come from the shared `Theme` tokens so light/dark stays in lockstep with the editor.
 
 import SwiftUI
@@ -35,11 +36,14 @@ struct DocumentInfoPopover: View {
         // (textView.string / vm) and freezes at its open-time contents. (StatusBar reads revision the same
         // way.) A `let _` declaration, not a bare `_ =` expression, so the ViewBuilder doesn't treat it as a view.
         let _ = doc.revision
-        // Recompute per render — cheap, and reflects the current buffer (mirrors the AppKit panel being
-        // rebuilt on every open). `source` is read once and threaded through stats + outline.
+        // Read the CACHED parse (`vm.blocks`, fresh by revision — refresh() rewrites it on every edit)
+        // rather than re-running a full FFI parse + JSON decode per render. `source` is the live buffer
+        // for the text-derived word/char counts + the caret-jump math; the paragraph count and the
+        // outline both come off the same cached blocks.
         let source = doc.textView.string
-        let stats = DocStats(markdown: bodyWithoutFrontmatter(source))  // count the body, not metadata
-        let outline = DocOutline.extract(source, blocks: inkParseBlocks(source))
+        let blocks = doc.vm.blocks
+        let stats = DocStats(markdown: bodyWithoutFrontmatter(source), blocks: blocks)  // count the body, not metadata
+        let outline = DocOutline.extract(source, blocks: blocks)
 
         VStack(spacing: 12) {
             // Centered title above the tabs (CSS `.stats-title`: 13 / medium / dim).
