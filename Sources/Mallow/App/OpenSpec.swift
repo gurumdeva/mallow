@@ -51,8 +51,8 @@ extension EditorDocument {
         case .none:
             // First launch only (New uses .blank): reopen the last-edited file, else the welcome demo on
             // the first ever run, else blank. SessionStore.planStartup owns the welcomed flag + the read.
-            switch SessionStore.planStartup(explicitPath: nil, demo: demoMarkdown) {
-            case let .explicit(content, path), let .restore(content, path):
+            switch SessionStore.planStartup(demo: demoMarkdown) {
+            case let .restore(content, path):
                 return EditorDocument(text: content, path: path)
             case .welcome:
                 return EditorDocument(text: demoMarkdown, path: nil)

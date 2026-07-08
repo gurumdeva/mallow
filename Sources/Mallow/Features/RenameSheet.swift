@@ -6,7 +6,7 @@
 // yet, so there is nothing to rename; we just dismiss (a Save As fallback would belong on the lead,
 // which owns the save panel — out of scope for a self-contained sheet).
 //
-// `RenameValidation` is REUSED VERBATIM from the AppKit RenameInTitlebar.swift (the pure
+// `RenameValidation` is the ONLY copy of the filename rules (the pure
 // normalize-a-typed-filename enum), as is the disk-rename logic (same-folder move + canonical-path
 // clobber check). All file-name validation lives in that enum — no engine round-trip is needed for a
 // pure path op. Colors come from the shared `Theme` tokens so light/dark tracks the editor.
@@ -19,7 +19,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Filename validation (copied VERBATIM from the AppKit RenameInTitlebar.swift)
+// MARK: - Filename validation (pure; the single source of the filename rules)
 
 enum RenameValidation {
     /// Normalize a user-typed name to a `*.md` filename, or nil if it can't be a safe filename.

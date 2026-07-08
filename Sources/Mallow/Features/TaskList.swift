@@ -1,34 +1,25 @@
-// TaskList — GFM task-list checkbox rendering + click-to-toggle for the SwiftUI editor.
+// TaskList — GFM task-list checkbox rendering + click-to-toggle (shipped behavior; this header
+// describes what IS wired, not a plan).
 //
 // GFM task lists are parsed by the engine as ordinary `List` blocks whose items start with a literal
-// `[ ]` / `[x]` / `[X]` checkbox right after the bullet (`- [ ] do thing`). EditorViewModel already
-// keeps that box VISIBLE as part of the list marker (its private `MarkerGrammar.skipTaskBox` walks
-// past it) — so it currently shows as the three raw characters `[`, ` `, `]`.
-//
-// This file adds two contributions, mirroring the existing `-`→`•` bullet substitution exactly:
+// `[ ]` / `[x]` / `[X]` right after the bullet (`- [ ] do thing`). This file provides:
 //
 //   1. Detection (`TaskBoxScanner`): a PURE scanner that walks each list item's line-leading marker
 //      prefix (indent → nested `>` → bullet → `[ ]`) and returns, for every checkbox, the UTF-16
 //      index of its INNER character (the ` `/`x`/`X` between the brackets) and whether it is checked.
-//      It deliberately re-derives the same walk `MarkerGrammar` does, because `MarkerGrammar` is
-//      `private` to EditorViewModel.swift and cannot be imported here.
+//      NOTE (duplication debt): this re-derives the same walk as `MarkerGrammar.skipTaskBox`
+//      (HiddenSyntax.swift — internal, so it IS reachable now; the walks are kept in lockstep by
+//      hand until they are unified). If either walk changes, change both or the box the hide pass
+//      keeps visible drifts from the box the click toggles.
 //
-//   2. Glyph substitution plan: the editor renders the box as a single checkbox glyph by
-//        • HIDING the two bracket chars `[` (boxStart) and `]` (boxStart+2)  — add them to hiddenChars
-//        • SUBSTITUTING the inner char (boxStart+1) with ☐ U+2610 / ☑ U+2611 — like the bullet glyph
-//      That is 3 source chars → 2 hidden + 1 substituted = a 1:1 char↔glyph mapping with NO collapse
-//      of count, so every caret/selection offset downstream stays byte-exact (the same invariant the
-//      `•` substitution relies on). The box is hidden UNCONDITIONALLY — like every marker, the raw `[ ]`
-//      never shows in the edit surface (on the caret line or anywhere): the old caret-line reveal was
-//      removed in favour of "markers always hidden".
+//   2. Rendering (wired via HiddenSyntax + EditorLayoutDelegate): the two brackets are HIDDEN
+//      (zero-width) and the inner char is SUBSTITUTED with ☐ U+2610 / ☑ U+2611 — 3 source chars →
+//      2 hidden + 1 substituted, a 1:1 char↔glyph mapping so caret/selection offsets stay exact.
+//      Markers are hidden unconditionally (no caret-line reveal).
 //
-//   3. Click toggle (`Coordinator.toggleTaskBoxAt`): given a clicked character index, if it lands on
-//      (or adjacent to) a checkbox, flip the inner char ` ` ↔ `x` through the SAME undoable text path
-//      the engine commands use (`shouldChangeText` / `replaceCharacters` / `didChangeText`), then
-//      `refresh()`. ⌘Z reverts a toggle like any edit.
-//
-// These contributions are wired into EditorViewModel, the glyph delegate, and the click recognizer.
-// NOTHING here edits existing files.
+//   3. Click toggle (`Coordinator.toggleTaskBoxAt`, target of the NSClickGestureRecognizer wired in
+//      MarkdownEditor.makeNSView): flips the inner char ` ` ↔ `x` through the undoable text path
+//      (`shouldChangeText` / `replaceCharacters` / `didChangeText`); ⌘Z reverts like any edit.
 
 import AppKit
 import CoreText
@@ -253,37 +244,5 @@ extension MarkdownEditor.Coordinator {
         doc.vm.refresh()
         doc.revision &+= 1
         return true
-    }
-}
-
-// MARK: - Click recognizer target (optional helper for makeNSView)
-
-/// A tiny click-gesture target the representable can attach to the text view in `makeNSView`, so a
-/// single click on a checkbox toggles it. Kept as a standalone NSObject (not the Coordinator) so it can
-/// be retained by the gesture recognizer without a retain cycle through the delegate; it holds a weak
-/// ref to the text view and resolves the clicked character via `characterIndexForInsertion(at:)`.
-///
-/// Wiring (see notes): in `makeNSView`, after setting up the text view, create one of these and add an
-/// `NSClickGestureRecognizer(target:action:)` to `textView`. The recognizer fires BEFORE the text view
-/// consumes the click for caret placement when `delaysPrimaryMouseButtonEvents`/order is set up right;
-/// if a box is hit we toggle and (optionally) the lead can decide whether to also let the click set the
-/// caret. The simplest robust approach is to only toggle and otherwise let the event pass through.
-final class TaskBoxClickTarget: NSObject {
-    weak var textView: MarkdownTextView?
-    weak var coordinator: MarkdownEditor.Coordinator?
-
-    init(textView: MarkdownTextView, coordinator: MarkdownEditor.Coordinator) {
-        self.textView = textView
-        self.coordinator = coordinator
-    }
-
-    /// Action for an `NSClickGestureRecognizer` attached to the text view. Maps the click point to a
-    /// character index and asks the coordinator to toggle a box there.
-    @objc func handleClick(_ gr: NSClickGestureRecognizer) {
-        guard let textView, let coordinator else { return }
-        // Click point in the text view's coordinate space → the nearest insertion character index.
-        let p = gr.location(in: textView)
-        let idx = textView.characterIndexForInsertion(at: p)
-        _ = coordinator.toggleTaskBoxAt(idx)
     }
 }

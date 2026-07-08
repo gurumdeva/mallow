@@ -152,10 +152,13 @@ struct MarkdownEditor: NSViewRepresentable {
             let viewportContainerW = max(0, clipWidth - 2 * tv.textContainerInset.width)
             tv.textContainer?.size.width = max(viewportContainerW, tv.tableContainerWidth)
             // Debounced + expensive: re-measure table kern / wrap edge / card / rules at the new width.
+            // applyFocus follows because restyle's base pass wipes the focus dim (no-op when focus is off);
+            // without it, resizing a focused window dropped the dim until the next caret move.
             reflowWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
-                guard let self, !self.doc.textView.hasMarkedText() else { return }   // never restyle mid-IME
+                guard let self else { return }   // mid-IME: restyle/applyFocus self-guard (VM chokepoint)
                 self.vm.restyle()
+                self.vm.applyFocus()
             }
             reflowWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)

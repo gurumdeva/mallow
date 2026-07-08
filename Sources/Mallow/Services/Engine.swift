@@ -109,16 +109,18 @@ func charToUTF16(_ s: String, _ ch: Int) -> Int {
 // / table / outline passes stop re-implementing `byteToUTF16(...) + min(..., total)` at every block.
 
 extension PRange {
-    /// This byte range as a clamped UTF-16 `(lo, hi)` pair in `s` (hi ≤ `total`). Use when a pass needs
-    /// the raw bounds to iterate; `utf16Range` wraps the same pair as an NSRange.
+    /// This byte range as a clamped UTF-16 `(lo, hi)` pair in `s` (hi ≤ `total`). O(byte offset) per
+    /// call — deprecated as a fence: called per-block/per-inline this is the historical O(n²) typing-lag
+    /// bug (fixed twice: restyle 9f8acfc, tables/outline ece8fc5). Loops must use the map overload.
+    @available(*, deprecated, message: "O(byte) per call — use utf16Bounds(map:clampedTo:) with a per-pass byteToUTF16Map in any loop")
     func utf16Bounds(in s: String, clampedTo total: Int) -> (lo: Int, hi: Int) {
         (byteToUTF16(s, start), min(byteToUTF16(s, end), total))
     }
 
-    /// This byte range as a UTF-16 `NSRange` in `s`, clamped to `total`; nil when empty/inverted after
-    /// clamping (so callers can `guard let` instead of repeating the `hi > lo` check).
+    /// NSRange variant of the deprecated O(byte) conversion above — same fence, same reason.
+    @available(*, deprecated, message: "O(byte) per call — use utf16Range(map:clampedTo:) with a per-pass byteToUTF16Map in any loop")
     func utf16Range(in s: String, clampedTo total: Int) -> NSRange? {
-        let (lo, hi) = utf16Bounds(in: s, clampedTo: total)
+        let (lo, hi) = (byteToUTF16(s, start), min(byteToUTF16(s, end), total))
         guard hi > lo else { return nil }
         return NSRange(location: lo, length: hi - lo)
     }

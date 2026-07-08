@@ -1,10 +1,10 @@
 // DocumentInfoPopover — the SwiftUI face of the ⇧⌘I "Document Info" popover, mirroring the dormant
-// AppKit InfoPanel.swift. Two tabs share one `.popover`: Statistics (a 2×2 grid of word / character /
+// Two tabs share one `.popover`: Statistics (a 2×2 grid of word / character /
 // paragraph / read-time cards + an optional modified-date meta card) and Table of Contents (the
 // document's headings; clicking a row moves the caret to that heading and scrolls it into view).
 //
 // This view OWNS no model layer of its own: the pure counting / heading-extraction logic is reused
-// verbatim from InfoPanel.swift — `DocStats(markdown:)` and `DocOutline.extract(_:blocks:)` (with
+// in Analysis/DocAnalysis.swift — `DocStats(markdown:)` and `DocOutline.extract(_:blocks:)` (with
 // `OutlineItem`) are top-level there. Stats + outline are recomputed from `doc.textView.string` in the
 // body each time the popover renders (cheap, and keeps the numbers in step with the live buffer; the
 // buffer is never mutated — markdown stays the source of truth, the TOC only reads the engine parse).

@@ -161,7 +161,7 @@ enum L {
         "error.save": "Save",
         "error.exportPdf": "PDF Export",
         "error.exportHtml": "HTML Export",
-        // info — the Document-Info popover (InfoPanel.swift): tabs, stat cards, units, TOC empty state
+        // info — the Document-Info popover (DocumentInfoPopover.swift): tabs, stat cards, units, TOC empty state
         "info.tab.statistics": "Statistics",
         "info.tab.contents": "Contents",
         "info.stat.words": "Words",
@@ -171,14 +171,14 @@ enum L {
         "info.readMinuteUnit": "m",
         "info.meta.modified": "Modified",
         "info.toc.empty": "No headings to display.",
-        // rename — the titlebar rename popover + its failure alert (RenameInTitlebar.swift)
+        // rename — the rename sheet + its failure alert (RenameSheet.swift)
         "rename.placeholder": "Filename",
         "rename.error.invalid.title": "Invalid file name",
         "rename.error.invalid.body": "A file name can't be empty or contain “/”.",
         "rename.error.exists.title": "A file with that name already exists",
         "rename.error.exists.body": "Choose a different name to avoid replacing the other file.",
         "rename.error.failed.title": "Couldn't rename the file",
-        // image — the paste/drop image-embed error alerts (ImageInsert.swift)
+        // image — the paste/drop image-embed error alerts (PasteHandlers.swift)
         "image.error.tooLarge": "Image is too large (max 10 MB)",
         "image.error.failed": "Couldn't add the image",
         // reload — the external-change conflict prompt (ExternalReload.swift)
@@ -188,12 +188,13 @@ enum L {
         "reload.keepMine": "Keep Mine",
         // welcome — the launch document shown when no file is opened (AppDelegate.demoText)
         "welcome.demo": """
-        # Inkstone
+        # Mallow
 
         A native macOS editor where **markdown is the source of truth** — parsed and
         styled live by a Rust engine, with the system IME for 한글 / 日本語.
 
-        `#`, `**`, and `>` collapse away and return only on the caret's line. Try
+        `#`, `**`, and `>` collapse away — the markdown stays in the file, only the
+        markers hide. Try
         *italic*, ~~strikethrough~~, `inline code`, or a [link](https://example.com).
 
         ## Highlights
@@ -311,12 +312,12 @@ enum L {
         "reload.confirm": "다시 불러오기",
         "reload.keepMine": "내 변경 사항 유지",
         "welcome.demo": """
-        # Inkstone
+        # Mallow
 
         **마크다운이 원본**인 네이티브 macOS 에디터입니다. Rust 엔진이 실시간으로
         파싱·스타일링하며, 한글 / 日本語 입력을 위해 시스템 IME를 사용합니다.
 
-        `#`, `**`, `>` 같은 기호는 사라졌다가 커서가 있는 줄에서만 다시 나타납니다.
+        `#`, `**`, `>` 같은 기호는 화면에서 숨겨지고, 파일에는 마크다운 그대로 남습니다.
         *기울임*, ~~취소선~~, `인라인 코드`, [링크](https://example.com)를 사용해 보세요.
 
         ## 주요 기능
@@ -434,12 +435,12 @@ enum L {
         "reload.confirm": "再読み込み",
         "reload.keepMine": "自分の変更を保持",
         "welcome.demo": """
-        # Inkstone
+        # Mallow
 
         **マークダウンが情報源**となるネイティブmacOSエディタです。Rustエンジンが
         リアルタイムに解析・スタイリングし、한글 / 日本語の入力にシステムIMEを使います。
 
-        `#`、`**`、`>` などの記号は消え、カーソルのある行でのみ再表示されます。
+        `#`、`**`、`>` などの記号は画面上では隠れ、ファイルにはマークダウンのまま残ります。
         *斜体*、~~取り消し線~~、`インラインコード`、[リンク](https://example.com)をお試しください。
 
         ## 主な機能

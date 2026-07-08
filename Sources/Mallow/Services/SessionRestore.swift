@@ -4,9 +4,9 @@
 //   1. the main window's frame (so it reopens at the same size/place), and
 //   2. the path of the last-edited document (so it reopens on next launch).
 //
-// The startup priority matches StartupPlanner.ts exactly (explicit > restore-last > welcome > blank):
-//   • an explicit file (Finder "Open With" / CLI arg) ALWAYS wins — `planStartup` returns its content.
-//   • else, if we've shown the welcome demo before AND the stored last file still exists, reopen it.
+// The startup priority (explicit Finder/CLI opens bypass this entirely — they arrive via the
+// AppDelegate open-event route and LaunchOpen's supersede): restore-last > welcome > blank.
+//   • if we've shown the welcome demo before AND the stored last file still exists, reopen it.
 //   • else, on the very first run, show the welcome demo once (and record that we did).
 //   • else (re-run with no last file) start blank.
 // Restore is silent: a missing last document falls back to blank with no alert (the user didn't click
@@ -44,10 +44,10 @@ private struct SessionState: Codable {
 
 // MARK: - The startup decision (pure; mirrors StartupPlanner.planStartup)
 
-/// What the FIRST window should open with. The caller (main.swift) executes the chosen branch.
+/// What the FIRST window should open with. The caller (`OpenSpec.make`) executes the chosen branch.
+/// NOTE: explicit Finder/CLI opens do NOT flow through here — they arrive via the AppDelegate
+/// open-event route (LaunchOpen supersede); this plan covers only the restored/first-run window.
 enum StartupPlan {
-    /// An explicit file (Finder/CLI) — already read off disk; open its content, backed by `path`.
-    case explicit(content: String, path: String)
     /// Silently reopen the last session's document (already read); failures upstream fall to `.blank`.
     case restore(content: String, path: String)
     /// First run, nothing to open → the welcome demo (untitled).
@@ -160,17 +160,12 @@ enum SessionStore {
 
     // MARK: startup planning (mirrors StartupPlanner.planStartup priority)
 
-    /// Decide what the first window opens with. `explicitPath` is a Finder/CLI file path (highest
-    /// priority); `demo` is the welcome text. Reads the last file off disk here (the only I/O), so the
-    /// caller just opens the returned content. Marks `welcomed` as a side effect on the welcome branch
-    /// so the next launch switches to the restore path (exactly like the reference's localStorage flag).
-    static func planStartup(explicitPath: String?, demo: String) -> StartupPlan {
-        // (1) Explicit file (Finder "Open With" / CLI arg) — always wins over any restore/welcome.
-        if let explicitPath, let content = try? String(contentsOfFile: explicitPath, encoding: .utf8) {
-            return .explicit(content: content, path: explicitPath)
-        }
-
-        // (2) Restore last document — only once the welcome demo has been seen (so a first run can't be
+    /// Decide what the first window opens with; `demo` is the welcome text. Reads the last file off
+    /// disk here (the only I/O), so the caller just opens the returned content. Marks `welcomed` as a
+    /// side effect on the welcome branch so the next launch switches to the restore path. (Explicit
+    /// Finder/CLI opens never reach this — they arrive via the AppDelegate open-event route.)
+    static func planStartup(demo: String) -> StartupPlan {
+        // (1) Restore last document — only once the welcome demo has been seen (so a first run can't be
         //     hijacked by a stale path) and only if the file still exists + reads. Silent on failure.
         if state.welcomed == true, let path = state.lastFile,
            FileManager.default.fileExists(atPath: path),
@@ -178,14 +173,14 @@ enum SessionStore {
             return .restore(content: content, path: path)
         }
 
-        // (3) First run, nothing to open → welcome demo once; record it so future launches restore.
+        // (2) First run, nothing to open → welcome demo once; record it so future launches restore.
         if state.welcomed != true {
             state.welcomed = true
             scheduleFlush()
             return .welcome
         }
 
-        // (4) Re-run with no usable last file → blank.
+        // (3) Re-run with no usable last file → blank.
         return .blank
     }
 

@@ -4,7 +4,7 @@
 // (bold/italic/strikethrough/inline-code) — each wired through `EditorDocument.vm` to the engine's
 // existing commands (which run on the current selection).
 //
-// This mirrors the dormant AppKit version in StylePopoverPanel.swift — same buttons, sections, icons,
+// Same buttons, sections, icons as the original design:
 // sizes, and the deliberate left-aligned-rows layout — but is written as idiomatic SwiftUI rather than
 // a port of the AutoLayout/NSPopover code. The popover chrome (background, arrow) is provided by the
 // host `.popover`, so this view only lays out its content.

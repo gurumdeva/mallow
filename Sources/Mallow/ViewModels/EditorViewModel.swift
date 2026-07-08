@@ -85,7 +85,7 @@ final class EditorViewModel {
     // MARK: pipeline — parse once, then style + compute hidden syntax + focus.
 
     func refresh() {
-        guard let textView else { return }
+        guard let textView, !textView.hasMarkedText() else { return }   // IME chokepoint — see restyle()
         blocks = inkParseBlocks(textView.string)
         // Hidden set FIRST: restyle's table pass measures each cell's VISIBLE width (markers dropped) to
         // size the grid columns, so it needs `hiddenChars` already computed. The two passes are otherwise
@@ -98,14 +98,22 @@ final class EditorViewModel {
     /// Apply live-preview styling to the text storage — delegates to the `Restyler` collaborator (which
     /// owns the styled-font cache and all the per-block/inline logic). Public so the focus-mode toggle in
     /// DocumentActions and `refresh` can drive it.
+    ///
+    /// IME CHOKEPOINT: refresh/restyle/applyFocus self-guard against a live composition. During marked
+    /// text the parse and every index set are FROZEN at pre-composition offsets, and a full-document
+    /// `setAttributes` strips the composition underline — so these must never run mid-composition. The
+    /// guard used to be a convention each caller remembered (and some forgot: the focus-mode selection
+    /// path re-styled per jamo); now it is enforced HERE, once. Callers may still guard earlier for
+    /// their own sequencing (e.g. the Coordinator's deferred-refresh machinery re-runs after commit).
     func restyle() {
-        guard let textView else { return }
+        guard let textView, !textView.hasMarkedText() else { return }
         restyler.restyle(in: textView, blocks: blocks, hidden: hiddenChars, zoom: zoomFactor)
     }
 
     /// Re-apply (or clear) focus-mode dimming via the `Restyler`. No-op when focus mode is off.
+    /// Same IME chokepoint as `restyle()` (full-document color writes over frozen offsets).
     func applyFocus() {
-        guard let textView else { return }
+        guard let textView, !textView.hasMarkedText() else { return }
         restyler.applyFocus(in: textView, enabled: focusMode)
     }
 
@@ -166,6 +174,16 @@ final class EditorViewModel {
         tableRowChars = r.tableRowChars
         foldedChars = r.foldedChars
         hiddenChars = r.hidden
+        // Debug tripwires for the two keying contracts the layout delegate depends on (comment-only
+        // until now): a newline must NEVER be hidden (zero-advancing a line break merges lines), and
+        // zero-height coverage must include each collapsed line's newline (the fragment can report its
+        // start there). Cheap, debug-builds-only, and they catch a new producer violating the contract
+        // at development time instead of shipping a silent layout bug.
+        #if DEBUG
+        let ns = textView.string as NSString
+        assert(!hiddenChars.contains { $0 < ns.length && ns.character(at: $0) == 10 },
+               "hiddenChars must never contain a newline (see EditorLayoutDelegate zero-advance guard)")
+        #endif
         // We just changed which glyphs are zero-width / zero-height — reflow + repaint so the block
         // decorations (cards, bars, pills, rules, grids) draw at the new geometry. restyle() also sets
         // needsDisplay (it always follows in refresh()); doing it here keeps recomputeHidden self-consistent.
