@@ -40,6 +40,12 @@ struct EditorWindow: View {
         _doc = State(initialValue: EditorDocument.make(for: spec))
     }
 
+    /// The launch/open/dedup/supersede executor for THIS window. A thin value (recreated per access; all
+    /// shared state is external) carrying the injected window opener so it holds no SwiftUI dependency.
+    private var lifecycle: WindowLifecycleController {
+        WindowLifecycleController(doc: doc, spec: spec, openWindow: { openWindow(value: $0) })
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
@@ -63,68 +69,18 @@ struct EditorWindow: View {
         .background(WindowActiveTracker(doc: doc))   // report this window active to AppState for the menu commands
         .background(WindowConfigurator(doc: doc))    // close-confirm on unsaved edits + session geometry persistence
         .sheet(isPresented: $showRename) { RenameSheet(doc: doc) }
-        .onAppear {
-            // A nil spec means SwiftUI auto-created this window (launch or reopen) rather than File ▸
-            // New/Open (which pass `.blank`/`.file`); tag it so a launch file-open can supersede it.
-            if spec == nil { LaunchOpen.tagInitialWindow(doc) }
-            WindowRegistry.shared.register(doc)
-            LaunchOpen.closePendingIfReady(newlyRegistered: doc)  // close a superseded initial window once we're up
-            // A nil-spec restore window that duplicates an already-open file is spurious (macOS spawns one
-            // when a file is opened while the app is already running). Close it — the existing window owns
-            // the file (the registry's single-writer-per-file invariant). Deferred so we close after this
-            // appearance settles and at least one other window remains.
-            if LaunchOpen.isSpuriousDuplicateRestoreWindow(doc, wasNilSpec: spec == nil) {
-                let victim = doc
-                DispatchQueue.main.async { victim.hostWindow?.close() }
-            }
-        }
-        .onDisappear {
-            WindowRegistry.shared.unregister(doc)
-            // Drop the app-wide active-doc pointer if it was us, so a menu command fired after this window
-            // closes can't act on — or strongly retain (leak) — a torn-down document + its NSTextView. A
-            // surviving window re-asserts itself active via WindowActiveTracker when it next becomes key.
-            if AppState.shared.activeDoc === doc { AppState.shared.activeDoc = nil }
-        }
+        // The launch/open/dedup/supersede state machine lives in WindowLifecycleController; these three
+        // callbacks just forward into it (behavior is identical to the pre-extraction inline closures).
+        .onAppear { lifecycle.onAppear() }
+        .onDisappear { lifecycle.onDisappear() }
         .onReceive(NotificationCenter.default.publisher(for: .mallowOpenFile)) { note in
-            guard let path = note.userInfo?["path"] as? String, claimFileOpen(path) else { return }
-            let action = LaunchOpen.decide(openPath: path,
-                                           receivingWindowPath: doc.vm.filePath,
-                                           receivingWindowIsDirty: doc.vm.isDirty,
-                                           receivingWindowIsInitial: doc === LaunchOpen.initialDoc,
-                                           isLaunching: LaunchOpen.isLaunching)
-            switch action {
-            case .focusThisWindow:
-                // This window already holds the file (e.g. the restored last file == the opened file) —
-                // focus it rather than open a duplicate.
-                WindowRegistry.shared.focusWindow(of: doc)
-            case .openNewWindow:
-                // Normal behavior: focus an already-open window for this file, else open a new one.
-                if let existing = WindowRegistry.shared.document(forPath: path) {
-                    WindowRegistry.shared.focusWindow(of: existing)
-                } else {
-                    openWindow(value: OpenSpec.file(path: path))
-                }
-            case .openAndSupersede:
-                // Launch handed us a different file than the restore/welcome this initial window shows:
-                // open the file in its own window and close this spurious one (once the file window is up).
-                openWindow(value: OpenSpec.file(path: path))
-                LaunchOpen.markSupersede(doc)
-            }
+            guard let path = note.userInfo?["path"] as? String else { return }
+            lifecycle.handleOpenFile(path: path)
         }
         .onReceive(NotificationCenter.default.publisher(for: .mallowToggleInfo)) { _ in
             if doc === AppState.shared.activeDoc { showInfo.toggle() }   // ⇧⌘I toggles Document Info on the front window
         }
     }
-}
-
-/// De-dupe Finder/`open` file events: every open window mounts the `.onReceive` above, so without this
-/// each would call openWindow for the same path. Allow one open per path per ~1 second.
-private var lastFileOpen: (path: String, at: TimeInterval) = ("", 0)
-private func claimFileOpen(_ path: String) -> Bool {
-    let now = ProcessInfo.processInfo.systemUptime
-    if lastFileOpen.path == path, now - lastFileOpen.at < 1.0 { return false }
-    lastFileOpen = (path, now)
-    return true
 }
 
 /// First-launch sample document (mirrors the AppKit build's welcome text), exercising headings, inline
