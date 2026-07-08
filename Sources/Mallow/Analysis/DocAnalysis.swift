@@ -14,7 +14,25 @@ struct DocStats {
     let paragraphs: Int
     let readMinutes: Int
 
+    /// Detached initializer — counts paragraphs with the regex grammar. Kept as a FALLBACK for callers
+    /// with no engine parse at hand (tests, tooling). Prefer `init(markdown:blocks:)` in the app: the
+    /// regex here is a second markdown grammar that can drift from the engine (it miscounts a setext
+    /// heading as a prose paragraph and doesn't exclude indented code blocks).
     init(markdown: String) {
+        self.init(markdown: markdown, paragraphOverride: nil)
+    }
+
+    /// Engine-backed initializer — the paragraph count comes from the parse (`Paragraph` blocks), so
+    /// setext headings (parsed as Heading) and indented/fenced code (parsed as CodeBlock) are classified
+    /// by the ONE engine grammar instead of a parallel regex. Words / characters / read-time are
+    /// text-derived exactly as before. Pass the document's cached `vm.blocks`.
+    init(markdown: String, blocks: [PBlock]) {
+        self.init(markdown: markdown, paragraphOverride: DocStats.countParagraphs(blocks: blocks))
+    }
+
+    /// Shared body. `paragraphOverride` is the engine paragraph count when available, else nil → the
+    /// regex fallback runs over the image-stripped text.
+    private init(markdown: String, paragraphOverride: Int?) {
         // Strip embedded images before counting (matches the reference): a pasted image's base64
         // data URI is a single enormous "word" that would wildly inflate characters + read time and
         // make an image-only line count as a prose paragraph. Newlines are preserved so paragraph
@@ -40,10 +58,18 @@ struct DocStats {
 
         characters = chars
         words = DocStats.countWords(text)
-        paragraphs = DocStats.countParagraphs(stripped)
+        paragraphs = paragraphOverride ?? DocStats.countParagraphs(stripped)
         // Latin-script read time is word-based at 200 wpm (the brief's target). Always at least 1m
         // for any non-empty document. CJK localization (500 chars/min) is a later follow-up.
         readMinutes = max(1, Int((Double(words) / 200.0).rounded(.up)))
+    }
+
+    /// Paragraph count from the engine parse: the number of `Paragraph` blocks. Because the engine
+    /// classifies setext headings as Heading and indented/fenced code as CodeBlock, neither counts as
+    /// prose here — the two known drifts in the regex fallback. Frontmatter parses as a (setext) Heading,
+    /// so passing the full `vm.blocks` counts exactly the body's prose paragraphs.
+    static func countParagraphs(blocks: [PBlock]) -> Int {
+        blocks.filter { $0.kindTag == "Paragraph" }.count
     }
 
     /// Word count by whitespace splitting. AppKit has no Intl.Segmenter; this matches the Tauri

@@ -26,7 +26,10 @@ struct StatusBar: View {
     /// the ViewBuilder body, which the result builder rejects).
     private var currentStats: DocStats {
         _ = doc.revision
-        return DocStats(markdown: bodyWithoutFrontmatter(doc.textView.string))  // count the body, not metadata
+        // Engine-backed stats: the paragraph count comes from the cached parse (`vm.blocks`, fresh by
+        // revision) rather than a per-keystroke regex grammar — one grammar, and no regex passes on an
+        // always-visible view. Words/characters still count the body only (frontmatter excluded).
+        return DocStats(markdown: bodyWithoutFrontmatter(doc.textView.string), blocks: doc.vm.blocks)
     }
 
     var body: some View {
