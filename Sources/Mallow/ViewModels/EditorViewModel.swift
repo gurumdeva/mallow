@@ -117,6 +117,16 @@ final class EditorViewModel {
         restyler.applyFocus(in: textView, enabled: focusMode)
     }
 
+    /// Set focus mode and re-render with its exact recompute recipe: `restyle()` first wipes any prior
+    /// dim (its base pass replaces attributes), then `applyFocus()` re-adds the dim only when turning ON.
+    /// Owning the recipe here (instead of in DocumentActions' menu glue) keeps the ordering — and its IME
+    /// chokepoint, inherited from restyle/applyFocus — with the state it drives.
+    func setFocusMode(_ on: Bool) {
+        focusMode = on
+        restyle()
+        if focusMode { applyFocus() }
+    }
+
     /// The caret moved. Hidden syntax is caret-independent (markers are always hidden), so the only
     /// work is (a) keeping the caret/selection out of a hidden run's interior, and (b) focus mode
     /// re-dimming around the new caret block. Text is unchanged → the cached parse stands.

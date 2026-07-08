@@ -48,6 +48,18 @@ extension EditorViewModel {
         textView.setSelectedRange(NSRange(location: min(hStart, total), length: 0))
     }
 
+    /// Set Fold All and re-render with its exact recompute recipe: `refresh()` re-derives the folded set
+    /// from the live parse, then park the caret out of any now-collapsed body (`parkCaretOutOfFold`) and
+    /// snap it out of a collapsed inline run it may have landed in (`selectionChanged`). Owning the recipe
+    /// here keeps the sequence — and refresh's IME chokepoint — with the state it drives, instead of in
+    /// DocumentActions' menu glue.
+    func setFoldAll(_ on: Bool) {
+        allSectionsFolded = on
+        refresh()
+        parkCaretOutOfFold()   // park on the enclosing heading if the caret landed in a now-folded body
+        selectionChanged()     // snap the caret out of a collapsed (hidden) inline run if it landed in one
+    }
+
     /// Drop all per-section folds — called on every text edit, since their UTF-16 keys would otherwise go
     /// stale against the shifted text. (Fold All re-derives from the live parse, so it is unaffected.)
     func clearSectionFolds() {

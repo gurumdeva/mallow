@@ -8,12 +8,10 @@ import UniformTypeIdentifiers
 extension EditorDocument {
     // MARK: View toggles
 
-    /// Focus mode: dim every block but the caret's. Restyle first (clears any prior dim), then re-apply
-    /// the dim when turning on — mirrors the old EditorController.toggleFocusMode.
+    /// Focus mode: dim every block but the caret's. The recompute recipe (restyle → re-apply dim) lives
+    /// on the VM (`setFocusMode`); this is just the menu-glue toggle + chrome bump.
     func toggleFocus() {
-        vm.focusMode.toggle()
-        vm.restyle()
-        if vm.focusMode { vm.applyFocus() }
+        vm.setFocusMode(!vm.focusMode)
         markEdited()
     }
 
@@ -25,13 +23,10 @@ extension EditorDocument {
     }
 
     /// Fold All Sections: collapse every heading's body to a document outline (View ▸ Fold All Sections).
-    /// State is re-derived from the parse each refresh; toggling just re-renders. When folding, nudge the
-    /// caret out of a now-collapsed (zero-height, hidden) line so it isn't stranded on an invisible row.
+    /// The recompute recipe (refresh → park caret → snap selection) lives on the VM (`setFoldAll`); this
+    /// is just the menu-glue toggle + chrome bump.
     func toggleFoldAll() {
-        vm.allSectionsFolded.toggle()
-        vm.refresh()
-        vm.parkCaretOutOfFold()   // park on the enclosing heading if the caret landed in a now-folded body
-        vm.selectionChanged()     // snaps the caret out of a collapsed (hidden) inline run if it landed in one
+        vm.setFoldAll(!vm.allSectionsFolded)
         markEdited()
     }
 
