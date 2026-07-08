@@ -82,8 +82,21 @@ struct MarkdownEditor: NSViewRepresentable {
         // geometry (card, rules, kern, wrap) follows the text instead of freezing at the open-time width.
         context.coordinator.observeViewportWidth(of: scroll.contentView)
 
-        // First render: parse + style + hide once the view is in the hierarchy.
-        DispatchQueue.main.async { doc.vm.refresh() }
+        // First render: parse + style + hide once the view is in the hierarchy — behind a FIRST-PAINT
+        // GATE. The window's first frame otherwise paints the raw, unstyled markdown (default-size text,
+        // visible markers) and the styled document replaces it a beat later — a jarring flash that grows
+        // with document size. Keep the text invisible until that first style pass has run, then fade it
+        // in briefly; until then the scroll view paints the same editor background, so opening reads as
+        // "background → document appears", never "small raw text → styled text". One-shot: later
+        // refreshes (typing, reload, resize) are unaffected.
+        textView.alphaValue = 0
+        DispatchQueue.main.async {
+            doc.vm.refresh()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.12
+                textView.animator().alphaValue = 1
+            }
+        }
         return scroll
     }
 

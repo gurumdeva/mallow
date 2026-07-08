@@ -341,6 +341,15 @@ func configureTextView(_ textView: MarkdownTextView) {
     // refreshes already has the rhythm; restyle() reasserts it as the base paragraph attribute.
     textView.defaultParagraphStyle = mallowBodyParagraphStyle
     textView.typingAttributes[.paragraphStyle] = mallowBodyParagraphStyle
+    // First-paint typography: the Mallow body font/color as VIEW DEFAULTS, so any frame that renders
+    // BEFORE the Restyler's first style pass (file open paints raw markdown once — see the first-paint
+    // gate in MarkdownEditor.makeNSView) is already at the right size and color, not the tiny NSTextView
+    // default font that used to flash on large documents. restyle() re-asserts these as attributes.
+    let bodyFont = NSFont.systemFont(ofSize: 16, weight: .regular)   // = the Restyler's base body size
+    textView.font = bodyFont
+    textView.textColor = mallowText
+    textView.typingAttributes[.font] = bodyFont
+    textView.typingAttributes[.foregroundColor] = mallowText
 }
 
 // MARK: - Undoable mutation seam
