@@ -47,27 +47,27 @@ struct StylePopover: View {
             // Block: quote / bullet / numbered / code-block / divider (SF Symbols).
             section(L.t("style.blockSection")) {
                 card { symbol("text.quote") }
-                    action: { doc.vm.apply("toggle_blockquote") }
+                    action: { doc.vm.apply(.toggleBlockquote) }
                 card { symbol("list.bullet") }
-                    action: { doc.vm.apply("toggle_bullet_list") }
+                    action: { doc.vm.apply(.toggleBulletList) }
                 card { symbol("list.number") }
-                    action: { doc.vm.apply("toggle_ordered_list") }
+                    action: { doc.vm.apply(.toggleOrderedList) }
                 card { symbol("chevron.left.forwardslash.chevron.right") }
-                    action: { doc.vm.apply("toggle_code_block") }
+                    action: { doc.vm.apply(.toggleCodeBlock) }
                 card { symbol("minus") }
-                    action: { doc.vm.apply("insert_divider") }
+                    action: { doc.vm.apply(.insertDivider) }
             }
 
             // Inline: bold / italic / strikethrough / inline-code.
             section(L.t("style.inlineSection")) {
                 card { inlineLabel("B", size: 15, weight: .bold) }
-                    action: { doc.vm.apply("toggle_strong") }
+                    action: { doc.vm.apply(.toggleStrong) }
                 card { inlineLabel("I", size: 15, weight: .regular).italic() }
-                    action: { doc.vm.apply("toggle_emphasis") }
+                    action: { doc.vm.apply(.toggleEmphasis) }
                 card { inlineLabel("S", size: 14, weight: .regular).strikethrough() }
-                    action: { doc.vm.apply("toggle_strikethrough") }
+                    action: { doc.vm.apply(.toggleStrikethrough) }
                 card { symbol("curlybraces") }
-                    action: { doc.vm.apply("toggle_inline_code") }
+                    action: { doc.vm.apply(.toggleInlineCode) }
             }
         }
         .padding(pad)

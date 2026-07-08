@@ -74,12 +74,12 @@ struct MallowCommands: Commands {
 
         // Format — a new top-level menu (the engine commands the Style popover also issues).
         CommandMenu(L.t("menu.format")) {
-            Button(L.t("format.bold")) { doc?.vm.apply("toggle_strong") }
+            Button(L.t("format.bold")) { doc?.vm.apply(.toggleStrong) }
                 .keyboardShortcut("b", modifiers: .command)
-            Button(L.t("format.italic")) { doc?.vm.apply("toggle_emphasis") }
+            Button(L.t("format.italic")) { doc?.vm.apply(.toggleEmphasis) }
                 .keyboardShortcut("i", modifiers: .command)
-            Button(L.t("format.strikethrough")) { doc?.vm.apply("toggle_strikethrough") }
-            Button(L.t("format.inlineCode")) { doc?.vm.apply("toggle_inline_code") }
+            Button(L.t("format.strikethrough")) { doc?.vm.apply(.toggleStrikethrough) }
+            Button(L.t("format.inlineCode")) { doc?.vm.apply(.toggleInlineCode) }
             Divider()
             Button("H1") { doc?.vm.applyHeading(1) }.keyboardShortcut("1", modifiers: .command)
             Button("H2") { doc?.vm.applyHeading(2) }.keyboardShortcut("2", modifiers: .command)
@@ -87,11 +87,11 @@ struct MallowCommands: Commands {
             Button(L.t("format.body")) { doc?.vm.applyHeading(0) }
                 .keyboardShortcut("0", modifiers: [.command, .option])
             Divider()
-            Button(L.t("format.bullet")) { doc?.vm.apply("toggle_bullet_list") }
-            Button(L.t("format.numbered")) { doc?.vm.apply("toggle_ordered_list") }
-            Button(L.t("format.quote")) { doc?.vm.apply("toggle_blockquote") }
-            Button(L.t("format.codeBlock")) { doc?.vm.apply("toggle_code_block") }
-            Button(L.t("format.divider")) { doc?.vm.apply("insert_divider") }
+            Button(L.t("format.bullet")) { doc?.vm.apply(.toggleBulletList) }
+            Button(L.t("format.numbered")) { doc?.vm.apply(.toggleOrderedList) }
+            Button(L.t("format.quote")) { doc?.vm.apply(.toggleBlockquote) }
+            Button(L.t("format.codeBlock")) { doc?.vm.apply(.toggleCodeBlock) }
+            Button(L.t("format.divider")) { doc?.vm.apply(.insertDivider) }
         }
 
         // View — focus mode, keep-on-top, zoom, etc. Injected INTO the standard View menu (via the

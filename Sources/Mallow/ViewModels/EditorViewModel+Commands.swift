@@ -4,14 +4,7 @@
 import AppKit
 
 extension EditorViewModel {
-    /// Inline-mark toggles that WRAP the selection in a delimiter. On a bare caret these would wrap
-    /// an empty selection — inserting a delimiter pair (`****`, `` `` ``) the parser can't see as a
-    /// mark, so the hide-pass never collapses it and the raw markers SHOW (and would persist in the
-    /// saved file). For these, a caret with no selection formats the WORD under the caret instead.
-    private static let wrappingCommands: Set<String> =
-        ["toggle_strong", "toggle_emphasis", "toggle_strikethrough", "toggle_inline_code"]
-
-    func apply(_ command: String) {
+    func apply(_ command: EngineCommand) {
         guard let textView else { return }
         let s = textView.string
         let r = textView.selectedRange()
@@ -20,12 +13,12 @@ extension EditorViewModel {
         // A wrapping toggle on a bare caret formats the word under it (never inserts an empty,
         // un-hideable delimiter pair). Caret not on a word (whitespace / blank line) → nothing to
         // format, so no-op rather than leave stray markers.
-        if anchor == head, Self.wrappingCommands.contains(command) {
+        if anchor == head, EngineCommand.wrapping.contains(command) {
             guard let (lo, hi) = wordScalarRange(s, caret: anchor) else { return }
             anchor = lo; head = hi
         }
         guard let edit = try? JSONDecoder().decode(
-            IEditResult.self, from: Data(inkCommand(command, s, anchor, head).utf8)
+            IEditResult.self, from: Data(inkCommand(command.rawValue, s, anchor, head).utf8)
         ) else { return }
         replace(with: edit)
     }
