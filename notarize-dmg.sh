@@ -15,7 +15,7 @@
 #
 #        xcrun notarytool store-credentials "mallow-notary" \
 #          --apple-id "YOUR_APPLE_ID_EMAIL" \
-#          --team-id "22GT65KKQA" \
+#          --team-id "YOUR_TEAM_ID" \
 #          --password "APP_SPECIFIC_PASSWORD"
 #
 # The DMG's .app must already be code-signed (build-app.sh does that when the
