@@ -44,9 +44,9 @@
 	</array>
 
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.4</string>
+	<string>1.2.5</string>
 	<key>CFBundleVersion</key>
-	<string>30</string>
+	<string>31</string>
 
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
@@ -173,5 +173,34 @@
 			</dict>
 		</dict>
 	</array>
+	<!-- ============================================================
+	     Sparkle auto-update — policy + rationale in docs/security/sparkle-update-security.md.
+	     ============================================================ -->
+	<!-- The appcast feed — HTTPS only (condition 2). appcast.xml is committed + served via GitHub raw. -->
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/gurumdeva/mallow/main/appcast.xml</string>
+	<!-- EdDSA public key: every update's signature is verified against this, so a forged update can't
+	     install even if the host is compromised (condition 2). The private key lives in the login Keychain. -->
+	<key>SUPublicEDKey</key>
+	<string>Er284WSoE1o70PHSUuI1Ml9SqaJHIiNRTYk8sKbePDk=</string>
+	<!-- Verify the EdDSA signature BEFORE extracting the downloaded archive (never operate on
+	     unverified bytes). This is also Sparkle's documented prerequisite for SURequireSignedFeed. -->
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<!-- Validate the appcast FEED itself, not just the enclosure (condition 2, defense in depth).
+	     generate_appcast signs the feed automatically because this app declares the requirement. -->
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<!-- Check in the background once a day; the user is prompted before any download/install
+	     (SUAllowsAutomaticUpdates = NO → never a silent self-replace). -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<!-- Condition 3: NO privileged installer/downloader XPC services — the app is non-sandboxed and
+	     updates by swapping the .app in /Applications, so Sparkle never needs them (staying off the
+	     surface the 2025 XPC CVEs targeted). Keys intentionally OMITTED (absent ⇒ default NO). -->
 </dict>
 </plist>

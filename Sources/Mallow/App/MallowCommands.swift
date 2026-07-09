@@ -22,12 +22,11 @@ struct MallowCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
-        // App ▸ Check for Updates… — slotted right under "About Mallow", the conventional spot. Asks
-        // GitHub Releases whether a newer build exists and offers to open the Releases page.
+        // App ▸ Check for Updates… — slotted right under "About Mallow", the conventional spot. Drives
+        // Sparkle: it downloads, EdDSA-verifies, and installs a newer build in place, then relaunches
+        // (no more opening a browser). Disabled while a check is already in flight.
         CommandGroup(after: .appInfo) {
-            Button { UpdateChecker.checkNow() } label: {
-                Label(L.t("menu.checkUpdates"), systemImage: "arrow.triangle.2.circlepath")
-            }
+            CheckForUpdatesMenuItem()
         }
 
         // File ▸ New / Open / Open Recent (replaces the default "New Window"). New opens a blank window;

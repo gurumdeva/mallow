@@ -99,6 +99,24 @@ else
   echo "   inkstone:   statically linked (no dylib to vendor — bundle is self-contained)"
 fi
 
+# ---- 3.6. embed Sparkle.framework (auto-update) ----------------------------
+# The Mallow binary links Sparkle with install name @rpath/Sparkle.framework/…, and the executable
+# already carries an @loader_path/../Frameworks rpath (added above for inkstone), so dropping the
+# framework into Contents/Frameworks resolves it. `ditto` copies the bundle preserving its internal
+# Versions/Current symlinks. It is signed inside-out in the code-sign step below. Policy + the reason
+# the privileged XPC services stay present-but-unused: docs/security/sparkle-update-security.md.
+SPARKLE_SRC="$(swift build -c release --show-bin-path)/Sparkle.framework"
+if [ ! -d "$SPARKLE_SRC" ]; then
+  # Fall back to the resolved XCFramework slice if the bin-path copy isn't a real dir.
+  SPARKLE_SRC="$(/usr/bin/find .build/artifacts -type d -path '*macos-arm64*/Sparkle.framework' -print -quit 2>/dev/null || true)"
+fi
+if [ -z "${SPARKLE_SRC:-}" ] || [ ! -d "$SPARKLE_SRC" ]; then
+  echo "error: Sparkle.framework not found (run 'swift build -c release' first)." >&2
+  exit 1
+fi
+ditto "$SPARKLE_SRC" "$FRAMEWORKS_DIR/Sparkle.framework"
+echo "   sparkle:    embedded Sparkle.framework → Contents/Frameworks"
+
 # ---- 3.5. code sign (only when a Developer ID Application cert is available) -
 # Signing + notarization let the .app install with a normal double-click (no
 # right-click → Open). This needs the PAID Apple Developer Program — a
@@ -117,6 +135,25 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   while IFS= read -r -d '' lib; do
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$lib"
   done < <(find "$FRAMEWORKS_DIR" -name '*.dylib' -print0 2>/dev/null)
+  # Sparkle.framework carries nested code (XPC services, the Autoupdate helper, Updater.app) that
+  # codesign does NOT re-sign when signing the app — each must be signed with our Developer ID under
+  # the hardened runtime, INSIDE-OUT (deepest first), before the framework and then the app. Re-signing
+  # replaces Sparkle's upstream signature with ours so library validation passes; notarization then
+  # accepts the whole tree. (We sign the XPC services even though they're unused — condition 3 keeps
+  # them disabled via Info.plist, but an unsigned nested bundle would fail notarization.)
+  SPARKLE_FW="$FRAMEWORKS_DIR/Sparkle.framework"
+  if [ -d "$SPARKLE_FW" ]; then
+    echo "   signing:    Sparkle.framework nested code (inside-out)"
+    SPV="$SPARKLE_FW/Versions/B"
+    for nested in \
+      "$SPV/XPCServices/Downloader.xpc" \
+      "$SPV/XPCServices/Installer.xpc" \
+      "$SPV/Autoupdate" \
+      "$SPV/Updater.app"; do
+      [ -e "$nested" ] && codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$nested"
+    done
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$SPARKLE_FW"
+  fi
   codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   SIGNED=1

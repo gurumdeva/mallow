@@ -13,13 +13,19 @@ import PackageDescription
 let package = Package(
     name: "Mallow",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        // Sparkle 2 — in-app auto-update. Pinned `from: "2.9.4"` so SemVer keeps us at or above every
+        // 2025 XPC-validation CVE fix (docs/security/sparkle-update-security.md, condition 1). Never
+        // lower this floor. Distributed as a signed binary XCFramework; build-app.sh embeds + signs it.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
+    ],
     targets: [
         // The Inkstone C-ABI: header + module map only (the header symlinks to the engine's
         // include/inkstone.h). The actual symbols come from libinkstone.a, linked below.
         .systemLibrary(name: "CInkstone", path: "Sources/CInkstone"),
         .executableTarget(
             name: "Mallow",
-            dependencies: ["CInkstone"],
+            dependencies: ["CInkstone", .product(name: "Sparkle", package: "Sparkle")],
             // Link the sibling inkstone repo's staticlib. The -L path resolves from this package
             // root (the repo root) → ../inkstone/target/release. AppKit / UniformTypeIdentifiers are
             // auto-linked by Swift from their imports.

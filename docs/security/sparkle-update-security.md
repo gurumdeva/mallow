@@ -15,7 +15,14 @@ This file is the enforced checklist; each item is verified at integration and re
 ### 2. Cryptographically signed updates AND signed feed
 - Every update artifact carries an **EdDSA (ed25519) `sparkle:edSignature`**, verified against the
   app's embedded **`SUPublicEDKey`** — so a forged update cannot install even if GitHub is compromised.
-- **`SURequireSignedFeed = YES`**: the appcast feed itself is validated, not just the enclosure.
+- **`SUVerifyUpdateBeforeExtraction = YES`**: the signature is checked BEFORE the archive is extracted
+  (never operate on unverified bytes). This is also Sparkle's documented prerequisite for a signed feed.
+- **`SURequireSignedFeed = YES`**: the appcast feed itself is validated, not just the enclosure, so a
+  tampered feed (fake release notes, downgrade, withheld update) is rejected too. `generate_appcast`
+  signs the feed automatically because the app declares this requirement — it embeds a second
+  `edSignature` in a trailing `sparkle-signatures` comment (verified 2026-07-09 in the v1.2.5 appcast:
+  the enclosure carries `sparkle:edSignature=…` AND the file ends with a `sparkle-signatures` block).
+  No manual feed-signing step; never hand-edit the appcast or the feed signature breaks.
 - Feed + release notes served over **HTTPS only** (raw.githubusercontent.com) — no ATS exception.
 - The private EdDSA key never leaves this Mac's login Keychain; it is NOT in the repo or CI.
 
@@ -27,11 +34,18 @@ This file is the enforced checklist; each item is verified at integration and re
 - The app is **not sandboxed**; if that ever changes, re-audit the XPC service requirement.
 
 ### 4. Signing-key custody
-- Generated with Sparkle's `generate_keys` → stored in this Mac's **login Keychain** (account
-  `ed25519`, service `https://sparkle-project.org`).
-- A one-time **offline backup** of the private key is exported to a user-controlled secure location
-  (NOT the repo, NOT a synced folder). Losing it means minting a new key + shipping an app update that
-  carries the new `SUPublicEDKey` before any signed-with-the-new-key update can be delivered.
+- Generated 2026-07-09 with Sparkle's `generate_keys` → private key in this Mac's **login Keychain**.
+- **Public key** (embedded as `SUPublicEDKey` in AppBundle/Info.plist):
+  `Er284WSoE1o70PHSUuI1Ml9SqaJHIiNRTYk8sKbePDk=`
+- **Offline backup — do this once by hand, then delete the file:**
+  ```sh
+  .build/artifacts/sparkle/Sparkle/bin/generate_keys -x mallow-sparkle-privatekey.txt
+  # move mallow-sparkle-privatekey.txt into a password manager / offline vault, then:
+  rm mallow-sparkle-privatekey.txt
+  ```
+  Never commit it or place it in a synced folder (it is git-ignored). Losing BOTH the Keychain entry
+  and this backup means minting a new key + shipping an app update carrying the new `SUPublicEDKey`
+  before any newly-signed update can reach existing users.
 
 ### 5. Apple code signing + notarization unchanged
 - The `.app`, the vendored `libinkstone.dylib`, AND the embedded `Sparkle.framework` (plus its nested
@@ -41,6 +55,14 @@ This file is the enforced checklist; each item is verified at integration and re
   they defend different links in the chain and Sparkle 2 double-verifies them.
 
 ## Release pipeline addition
-After notarizing the DMG: `generate_appcast <dir-of-dmgs>` signs each release with the private key and
-writes `appcast.xml` (feed at `SUFeedURL`). Commit + push `appcast.xml`; the raw HTTPS URL is the feed.
-Never hand-edit signatures.
+Order matters — **stapling the notarization ticket rewrites the DMG's bytes**, which would invalidate a
+signature generated earlier. So per release:
+1. `./build-app.sh` (signs the .app + embedded frameworks inside-out).
+2. Build the DMG, then `./notarize-dmg.sh Mallow_<ver>_aarch64.dmg mallow-notary` (submits + **staples**).
+3. **Only now** `./make-appcast.sh <ver>` — wraps `generate_appcast` (private key from the Keychain),
+   signs the enclosure + the feed over the FINAL stapled DMG, and FAILS LOUDLY if the enclosure comes
+   out unsigned (guards against shipping a feed the signed-feed app would reject).
+4. `git add appcast.xml && commit && push` — the raw HTTPS `SUFeedURL` serves it.
+
+Never hand-edit `appcast.xml`: it is a signed file (note the `sparkle-sign-warning` header), so any manual
+change breaks both signatures — always regenerate via `make-appcast.sh`.

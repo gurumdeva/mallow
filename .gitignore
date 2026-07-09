@@ -23,3 +23,8 @@ logs
 !.vscode/extensions.json
 .idea
 *.swp
+
+# Sparkle EdDSA private key export — NEVER commit (see docs/security/sparkle-update-security.md)
+mallow-sparkle-privatekey.txt
+# Release staging for appcast generation
+/appcast-staging/

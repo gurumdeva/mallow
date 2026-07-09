@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.2.5] - 2026-07-09
+
+In-app auto-update — no more visiting GitHub to install a new version. Signed with a Developer ID and notarized by Apple.
+
+### Added
+- **Check for Updates, in the app.** A new **Mallow ▸ Check for Updates…** menu item (and a once-a-day background check) tells you when a newer version is out, shows the release notes, and installs it in place with one click — the manual "download the DMG from GitHub" step is gone. Powered by [Sparkle 2](https://sparkle-project.org). Updates are never silent: you are always prompted before anything downloads or installs.
+- **Every update is cryptographically verified.** Each release is signed with an EdDSA (ed25519) key and the signature is checked against a key embedded in the app *before* the download is opened, so a tampered or forged update cannot install even if the download host is compromised — a stronger guarantee than the previous "download it yourself and trust it" flow. The update feed itself is signed and served over HTTPS. The full security policy is documented in [docs/security/sparkle-update-security.md](docs/security/sparkle-update-security.md).
+
+### Changed (internal)
+- The old GitHub-poll update checker (it just opened the Releases page in a browser) was replaced by the Sparkle updater. Sparkle's framework is embedded and signed inside-out under the hardened runtime along with everything else in the bundle; the privileged installer/downloader helper services are intentionally left disabled (the app swaps its own bundle in `/Applications`, so they are never needed). 49 app tests.
+
 ## [1.2.4] - 2026-07-09
 
 Engine correctness fixes from a whole-engine review — four silent data-loss/corruption edges closed. Signed with a Developer ID and notarized by Apple.

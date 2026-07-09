@@ -95,10 +95,11 @@ final class MallowAppDelegate: NSObject, NSApplicationDelegate {
         // already running get their own windows. The delay covers the open event arriving slightly after
         // this callback on some launches. See LaunchOpen.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { LaunchOpen.endLaunchPhase() }
-        // Quietly ask GitHub Releases whether a newer build is out (throttled to once/day; only surfaces
-        // a prompt when an update actually exists). The explicit “Check for Updates…” menu item is the
-        // manual counterpart. Network call is async, so this doesn't delay launch.
-        UpdateChecker.checkOnLaunchIfDue()
+        // Start Sparkle's updater: its scheduled background check (SUEnableAutomaticChecks, daily) runs
+        // from here, and it downloads + EdDSA-verifies + installs in place when the user accepts. The
+        // explicit "Check for Updates…" menu item drives the same shared controller. Referencing the
+        // singleton is what constructs + retains it for the app's lifetime.
+        _ = AppUpdater.shared
     }
 }
 
