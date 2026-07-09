@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Categories: **Added** (new features) · **Changed** (changes to existing behavior) · **Fixed** (bug fixes).
 
+## [1.2.4] - 2026-07-09
+
+Engine correctness fixes from a whole-engine review — four silent data-loss/corruption edges closed. Signed with a Developer ID and notarized by Apple.
+
+### Fixed
+- **An unfinished frontmatter block can no longer swallow the document body.** While typing frontmatter (opened `---`, not yet closed), a later `---` anywhere in the document — even inside a code block — was taken as the closing fence, dimming everything between as metadata and deleting it from HTML/PDF export. The metadata block now ends at the first blank line.
+- **Footnote references (`[^1]`) are no longer invisible.** They rendered zero-width in the editor while still being in the file and the export; they now show as literal text.
+- **`~~~` code blocks behave like ``` ones.** Toggle Code Block now unwraps them (it used to nest a second fence inside), and smart typography no longer curls quotes/dashes inside `~~~` blocks, indented code, or frontmatter — typing `--help` in a code sample stays `--help`.
+- **Toggle Code Block with the caret inside an existing block now unwraps it** cleanly from anywhere in the block (it used to mangle the structure unless the whole content was selected).
+- **Tables nested inside quotes no longer inherit a previous table's column alignment**, and a file containing a NUL byte opens untitled instead of risking silent truncation through the engine boundary.
+
+### Changed (internal)
+- The engine reports errors across the C boundary (`inkstone_last_error`) instead of silently returning empty results; engine CI now tests the FFI feature and pins the JSON tag vocabulary; table cell ranges are emitted pre-trimmed; the window title derives from the cached parse instead of re-parsing the document on every keystroke. 50 app tests, 275 engine tests.
+
 ## [1.2.3] - 2026-07-08
 
 Internal hardening from the second half of the whole-codebase modifiability review. No visible change — the app looks and behaves exactly as 1.2.2. Signed with a Developer ID and notarized by Apple.
