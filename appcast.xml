@@ -12,11 +12,11 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <sparkle:shortVersionString>1.2.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/gurumdeva/mallow/releases/download/v1.2.5/Mallow_1.2.5_aarch64.dmg" length="2510201" type="application/octet-stream" sparkle:edSignature="Tb0RoAB23hXWAgoXuLKgoJVgVr8WxFy4gWmsZ02edWqc/vo+5vUMX/+G7bXXa8VXYsGHp6rX+QLDoGfMahfyAA=="/>
+            <enclosure url="https://github.com/gurumdeva/mallow/releases/download/v1.2.5/Mallow_1.2.5_aarch64.dmg" length="2508886" type="application/octet-stream" sparkle:edSignature="B9Tq/MmGEYFq+EWlDLxs6wpFyZBr227u6shcFnIV7Y1RL8ss4I7F7j1fwtLVc0tTRtQeBkfRaCfAxGr+J8ZKAg=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 0Dv3gkx60nbU+R95KcMlmCyTxg2GwaJhMA3XWjfFrEZEmr1FIAwXZcjxjdRdVZyj6esux9HA+5DuAiDJvnxLCA==
+edSignature: D5bOdHEe5NIDOXxBmZ09RWoicO5UB5uIUak9eV05+fh63ebQRsX7vXxVrG2CYsUsrHIGPBSHobbeWm/X4k3ODg==
 length: 1116
 -->
