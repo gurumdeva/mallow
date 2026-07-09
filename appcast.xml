@@ -1,0 +1,22 @@
+<?xml version="1.0" standalone="yes"?>
+<!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+-->
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Mallow</title>
+        <item>
+            <title>1.2.5</title>
+            <pubDate>Thu, 09 Jul 2026 17:24:10 +0900</pubDate>
+            <sparkle:version>31</sparkle:version>
+            <sparkle:shortVersionString>1.2.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/gurumdeva/mallow/releases/download/v1.2.5/Mallow_1.2.5_aarch64.dmg" length="2510201" type="application/octet-stream" sparkle:edSignature="Tb0RoAB23hXWAgoXuLKgoJVgVr8WxFy4gWmsZ02edWqc/vo+5vUMX/+G7bXXa8VXYsGHp6rX+QLDoGfMahfyAA=="/>
+        </item>
+    </channel>
+</rss>
+<!-- sparkle-signatures:
+edSignature: 0Dv3gkx60nbU+R95KcMlmCyTxg2GwaJhMA3XWjfFrEZEmr1FIAwXZcjxjdRdVZyj6esux9HA+5DuAiDJvnxLCA==
+length: 1116
+-->
