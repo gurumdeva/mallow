@@ -41,9 +41,9 @@ final class EditorDocument: Identifiable {
     /// surfacing, and paste focus (DocumentActions / ExternalReload / RenameSheet / PasteHandlers).
     var hostWindow: NSWindow? { textView.window }
 
-    // Chrome-facing derived state (read through `revision` so SwiftUI tracks edits). `title` prefers
-    // the frontmatter `title:` over the filename, and re-derives on every edit (so typing a `title:`
-    // line updates the chrome live).
+    // Chrome-facing derived state (read through `revision` so SwiftUI tracks edits). `title` is the
+    // document's FIRST HEADING (falling back to the filename) — Notion-style — re-derived from the
+    // vm's cached parse on every edit, so typing a heading at the top updates the chrome live.
     var title: String { _ = revision; return vm.documentTitle }
     var isDirty: Bool { _ = revision; return vm.isDirty }
 }

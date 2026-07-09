@@ -91,6 +91,12 @@ extension EditorDocument {
     static func decodeUTF8(_ data: Data) -> (text: String, hadBOM: Bool)? {
         let hadBOM = data.starts(with: [0xEF, 0xBB, 0xBF])
         let body = hadBOM ? data.dropFirst(3) : data
+        // Interior NUL guard (engine-review E2): U+0000 is VALID UTF-8, but the engine seam is
+        // NUL-terminated C strings — every command would see only the pre-NUL prefix and replace the
+        // whole buffer with it (silent data loss), and isDirty would compare truncated strings.
+        // Refuse to bind the path (same policy as invalid UTF-8): the file opens untitled/read-only
+        // in effect and can never be clobbered.
+        guard !body.contains(0) else { return nil }
         guard let text = String(data: body, encoding: .utf8) else { return nil }
         return (text, hadBOM)
     }

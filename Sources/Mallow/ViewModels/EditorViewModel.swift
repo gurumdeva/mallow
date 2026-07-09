@@ -48,6 +48,26 @@ final class EditorViewModel {
         let delegate = EditorLayoutDelegate(vm: self, textView: textView)
         layoutDelegate = delegate
         textView.layoutManager?.delegate = delegate
+        // Smart-typography grammar context from the CACHED parse (see MarkdownTextView.typographySuppressed).
+        textView.typographySuppressed = { [weak self] loc in
+            self?.isInsideCodeOrFrontmatter(utf16: loc) ?? false
+        }
+    }
+
+    /// True when the UTF-16 location sits inside a CodeBlock block or the frontmatter region, per the
+    /// cached parse — the smart-typography guard's grammar truth. The parse knows every code form
+    /// (``` and ~~~ fences, indented blocks) and the engine's CRLF-safe frontmatter boundary; the rule
+    /// table's own heuristics cover the mid-IME window when the cached parse is frozen.
+    func isInsideCodeOrFrontmatter(utf16 loc: Int) -> Bool {
+        guard let textView else { return false }
+        let s = textView.string
+        let bodyStartByte = inkFrontmatterBodyStart(s)   // cheap linear scan; 0 = no frontmatter
+        let locByte = inkCharToByte(s, utf16ToChar(s, loc))
+        if bodyStartByte > 0 && locByte < bodyStartByte { return true }
+        for block in blocks where block.kindTag == "CodeBlock" {
+            if locByte >= block.range.start && locByte < block.range.end { return true }
+        }
+        return false
     }
 
     // MARK: derived state for the chrome
@@ -58,14 +78,37 @@ final class EditorViewModel {
     /// the filename (`displayName`) — Notion-style, so the user just types a heading at the top. Note
     /// `displayName`/`baseName` stay the FILENAME — rename and the save target operate on the file.
     var documentTitle: String {
-        let heading = inkDocumentTitle(textView?.string ?? "")
+        let heading = firstHeadingTitle
         return heading.isEmpty ? displayName : heading
+    }
+    /// The first heading's text from the CACHED parse — the engine `document_title` contract
+    /// (frontmatter skipped via the cheap linear scanner, first non-empty Heading block, inline-run
+    /// concatenation = markers stripped) WITHOUT the second full engine parse per keystroke that
+    /// `inkDocumentTitle` cost: SwiftUI re-reads the title on every revision bump, so that call was
+    /// re-parsing the whole document once per edit purely to read one heading (engine-review perf #2).
+    private var firstHeadingTitle: String {
+        guard let textView else { return "" }
+        let s = textView.string
+        let bodyStartByte = inkFrontmatterBodyStart(s)   // linear line scan, not a parse; CRLF-safe
+        let utf8 = Array(s.utf8)
+        for block in blocks where block.kindTag == "Heading" {
+            guard block.range.start >= bodyStartByte else { continue }   // inside frontmatter → skip
+            var title = ""
+            for inline in block.inlines {
+                let lo = max(0, min(inline.range.start, utf8.count))
+                let hi = max(lo, min(inline.range.end, utf8.count))
+                title += String(decoding: utf8[lo..<hi], as: UTF8.self)
+            }
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }   // empty headings are skipped, like the engine
+        }
+        return ""
     }
     /// The first-heading title sanitized into a safe base filename (no extension), or "" when the
     /// document has no heading. Seeds the Save-As panel for an untitled document (Notion-style: a doc
     /// named by its title). Strips path-illegal characters and trims; the user can still edit it.
     var titleAsFileName: String {
-        let heading = inkDocumentTitle(textView?.string ?? "")
+        let heading = firstHeadingTitle
         let cleaned = heading
             .components(separatedBy: CharacterSet(charactersIn: "/\\:\n\r\t"))
             .joined(separator: " ")

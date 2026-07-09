@@ -79,11 +79,11 @@ enum TableRendering {
         var align = [String](repeating: "None", count: colCount)
         for c in block.cells where c.row < fullRowCount && c.col < colCount {
             let (lo, hi) = c.range.utf16Bounds(map: map, clampedTo: total)
-            // TRIM surrounding spaces/tabs off the engine's cell range. The engine is not consistent about
-            // whether a cell range includes its padding spaces (varies row to row); untrimmed, a row whose
-            // range ate a space measures one space wider than its actual content, its kern comes out one
-            // space smaller, and that row's next column starts ~4pt off the others — a visible per-row
-            // wobble. Trimmed, width/kern/separators all speak about pure content for every row.
+            // TRIM surrounding spaces/tabs off the engine's cell range. As of the 2026-07 engine fix the
+            // engine already emits TRIMMED content spans (it used to forward pulldown's raw
+            // bytes-between-the-pipes, which mirrored the author's ragged padding row by row and mis-sized
+            // the kern by one space on the ragged rows). This app-side trim is kept as an idempotent
+            // belt-and-braces so the layout stays correct even against an older engine build.
             var tlo = lo, thi = hi
             while tlo < thi, ns.character(at: tlo) == 32 || ns.character(at: tlo) == 9 { tlo += 1 }
             while thi > tlo, ns.character(at: thi - 1) == 32 || ns.character(at: thi - 1) == 9 { thi -= 1 }

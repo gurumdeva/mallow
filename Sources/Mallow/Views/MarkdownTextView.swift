@@ -20,6 +20,15 @@ final class MarkdownTextView: NSTextView {
     /// horizontally-scrolling table while the window is being dragged (before the debounced restyle runs).
     var tableContainerWidth: CGFloat = 0
 
+    /// Grammar context for smart typography, wired by EditorViewModel from its CACHED engine parse:
+    /// true when the UTF-16 location sits inside a code block or the frontmatter region. The rule
+    /// table's own heuristics only know ``` fences at column 0 and LF `---` frontmatter — the parse
+    /// additionally knows `~~~` fences, indented code, and CRLF frontmatter, where substitution used
+    /// to silently corrupt code/YAML (engine-review E4/E10). Union semantics: suppression applies when
+    /// EITHER this closure or the built-in heuristics say "inside". nil (headless view without a VM) →
+    /// heuristics only, the old behavior.
+    var typographySuppressed: ((Int) -> Bool)?
+
     /// The width of a container that exactly fills the viewport (points), set by the Restyler each pass; 0
     /// when unknown. Block decorations that should track the WINDOW — the code-block card and the thematic
     /// rule — clamp their width to this so they don't stretch across the extra-wide container a horizontally
@@ -39,7 +48,10 @@ final class MarkdownTextView: NSTextView {
         // preceding chars by widening the replacement range backward.
         if let s = (string as? String) ?? (string as? NSAttributedString)?.string {
             let loc = replacementRange.location == NSNotFound ? selectedRange().location : replacementRange.location
-            if let replacement = SmartTypography.substitution(for: s, in: self.string, at: loc) {
+            // Parse-informed suppression FIRST (cheap closure, consulted only when a substitution is
+            // possible): inside a code block / frontmatter the source bytes are sacred — no curling.
+            if let replacement = SmartTypography.substitution(for: s, in: self.string, at: loc),
+               typographySuppressed?(loc) != true {
                 let extra: Int
                 switch replacement {
                 case "\u{2026}": extra = 2                 // … consumed ".."

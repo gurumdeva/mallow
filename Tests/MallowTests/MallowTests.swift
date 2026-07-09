@@ -800,4 +800,44 @@ final class MallowTests: XCTestCase {
         XCTAssertFalse(table?.cells.isEmpty ?? true, "table cells stopped decoding — serde shape drifted")
     }
 
+
+    // ===== 2026-07 inkstone-review app-side fixes =====
+
+    // E2: a file containing an interior U+0000 must not bind its path — the engine seam is
+    // NUL-terminated C strings, so commands would replace the buffer with the pre-NUL prefix
+    // (silent data loss) and isDirty would compare truncated strings.
+    func testDecodeUTF8_rejectsInteriorNUL() {
+        XCTAssertNil(EditorDocument.decodeUTF8(Data("a\u{0}b".utf8)), "interior NUL must refuse path binding")
+        XCTAssertNotNil(EditorDocument.decodeUTF8(Data("ab".utf8)), "clean UTF-8 still decodes")
+    }
+
+    // Perf #2: the window title derives from the CACHED parse (no second engine parse per keystroke),
+    // faithful to the engine contract: first non-empty heading, markers stripped, frontmatter skipped.
+    func testDocumentTitle_fromCachedParse() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        let vm = EditorViewModel(textView: tv)
+        tv.string = "---\ntitle: not me\n---\n\n# **Real** title\n\nbody\n"
+        vm.refresh()
+        XCTAssertEqual(vm.documentTitle, "Real title", "first heading after frontmatter, markers stripped")
+        tv.string = "no heading here\n"
+        vm.refresh()
+        XCTAssertEqual(vm.documentTitle, vm.displayName, "no heading → filename fallback")
+    }
+
+    // E4/E10 app half: the typography context knows ~~~ fences and frontmatter via the cached parse —
+    // the rule table's own heuristics don't, and used to let substitution corrupt code/YAML there.
+    func testTypographyContext_knowsTildeFencesAndFrontmatter() {
+        let tv = MarkdownTextView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        let vm = EditorViewModel(textView: tv)
+        tv.string = "---\ntitle: x\n---\n\nprose here\n\n~~~\n--help\n~~~\n"
+        vm.refresh()
+        let ns = tv.string as NSString
+        let inFrontmatter = ns.range(of: "title").location
+        let inTilde = ns.range(of: "--help").location
+        let inProse = ns.range(of: "prose").location
+        XCTAssertTrue(vm.isInsideCodeOrFrontmatter(utf16: inFrontmatter), "frontmatter suppressed")
+        XCTAssertTrue(vm.isInsideCodeOrFrontmatter(utf16: inTilde), "~~~ code suppressed")
+        XCTAssertFalse(vm.isInsideCodeOrFrontmatter(utf16: inProse), "prose not suppressed")
+    }
+
 }
