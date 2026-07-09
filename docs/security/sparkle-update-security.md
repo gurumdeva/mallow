@@ -58,7 +58,8 @@ This file is the enforced checklist; each item is verified at integration and re
 Order matters — **stapling the notarization ticket rewrites the DMG's bytes**, which would invalidate a
 signature generated earlier. So per release:
 1. `./build-app.sh` (signs the .app + embedded frameworks inside-out).
-2. Build the DMG, then `./notarize-dmg.sh Mallow_<ver>_aarch64.dmg mallow-notary` (submits + **staples**).
+2. `./make-dmg.sh <ver>` (styled background + arranged icons), then
+   `./notarize-dmg.sh Mallow_<ver>_aarch64.dmg mallow-notary` (submits + **staples**).
 3. **Only now** `./make-appcast.sh <ver>` — wraps `generate_appcast` (private key from the Keychain),
    signs the enclosure + the feed over the FINAL stapled DMG, and FAILS LOUDLY if the enclosure comes
    out unsigned (guards against shipping a feed the signed-feed app would reject).

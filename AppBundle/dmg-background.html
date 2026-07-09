@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- Source for the DMG install-window background. Render with:
+     Chrome --headless=new --force-device-scale-factor=2 --window-size=640,420 \
+       --screenshot=dmg-background@2x.png --hide-scrollbars file://…/dmg-background.html
+     then downscale to 1x and combine via `tiffutil -cathidpicheck` (see make-dmg.sh header).
+     Canvas 640x420 pt; the two real icons are placed by Finder at ~(160,250) and (480,250). -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 640px; height: 420px; overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Rounded", "SF Pro Display", system-ui, sans-serif;
+    background: #FBFAF8;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* A whisper of the icon's pastel aura at the four corners — present, not loud. */
+  .aura {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(115% 85% at 50% -12%, rgba(246,214,200,0.34), rgba(246,214,200,0) 56%),
+      radial-gradient(85% 78% at 10% 6%,   rgba(247,239,201,0.30), rgba(247,239,201,0) 60%),
+      radial-gradient(85% 78% at 90% 8%,   rgba(214,232,203,0.28), rgba(214,232,203,0) 60%),
+      radial-gradient(120% 90% at 50% 116%, rgba(221,214,236,0.32), rgba(221,214,236,0) 55%);
+  }
+  .brand { position: absolute; top: 54px; left: 0; right: 0; text-align: center; }
+  .word  { font-size: 32px; font-weight: 600; letter-spacing: -0.4px; color: #4A453F; }
+  .tag   { margin-top: 10px; font-size: 10.5px; font-weight: 600; letter-spacing: 3.6px;
+           text-transform: uppercase; color: #BBB2A8; }
+  /* Arrow sits in the gap between the two icons (centered on their y = 250). */
+  .arrow { position: absolute; left: 250px; top: 235px; width: 140px; height: 30px; }
+  /* A soft muted hint, kept BELOW the Finder icon labels (icons centered at y=250, labels ~y=320). */
+  .hint  { position: absolute; top: 352px; left: 0; right: 0; text-align: center;
+           font-size: 11.5px; font-weight: 500; letter-spacing: 0.2px; color: #B3AAA0; }
+</style>
+</head>
+<body>
+  <div class="aura"></div>
+  <div class="brand">
+    <div class="word">Mallow</div>
+    <div class="tag">Minimal Markdown Editor</div>
+  </div>
+  <svg class="arrow" viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 15 H126" stroke="#D9D1C7" stroke-width="3" stroke-linecap="round"/>
+    <path d="M115 5 L131 15 L115 25" stroke="#D9D1C7" stroke-width="3"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div class="hint">Drag Mallow onto Applications to install</div>
+</body>
+</html>
